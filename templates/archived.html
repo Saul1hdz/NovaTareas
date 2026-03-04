@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Tareas Archivadas</title>
+</head>
+<body>
+    <h1>Tareas Terminadas</h1>
+    {% for task in tasks %}
+        <div class="tarea">
+            <strong>{{ task.title }}</strong> - <em>{{ task.status }}</em><br>
+            <strong>Notas:</strong> <br>
+            <pre>{{ task.notes }}</pre>
+        </div>
+    {% else %}
+        <p>No hay tareas archivadas.</p>
+    {% endfor %}
+    <a href="/">Volver</a>
+</body>
+</html>

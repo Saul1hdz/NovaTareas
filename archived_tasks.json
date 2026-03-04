@@ -1,0 +1,12 @@
+[
+  {
+    "title": "comer la cena",
+    "status": "terminada",
+    "notes": "hagarre el tenedor y empece a comer"
+  },
+  {
+    "title": "apagar el tele",
+    "status": "abandonada",
+    "notes": "se fue la luz y se apago solo"
+  }
+]

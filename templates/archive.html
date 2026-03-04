@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Archivar tarea</title>
+</head>
+<body>
+    <h1>Archivar tarea</h1>
+    <p><strong>{{ task.title }}</strong> - <em>{{ task.status }}</em></p>
+    <form method="post">
+        <label>Notas sobre la tarea:</label><br>
+        <textarea name="notes" rows="5" cols="40" placeholder="¿Qué salió bien? ¿Qué salió mal? ¿Qué hiciste para terminarla?"></textarea><br>
+        <button type="submit">Archivar</button>
+    </form>
+    <a href="/">Volver</a>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>NovasTareas</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .tarea { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+        .pendiente { background: #fffbe6; }
+        .proceso { background: #e6f7ff; }
+        .terminada { background: #e6ffe6; }
+        .abandonada { background: #ffe6e6; }
+    </style>
+</head>
+<body>
+    <h1>Tareas por hacer</h1>
+    <form action="/add" method="post">
+        <input type="text" name="title" placeholder="Nueva tarea" required>
+        <button type="submit">Agregar</button>
+    </form>
+    <h2>Tareas</h2>
+    {% for task in tasks %}
+        <div class="tarea {{ task.status }}">
+            <strong>{{ task.title }}</strong> - <em>{{ task.status }}</em>
+            <form action="/update_status/{{ loop.index0 }}" method="post" style="display:inline">
+                <select name="new_status">
+                    <option value="pendiente" {% if task.status == 'pendiente' %}selected{% endif %}>Pendiente</option>
+                    <option value="proceso" {% if task.status == 'proceso' %}selected{% endif %}>En proceso</option>
+                    <option value="terminada" {% if task.status == 'terminada' %}selected{% endif %}>Terminada</option>
+                    <option value="abandonada" {% if task.status == 'abandonada' %}selected{% endif %}>Abandonada</option>
+                </select>
+                <button type="submit">Cambiar estado</button>
+            </form>
+            {% if task.status == 'terminada' or task.status == 'abandonada' %}
+                <a href="/archive/{{ loop.index0 }}">Archivar y agregar notas</a>
+            {% endif %}
+        </div>
+    {% else %}
+        <p>No hay tareas.</p>
+    {% endfor %}
+    <a href="/archived">Ver tareas archivadas</a>
+</body>
+</html>
