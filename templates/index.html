@@ -4,40 +4,131 @@
     <meta charset="UTF-8">
     <title>NovasTareas</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
-        .tarea { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            background: #b7c7a4;
+        }
+        .dashboard {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 40px;
+            margin: 40px 0;
+        }
+        .card {
+            background: #eaf6f6;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+            padding: 24px 28px;
+            margin-bottom: 20px;
+        }
+        .main-card {
+            min-width: 340px;
+            max-width: 400px;
+            flex: 1 1 400px;
+        }
+        .side-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            min-width: 260px;
+        }
+        .side-card {
+            min-height: 180px;
+            background: #f3e9f7;
+        }
+        .archived-card {
+            background: #f7e9e9;
+        }
+        .tarea {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+        }
         .pendiente { background: #fffbe6; }
         .proceso { background: #e6f7ff; }
         .terminada { background: #e6ffe6; }
         .abandonada { background: #ffe6e6; }
+        .archived-list {
+            max-height: 120px;
+            overflow-y: auto;
+        }
+        .archived-item {
+            border-bottom: 1px solid #ddd;
+            padding: 4px 0;
+            font-size: 0.97em;
+        }
+        .archived-item:last-child {
+            border-bottom: none;
+        }
+        .recommendation-content {
+            color: #888;
+            font-style: italic;
+            margin-top: 12px;
+        }
+        .add-task-form {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 18px;
+        }
+        @media (max-width: 900px) {
+            .dashboard { flex-direction: column; align-items: stretch; }
+            .side-cards { flex-direction: row; gap: 12px; }
+            .main-card, .side-card { min-width: unset; max-width: unset; }
+        }
     </style>
 </head>
 <body>
-    <h1>Tareas por hacer</h1>
-    <form action="/add" method="post">
-        <input type="text" name="title" placeholder="Nueva tarea" required>
-        <button type="submit">Agregar</button>
-    </form>
-    <h2>Tareas</h2>
-    {% for task in tasks %}
-        <div class="tarea {{ task.status }}">
-            <strong>{{ task.title }}</strong> - <em>{{ task.status }}</em>
-            <form action="/update_status/{{ loop.index0 }}" method="post" style="display:inline">
-                <select name="new_status">
-                    <option value="pendiente" {% if task.status == 'pendiente' %}selected{% endif %}>Pendiente</option>
-                    <option value="proceso" {% if task.status == 'proceso' %}selected{% endif %}>En proceso</option>
-                    <option value="terminada" {% if task.status == 'terminada' %}selected{% endif %}>Terminada</option>
-                    <option value="abandonada" {% if task.status == 'abandonada' %}selected{% endif %}>Abandonada</option>
-                </select>
-                <button type="submit">Cambiar estado</button>
+    <div class="dashboard">
+        <div class="card main-card">
+            <h2>Lista de Tareas</h2>
+            <form class="add-task-form" action="/add" method="post">
+                <input type="text" name="title" placeholder="Nueva tarea" required>
+                <button type="submit">Agregar</button>
             </form>
-            {% if task.status == 'terminada' or task.status == 'abandonada' %}
-                <a href="/archive/{{ loop.index0 }}">Archivar y agregar notas</a>
-            {% endif %}
+            {% for task in tasks %}
+                <div class="tarea {{ task.status }}">
+                    <strong>{{ task.title }}</strong> - <em>{{ task.status }}</em>
+                    <form action="/update_status/{{ loop.index0 }}" method="post" style="display:inline">
+                        <select name="new_status">
+                            <option value="pendiente" {% if task.status == 'pendiente' %}selected{% endif %}>Pendiente</option>
+                            <option value="proceso" {% if task.status == 'proceso' %}selected{% endif %}>En proceso</option>
+                            <option value="terminada" {% if task.status == 'terminada' %}selected{% endif %}>Terminada</option>
+                            <option value="abandonada" {% if task.status == 'abandonada' %}selected{% endif %}>Abandonada</option>
+                        </select>
+                        <button type="submit">Cambiar estado</button>
+                    </form>
+                    {% if task.status == 'terminada' or task.status == 'abandonada' %}
+                        <a href="/archive/{{ loop.index0 }}">Archivar y agregar notas</a>
+                    {% endif %}
+                </div>
+            {% else %}
+                <p>No hay tareas.</p>
+            {% endfor %}
         </div>
-    {% else %}
-        <p>No hay tareas.</p>
-    {% endfor %}
-    <a href="/archived">Ver tareas archivadas</a>
+        <div class="side-cards">
+            <div class="card side-card archived-card">
+                <h3>Realizadas</h3>
+                <div class="archived-list">
+                {% for task in archived_tasks %}
+                    <div class="archived-item">
+                        <strong>{{ task.title }}</strong> - <em>{{ task.status }}</em>
+                    </div>
+                {% else %}
+                    <span style="color:#aaa;">No hay tareas archivadas.</span>
+                {% endfor %}
+                </div>
+                <a href="/archived" style="font-size:0.95em;">Ver todas</a>
+            </div>
+            <div class="card side-card">
+                <h3>Recomendaciones</h3>
+                <div class="recommendation-content">
+                    Selecciona una tarea para ver recomendaciones aquí.
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

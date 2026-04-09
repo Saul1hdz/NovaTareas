@@ -34,7 +34,8 @@ def save_archived(tasks):
 @app.route('/')
 def index():
     tasks = load_tasks()
-    return render_template('index.html', tasks=tasks)
+    archived_tasks = load_archived()
+    return render_template('index.html', tasks=tasks, archived_tasks=archived_tasks)
 
 @app.route('/add', methods=['POST'])
 def add_task():
