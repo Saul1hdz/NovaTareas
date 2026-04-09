@@ -3,15 +3,91 @@
 <head>
     <meta charset="UTF-8">
     <title>Archivar tarea</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            background: #b7c7a4;
+        }
+        .container {
+            max-width: 480px;
+            margin: 48px auto;
+            background: #eaf6f6;
+            border-radius: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+            padding: 32px 36px 24px 36px;
+        }
+        h1 {
+            margin-top: 0;
+            color: #6b4f8a;
+        }
+        .task-info {
+            background: #f7e9e9;
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 18px;
+        }
+        .task-info strong {
+            font-size: 1.1em;
+        }
+        .task-info em {
+            color: #888;
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        label {
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+        textarea {
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            font-size: 1em;
+            resize: vertical;
+        }
+        button[type="submit"] {
+            background: #6b4f8a;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 0;
+            font-size: 1.1em;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 8px;
+            transition: background 0.2s;
+        }
+        button[type="submit"]:hover {
+            background: #563a6a;
+        }
+        .back-link {
+            display: inline-block;
+            margin-top: 18px;
+            color: #6b4f8a;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
 </head>
 <body>
-    <h1>Archivar tarea</h1>
-    <p><strong>{{ task.title }}</strong> - <em>{{ task.status }}</em></p>
-    <form method="post">
-        <label>Notas sobre la tarea:</label><br>
-        <textarea name="notes" rows="5" cols="40" placeholder="¿Qué salió bien? ¿Qué salió mal? ¿Qué hiciste para terminarla?"></textarea><br>
-        <button type="submit">Archivar</button>
-    </form>
-    <a href="/">Volver</a>
+    <div class="container">
+        <h1>Archivar tarea</h1>
+        <div class="task-info">
+            <strong>{{ task.title }}</strong> - <em>{{ task.status }}</em>
+        </div>
+        <form method="post">
+            <label for="notes">Notas sobre la tarea:</label>
+            <textarea id="notes" name="notes" rows="5" cols="40" placeholder="¿Qué salió bien? ¿Qué salió mal? ¿Qué hiciste para terminarla?"></textarea>
+            <button type="submit">Archivar</button>
+        </form>
+        <a class="back-link" href="/">&larr; Volver</a>
+    </div>
 </body>
 </html>
