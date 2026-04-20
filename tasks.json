@@ -1,18 +1,22 @@
 [
   {
-    "title": "invadir nicaraga",
-    "status": "pendiente"
+    "title": "prueba",
+    "status": "pendiente",
+    "created_at": "2026-04-14 10:33:31",
+    "due_date": "2026-04-16",
+    "start_time": "",
+    "end_time": "",
+    "duration": "",
+    "prioridad": 3
   },
   {
-    "title": "silla electrica a rodolfo",
-    "status": "pendiente"
-  },
-  {
-    "title": "restaurar  la urrs",
-    "status": "pendiente"
-  },
-  {
-    "title": "hacaer las tareas de verdad",
-    "status": "pendiente"
+    "title": "prueba 3",
+    "status": "pendiente",
+    "created_at": "2026-04-14 10:34:14",
+    "due_date": "2026-04-16",
+    "start_time": "",
+    "end_time": "",
+    "duration": "",
+    "prioridad": 1
   }
 ]

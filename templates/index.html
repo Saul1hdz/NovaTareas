@@ -47,6 +47,13 @@
             margin-bottom: 10px;
             border-radius: 8px;
         }
+        .prioridad-1, .prioridad-2, .prioridad-3 {
+            background: #d4f7d4 !important;
+        }
+        .prioridad-4, .prioridad-5 {
+            background: #ffd6d6 !important;
+        }
+        
         .pendiente { background: #fffbe6; }
         .proceso { background: #e6f7ff; }
         .terminada { background: #e6ffe6; }
@@ -70,8 +77,22 @@
         }
         .add-task-form {
             display: flex;
+            flex-wrap: wrap;
             gap: 8px;
             margin-bottom: 18px;
+            align-items: center;
+        }
+        .add-task-form input[type="text"] {
+            min-width: 120px;
+            flex: 1 1 120px;
+        }
+        .add-task-form input[type="date"] {
+            min-width: 120px;
+            flex: 1 1 120px;
+        }
+        .add-task-form select,
+        .add-task-form button {
+            flex: 0 0 auto;
         }
         @media (max-width: 900px) {
             .dashboard { flex-direction: column; align-items: stretch; }
@@ -86,11 +107,38 @@
             <h2>Lista de Tareas</h2>
             <form class="add-task-form" action="/add" method="post">
                 <input type="text" name="title" placeholder="Nueva tarea" required>
+                <input type="text" name="descripcion" placeholder="Descripción (opcional)" style="min-width:120px;flex:2 1 180px;">
+                <input type="date" name="due_date" placeholder="Fecha límite" style="width: 140px;">
+                <label for="prioridad">Prioridad:</label>
+                <select name="prioridad" id="prioridad">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                </select>
                 <button type="submit">Agregar</button>
             </form>
             {% for task in tasks %}
-                <div class="tarea {{ task.status }}">
-                    <strong>{{ task.title }}</strong> - <em>{{ task.status }}</em>
+                <div class="tarea {{ task.status }} prioridad-{{ task.prioridad }}">
+                    <strong>{{ task.title }}</strong> - <em>{{ task.status }}</em><br>
+                    {% if task.descripcion %}<span style="font-size:0.97em;color:#444;">{{ task.descripcion }}</span><br>{% endif %}
+                    <small>Prioridad: {{ task.prioridad if task.prioridad else 1 }}</small><br>
+                    <small>Creada: {{ task.created_at if task.created_at else 'N/A' }}</small><br>
+                    <small>Fecha límite: {{ task.due_date if task.due_date else 'N/A' }}</small><br>
+                    {% if task.start_time %}<small>Inicio: {{ task.start_time }}</small><br>{% endif %}
+                    {% if task.end_time %}<small>Fin: {{ task.end_time }}</small><br>{% endif %}
+                    {% if task.duration %}<small>Duración: {{ task.duration }}</small><br>{% endif %}
+                    <!-- Formulario para cambiar prioridad -->
+                    <form action="/update_prioridad/{{ loop.index0 }}" method="post" style="display:inline">
+                        <select name="nueva_prioridad" onchange="this.form.submit()">
+                            {% for p in range(1,6) %}
+                                <option value="{{ p }}" {% if task.prioridad == p %}selected{% endif %}>{{ p }}</option>
+                            {% endfor %}
+                        </select>
+                        <noscript><button type="submit">Cambiar prioridad</button></noscript>
+                    </form>
+                    <!-- Formulario para cambiar estado -->
                     <form action="/update_status/{{ loop.index0 }}" method="post" style="display:inline">
                         <select name="new_status">
                             <option value="pendiente" {% if task.status == 'pendiente' %}selected{% endif %}>Pendiente</option>
@@ -100,6 +148,11 @@
                         </select>
                         <button type="submit">Cambiar estado</button>
                     </form>
+                    {% if task.status == 'proceso' %}
+                        <form action="/select_recommendation/{{ loop.index0 }}" method="post" style="display:inline">
+                            <button type="submit" {% if selected_task and tasks[loop.index0].title == selected_task.title %}disabled{% endif %}>Seleccionar</button>
+                        </form>
+                    {% endif %}
                     {% if task.status == 'terminada' or task.status == 'abandonada' %}
                         <a href="/archive/{{ loop.index0 }}">Archivar y agregar notas</a>
                     {% endif %}
@@ -114,7 +167,12 @@
                 <div class="archived-list">
                 {% for task in archived_tasks %}
                     <div class="archived-item">
-                        <strong>{{ task.title }}</strong> - <em>{{ task.status }}</em>
+                        <strong>{{ task.title }}</strong> - <em>{{ task.status }}</em><br>
+                        <small>Creada: {{ task.created_at if task.created_at else 'N/A' }}</small><br>
+                        <small>Fecha límite: {{ task.due_date if task.due_date else 'N/A' }}</small><br>
+                        {% if task.start_time %}<small>Inicio: {{ task.start_time }}</small><br>{% endif %}
+                        {% if task.end_time %}<small>Fin: {{ task.end_time }}</small><br>{% endif %}
+                        {% if task.duration %}<small>Duración: {{ task.duration }}</small><br>{% endif %}
                     </div>
                 {% else %}
                     <span style="color:#aaa;">No hay tareas archivadas.</span>
@@ -125,7 +183,18 @@
             <div class="card side-card">
                 <h3>Recomendaciones</h3>
                 <div class="recommendation-content">
-                    Selecciona una tarea para ver recomendaciones aquí.
+                    {% if selected_task %}
+                        <strong>{{ selected_task.title }}</strong> - <em>{{ selected_task.status }}</em><br>
+                        {% if selected_task.descripcion %}<span style="font-size:0.97em;color:#444;">{{ selected_task.descripcion }}</span><br>{% endif %}
+                        <small>Prioridad: {{ selected_task.prioridad if selected_task.prioridad else 1 }}</small><br>
+                        <small>Creada: {{ selected_task.created_at if selected_task.created_at else 'N/A' }}</small><br>
+                        <small>Fecha límite: {{ selected_task.due_date if selected_task.due_date else 'N/A' }}</small><br>
+                        {% if selected_task.start_time %}<small>Inicio: {{ selected_task.start_time }}</small><br>{% endif %}
+                        {% if selected_task.end_time %}<small>Fin: {{ selected_task.end_time }}</small><br>{% endif %}
+                        {% if selected_task.duration %}<small>Duración: {{ selected_task.duration }}</small><br>{% endif %}
+                    {% else %}
+                        Selecciona una tarea para ver recomendaciones aquí.
+                    {% endif %}
                 </div>
             </div>
         </div>
