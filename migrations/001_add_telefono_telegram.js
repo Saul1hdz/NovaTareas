@@ -1,10 +1,3 @@
-/**
- * Migración: Agrega campos telefono y telegram_chat_id a la tabla users,
- * y la columna reminder_sent a la tabla tasks para evitar recordatorios duplicados.
- *
- * Ejecutar con: node migrations/001_add_telefono_telegram.js
- */
-
 import Database from 'better-sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';

@@ -1,13 +1,3 @@
-/**
- * POST /api/auth/recover
- * Flujo de recuperación de contraseña por preguntas de seguridad.
- *
- * Acciones:
- *  - get_question: devuelve una pregunta al azar (o la siguiente no respondida)
- *  - check_answer: verifica la respuesta; si es correcta devuelve un token temporal
- *  - reset_password: con el token temporal, cambia la contraseña
- */
-
 export const prerender = false;
 
 import bcrypt from 'bcryptjs';
