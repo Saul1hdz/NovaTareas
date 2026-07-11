@@ -1,5 +1,0 @@
-
-echo "" > .nojekyll
-git add .nojekyll
-git commit -m "chore: disable jekyll on github pages"
-git push
