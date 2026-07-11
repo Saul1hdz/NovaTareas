@@ -1,0 +1,363 @@
+---
+const { title = 'NovaTareas Pro', theme = 'dark' } = Astro.props;
+---
+<!DOCTYPE html>
+<html lang="es" data-theme={theme}>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{title} · NovaTareas Pro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style is:global>
+    :root[data-theme="dark"] {
+      --bg: #0a0a0f;
+      --bg2: #111118;
+      --bg3: #1a1a24;
+      --border: #2a2a3a;
+      --text: #e8e8f0;
+      --text2: #8888aa;
+      --text3: #5555778;
+      --accent: #7c6af7;
+      --accent2: #a392ff;
+      --green: #22d47a;
+      --red: #ff5566;
+      --yellow: #ffcc44;
+      --orange: #ff8844;
+      --card-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      --glass: rgba(255,255,255,0.03);
+    }
+    :root[data-theme="light"] {
+      --bg: #f0f0f7;
+      --bg2: #ffffff;
+      --bg3: #e8e8f4;
+      --border: #d0d0e0;
+      --text: #1a1a2e;
+      --text2: #55557a;
+      --text3: #8888aa;
+      --accent: #6b58f0;
+      --accent2: #8470ff;
+      --green: #18b864;
+      --red: #e84455;
+      --yellow: #e6b800;
+      --orange: #e06030;
+      --card-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      --glass: rgba(0,0,0,0.02);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; scroll-behavior: smooth; }
+    body {
+      font-family: 'Syne', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      transition: background 0.3s, color 0.3s;
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    a { color: inherit; text-decoration: none; }
+    button, input, select, textarea {
+      font-family: inherit;
+      font-size: inherit;
+    }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* ── RESET BOTONES GLOBAL (evita estilos por defecto del navegador) ── */
+    button {
+      border: none;
+      background: none;
+      cursor: pointer;
+      color: inherit;
+      padding: 0;
+      margin: 0;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    /* ── BOTONES DE TAREAS ── */
+    .task-actions button {
+      font-family: inherit;
+      font-size: 0.82rem;
+      font-weight: 600;
+      border-radius: 8px !important;
+      padding: 0.6rem 1rem !important;
+      cursor: pointer;
+      border: 1.5px solid rgba(255,255,255,0.14) !important;
+      background: linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03)) !important;
+      color: var(--text2) !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      transition: all 0.2s ease !important;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+    }
+    .task-actions button:hover {
+      transform: translateY(-2px) !important;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.2) !important;
+    }
+    .task-actions .complete-btn {
+      background: linear-gradient(135deg, rgba(34,212,122,0.22), rgba(34,212,122,0.1)) !important;
+      border-color: rgba(34,212,122,0.45) !important;
+      color: #22d47a !important;
+    }
+    .task-actions .complete-btn:hover {
+      background: linear-gradient(135deg, rgba(34,212,122,0.35), rgba(34,212,122,0.18)) !important;
+      box-shadow: 0 6px 20px rgba(34,212,122,0.2) !important;
+    }
+    .task-actions .ai-btn {
+      background: linear-gradient(135deg, rgba(124,106,247,0.22), rgba(124,106,247,0.1)) !important;
+      border-color: rgba(124,106,247,0.45) !important;
+      color: #7c6af7 !important;
+    }
+    .task-actions .ai-btn:hover {
+      background: linear-gradient(135deg, rgba(124,106,247,0.35), rgba(124,106,247,0.18)) !important;
+      box-shadow: 0 6px 20px rgba(124,106,247,0.2) !important;
+    }
+    .task-actions .archive-btn {
+      background: linear-gradient(135deg, rgba(255,204,68,0.22), rgba(255,204,68,0.1)) !important;
+      border-color: rgba(255,204,68,0.45) !important;
+      color: #ffcc44 !important;
+    }
+    .task-actions .archive-btn:hover {
+      background: linear-gradient(135deg, rgba(255,204,68,0.35), rgba(255,204,68,0.18)) !important;
+      box-shadow: 0 6px 20px rgba(255,204,68,0.2) !important;
+    }
+    .task-actions .del-btn {
+      background: linear-gradient(135deg, rgba(255,85,102,0.22), rgba(255,85,102,0.1)) !important;
+      border-color: rgba(255,85,102,0.45) !important;
+      color: #ff5566 !important;
+    }
+    .task-actions .del-btn:hover {
+      background: linear-gradient(135deg, rgba(255,85,102,0.35), rgba(255,85,102,0.18)) !important;
+      box-shadow: 0 6px 20px rgba(255,85,102,0.2) !important;
+    }
+
+    /* ── BOTONES CALENDARIO ── */
+    .cal-today {
+      background: var(--bg3) !important;
+      border: 1px solid var(--border) !important;
+      color: var(--text) !important;
+      border-radius: 8px !important;
+      padding: 0.45rem 1rem !important;
+      font-size: 0.85rem !important;
+      font-weight: 700 !important;
+      transition: all 0.15s !important;
+    }
+    .cal-today:hover {
+      background: var(--accent) !important;
+      border-color: var(--accent) !important;
+      color: white !important;
+    }
+    .cal-view-btn {
+      background: transparent !important;
+      border: none !important;
+      color: var(--text2) !important;
+      padding: 0.45rem 1rem !important;
+      font-size: 0.82rem !important;
+      font-weight: 700 !important;
+      transition: all 0.15s !important;
+    }
+    .cal-view-btn.active {
+      background: var(--accent) !important;
+      color: white !important;
+    }
+    .cal-nav {
+      background: var(--bg3) !important;
+      border: 1px solid var(--border) !important;
+      color: var(--text) !important;
+      border-radius: 8px !important;
+      padding: 0.4rem 0.75rem !important;
+      font-size: 0.9rem !important;
+    }
+
+    /* ── BOTONES SIDEBAR ── */
+    .nav-item {
+      background: transparent !important;
+      border: none !important;
+      color: var(--text2) !important;
+      border-radius: 8px !important;
+      padding: 0.65rem 0.75rem !important;
+      font-weight: 600 !important;
+      font-size: 0.9rem !important;
+      text-align: left !important;
+      width: 100% !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 0.6rem !important;
+    }
+    .nav-item:hover { background: var(--bg3) !important; color: var(--text) !important; }
+    .nav-item.active { background: var(--accent) !important; color: white !important; }
+
+    .label-chip {
+      background: transparent !important;
+      border: none !important;
+      color: var(--text2) !important;
+      padding: 0.4rem 0.75rem !important;
+      border-radius: 6px !important;
+      font-size: 0.85rem !important;
+      text-align: left !important;
+      width: 100% !important;
+    }
+    .label-chip:hover { background: var(--bg3) !important; color: var(--text) !important; }
+    .label-chip.active { color: var(--accent) !important; font-weight: 600 !important; }
+
+    .theme-toggle, .logout-btn {
+      background: var(--bg3) !important;
+      border: 1px solid var(--border) !important;
+      color: var(--text2) !important;
+      border-radius: 8px !important;
+      padding: 0.5rem 0.75rem !important;
+      font-size: 0.85rem !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 0.5rem !important;
+      width: 100% !important;
+    }
+
+    /* ── FILTROS ── */
+    .filter-btn {
+      background: var(--bg3) !important;
+      border: 1px solid var(--border) !important;
+      color: var(--text2) !important;
+      border-radius: 20px !important;
+      padding: 0.35rem 0.85rem !important;
+      font-size: 0.82rem !important;
+      font-weight: 600 !important;
+    }
+    .filter-btn.active { background: var(--accent) !important; border-color: var(--accent) !important; color: white !important; }
+    .add-task-btn {
+      background: var(--accent) !important;
+      color: white !important;
+      border: none !important;
+      border-radius: 10px !important;
+      padding: 0.6rem 1.2rem !important;
+      font-weight: 700 !important;
+      font-size: 0.9rem !important;
+    }
+
+    /* ── MODAL ── */
+    .btn-primary {
+      background: var(--accent) !important;
+      color: white !important;
+      border: none !important;
+      border-radius: 8px !important;
+      padding: 0.6rem 1.2rem !important;
+      font-weight: 700 !important;
+    }
+    .btn-secondary {
+      background: var(--bg3) !important;
+      border: 1px solid var(--border) !important;
+      color: var(--text2) !important;
+      border-radius: 8px !important;
+      padding: 0.6rem 1.1rem !important;
+      font-weight: 600 !important;
+    }
+    .modal-close {
+      background: none !important;
+      border: none !important;
+      color: var(--text2) !important;
+      font-size: 1.2rem !important;
+      padding: 0.2rem !important;
+    }
+    .menu-btn {
+      background: none !important;
+      border: none !important;
+      color: var(--text2) !important;
+      font-size: 1.3rem !important;
+      padding: 0.25rem !important;
+    }
+    .task-check {
+      background: rgba(255,255,255,0.03) !important;
+      border: 1px solid rgba(255,255,255,0.08) !important;
+      border-radius: 8px !important;
+      width: 28px !important;
+      height: 28px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      flex-shrink: 0 !important;
+      font-size: 0.95rem !important;
+      font-weight: 700 !important;
+    }
+    .task-card.done .task-check {
+      background: #22d47a !important;
+      border-color: #22d47a !important;
+      color: white !important;
+    }
+
+    /* ── AGENDA ── */
+    .hidden { display: none !important; }
+    .agenda-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      padding: 0.5rem 1.25rem 1rem;
+    }
+    .agenda-item {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.9rem 1rem;
+    }
+    .agenda-item-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.4rem; }
+    .agenda-item-meta { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.4rem; font-size: 0.8rem; color: var(--text2); align-items: center; }
+
+    /* ── CALENDARIO TOOLBAR ── */
+    .cal-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1.25rem 1rem;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1rem;
+    }
+    .cal-view-toggle {
+      display: flex;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .cal-sync {
+      background: var(--accent) !important;
+      color: white !important;
+      border: none !important;
+      border-radius: 999px !important;
+      padding: 0.55rem 0.9rem !important;
+      font-size: 0.82rem !important;
+      font-weight: 700 !important;
+    }
+    .cal-sync-status {
+      background: rgba(66,133,244,0.12) !important;
+      color: #4285F4 !important;
+      border: 1px solid rgba(66,133,244,0.22) !important;
+      border-radius: 999px !important;
+      padding: 0.55rem 0.9rem !important;
+      font-size: 0.82rem !important;
+      font-weight: 700 !important;
+    }
+    .panel-toggle {
+      background: var(--bg3) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 999px !important;
+      padding: 0.45rem 0.85rem !important;
+      color: var(--text2) !important;
+      font-size: 0.82rem !important;
+    }
+  </style>
+</head>
+<body>
+  <slot />
+  <script>
+    // Persist theme in localStorage
+    const saved = localStorage.getItem('nt-theme');
+    if (saved && document.documentElement.getAttribute('data-theme') !== saved) {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  </script>
+</body>
+</html>

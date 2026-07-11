@@ -1,0 +1,245 @@
+---
+import Base from '../layouts/Base.astro';
+import { getUser } from '../lib/auth.js';
+import { getDb } from '../lib/db.js';
+
+const session = await getUser(Astro.request);
+if (!session) return Astro.redirect('/');
+
+const db = getDb();
+const user = db.prepare('SELECT id, full_name, email, telefono, user_type, avatar_url, telegram_chat_id, theme FROM users WHERE id = ?').get(session.userId);
+const theme = user?.theme || 'dark';
+
+const USER_TYPE_LABELS = { estudiante: '🎓 Estudiante', empleado: '💼 Empleado', comun: '👤 Usuario común' };
+---
+
+<Base title="Mi Perfil" theme={theme}>
+  <div class="profile-page">
+
+    <div class="profile-header">
+      <a href="/dashboard" class="back-btn">← Volver</a>
+      <h1>Mi Perfil</h1>
+    </div>
+
+    <!-- Avatar -->
+    <section class="profile-card avatar-section">
+      <div class="avatar-wrap" id="avatar-wrap">
+        {user?.avatar_url
+          ? <img src={user.avatar_url} alt="Avatar" class="avatar-img" id="avatar-preview" />
+          : <div class="avatar-placeholder" id="avatar-preview">{user?.full_name?.[0]?.toUpperCase() || '?'}</div>
+        }
+        <label class="avatar-edit-btn" for="avatar-input" title="Cambiar foto">✎</label>
+        <input type="file" id="avatar-input" accept="image/*" style="display:none" onchange="uploadAvatar(event)" />
+      </div>
+      <div class="avatar-info">
+        <div class="avatar-name">{user?.full_name}</div>
+        <div class="avatar-type">{USER_TYPE_LABELS[user?.user_type] || 'Usuario'}</div>
+        <div class="avatar-email">{user?.email}</div>
+      </div>
+      <div id="avatar-msg" class="msg"></div>
+    </section>
+
+    <!-- Datos personales -->
+    <section class="profile-card">
+      <h2>Información personal</h2>
+      <form id="form-profile" onsubmit="saveProfile(event)">
+        <div class="field">
+          <label>Nombre completo</label>
+          <input type="text" name="full_name" value={user?.full_name || ''} placeholder="Tu nombre" required />
+        </div>
+        <div class="field">
+          <label>Correo electrónico</label>
+          <input type="email" value={user?.email || ''} disabled class="disabled" />
+          <small class="hint">El correo no puede modificarse.</small>
+        </div>
+        <div class="field">
+          <label>Teléfono</label>
+          <input type="tel" name="telefono" value={user?.telefono || ''} placeholder="+50312345678" />
+        </div>
+        <div class="field">
+          <label>Tipo de usuario</label>
+          <select name="user_type">
+            <option value="estudiante" selected={user?.user_type === 'estudiante'}>🎓 Estudiante</option>
+            <option value="empleado" selected={user?.user_type === 'empleado'}>💼 Empleado</option>
+            <option value="comun" selected={user?.user_type === 'comun'}>👤 Usuario común</option>
+          </select>
+        </div>
+        <div id="profile-msg" class="msg"></div>
+        <button type="submit" class="btn-primary">Guardar cambios</button>
+      </form>
+    </section>
+
+    <!-- Cambiar contraseña -->
+    <section class="profile-card">
+      <h2>Cambiar contraseña</h2>
+      <form id="form-password" onsubmit="savePassword(event)">
+        <div class="field">
+          <label>Nueva contraseña</label>
+          <input type="password" name="password" placeholder="Mín. 8 caracteres con letras y números" />
+        </div>
+        <div id="password-msg" class="msg"></div>
+        <button type="submit" class="btn-primary">Actualizar contraseña</button>
+      </form>
+    </section>
+
+    <!-- Telegram -->
+    <section class="profile-card">
+      <h2>Telegram</h2>
+      {user?.telegram_chat_id ? (
+        <div class="telegram-ok">
+          <span>✅ Cuenta vinculada a Telegram.</span>
+          <small>Para desvincular escribe <code>/desvincular</code> en el bot.</small>
+        </div>
+      ) : (
+        <div class="telegram-pending">
+          <p>❌ Aún no has vinculado tu cuenta de Telegram.</p>
+          <p>Para recibir recordatorios de tareas:</p>
+          <ol>
+            <li>Busca <strong>@NovasTareasBot</strong> en Telegram</li>
+            <li>Escribe: <code>/vincular {user?.email} tu_contraseña</code></li>
+          </ol>
+        </div>
+      )}
+    </section>
+
+  </div>
+</Base>
+
+<style>
+.profile-page { max-width: 600px; margin: 0 auto; padding: 2rem 1rem; }
+.profile-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+.profile-header h1 { font-size: 1.5rem; font-weight: 800; }
+.back-btn {
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); border-radius: 8px; padding: 0.45rem 0.9rem;
+  font-size: 0.85rem; cursor: pointer; text-decoration: none;
+  transition: all 0.15s;
+}
+.back-btn:hover { color: var(--text); }
+.profile-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 16px; padding: 1.5rem; margin-bottom: 1.25rem;
+}
+h2 { font-size: 1rem; font-weight: 700; margin-bottom: 1.25rem; color: var(--text2); }
+.avatar-section { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+.avatar-wrap { position: relative; flex-shrink: 0; }
+.avatar-img { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid var(--accent); }
+.avatar-placeholder {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: var(--accent); color: white;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2rem; font-weight: 800;
+}
+.avatar-edit-btn {
+  position: absolute; bottom: 0; right: 0;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 50%; width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.8rem; cursor: pointer; transition: all 0.15s;
+}
+.avatar-edit-btn:hover { background: var(--accent); color: white; }
+.avatar-info { flex: 1; }
+.avatar-name { font-size: 1.1rem; font-weight: 700; }
+.avatar-type { font-size: 0.85rem; color: var(--accent); margin: 0.2rem 0; }
+.avatar-email { font-size: 0.82rem; color: var(--text3); }
+.field { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.85rem; }
+.field label { font-size: 0.75rem; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; }
+.field input, .field select {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.65rem 0.9rem; color: var(--text); outline: none;
+  transition: border-color 0.2s;
+}
+.field input:focus, .field select:focus { border-color: var(--accent); }
+.disabled { opacity: 0.5; cursor: not-allowed; }
+.hint { font-size: 0.75rem; color: var(--text3); }
+.msg { font-size: 0.82rem; min-height: 1.2em; margin-bottom: 0.5rem; }
+.msg.ok { color: var(--green); }
+.msg.err { color: var(--red); }
+.btn-primary {
+  background: var(--accent) !important; color: white !important;
+  border: none !important; border-radius: 8px !important;
+  padding: 0.65rem 1.25rem !important; font-weight: 700; cursor: pointer;
+}
+.telegram-ok { display: flex; flex-direction: column; gap: 0.4rem; color: var(--green); }
+.telegram-pending { display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.9rem; color: var(--text2); }
+.telegram-pending ol { padding-left: 1.25rem; }
+code { background: var(--bg3); padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.85em; }
+</style>
+
+<script>
+async function uploadAvatar(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const formData = new FormData();
+  formData.append('avatar', file);
+
+  const res = await fetch('/api/profile', { method: 'PUT', body: formData });
+  const data = await res.json();
+  const msg = document.getElementById('avatar-msg');
+
+  if (data.ok) {
+    msg.textContent = '✅ Foto actualizada';
+    msg.className = 'msg ok';
+    const preview = document.getElementById('avatar-preview');
+    if (preview.tagName === 'IMG') {
+      preview.src = data.avatar_url + '?t=' + Date.now();
+    } else {
+      const img = document.createElement('img');
+      img.src = data.avatar_url;
+      img.className = 'avatar-img';
+      img.id = 'avatar-preview';
+      preview.replaceWith(img);
+    }
+  } else {
+    msg.textContent = '❌ ' + (data.error || 'Error al subir imagen');
+    msg.className = 'msg err';
+  }
+}
+
+async function saveProfile(e) {
+  e.preventDefault();
+  const form = e.target;
+  const msg = document.getElementById('profile-msg');
+  msg.textContent = '';
+
+  const res = await fetch('/api/profile', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      full_name: form.full_name.value,
+      telefono: form.telefono.value,
+      user_type: form.user_type.value,
+    })
+  });
+  const data = await res.json();
+  if (data.ok) { msg.textContent = '✅ Perfil actualizado'; msg.className = 'msg ok'; }
+  else { msg.textContent = '❌ ' + (data.error || 'Error'); msg.className = 'msg err'; }
+}
+
+async function savePassword(e) {
+  e.preventDefault();
+  const form = e.target;
+  const msg = document.getElementById('password-msg');
+  msg.textContent = '';
+
+  const password = form.password.value;
+  if (!/^(?=.*[a-zA-Z])(?=.*\d).{8,}$/.test(password)) {
+    msg.textContent = '❌ Mínimo 8 caracteres con letras y números.';
+    msg.className = 'msg err'; return;
+  }
+
+  const res = await fetch('/api/profile', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  const data = await res.json();
+  if (data.ok) { msg.textContent = '✅ Contraseña actualizada'; msg.className = 'msg ok'; form.reset(); }
+  else { msg.textContent = '❌ ' + (data.error || 'Error'); msg.className = 'msg err'; }
+}
+
+window.uploadAvatar = uploadAvatar;
+window.saveProfile = saveProfile;
+window.savePassword = savePassword;
+</script>

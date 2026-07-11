@@ -1,0 +1,41 @@
+# ── Entorno y secretos ────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── Base de datos ──────────────────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# ── Dependencias ───────────────────────────────────────────────
+node_modules/
+
+# ── Build de Astro ─────────────────────────────────────────────
+dist/
+.astro/
+
+# ── Logs ───────────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+
+# ── Sistema operativo ──────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Editores ───────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Tests ──────────────────────────────────────────────────────
+coverage/
+.vitest-cache/
+
+# ── Uploads y archivos temporales ─────────────────────────────
+uploads/
+tmp/

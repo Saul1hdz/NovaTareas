@@ -1,0 +1,492 @@
+---
+import Base from '../layouts/Base.astro';
+import { getUser } from '../lib/auth.js';
+
+const user = await getUser(Astro.request);
+if (user) return Astro.redirect('/dashboard');
+---
+<Base title="Iniciar sesión">
+  <div class="auth-page">
+    <div class="auth-bg">
+      <div class="orb orb1"></div>
+      <div class="orb orb2"></div>
+      <div class="grid-lines"></div>
+    </div>
+    <div class="auth-card" id="auth-card">
+
+      <div class="logo">
+        <span class="logo-icon">✦</span>
+        <span>NovaTareas</span>
+        <span class="logo-pro">PRO</span>
+      </div>
+
+      <!-- ── TABS ── -->
+      <div class="tabs" id="main-tabs">
+        <button class="tab active" id="tab-login" onclick="switchTab('login')">Iniciar sesión</button>
+        <button class="tab" id="tab-register" onclick="switchTab('register')">Registrarse</button>
+      </div>
+
+      <!-- ══ LOGIN ══ -->
+      <form id="form-login" class="auth-form active" onsubmit="handleLogin(event)">
+        <div class="field">
+          <label>Correo electrónico</label>
+          <input type="email" name="email" placeholder="correo@ejemplo.com" required autocomplete="email" />
+        </div>
+        <div class="field">
+          <label>Contraseña</label>
+          <input type="password" name="password" placeholder="••••••••" required autocomplete="current-password" />
+        </div>
+        <div id="login-error" class="error-msg"></div>
+        <button type="submit" class="btn-primary">Entrar →</button>
+        <button type="button" class="btn-link" onclick="switchTab('recover')">¿Olvidaste tu contraseña?</button>
+      </form>
+
+      <!-- ══ REGISTRO ══ -->
+      <form id="form-register" class="auth-form" onsubmit="handleRegister(event)">
+        <div class="field">
+          <label>Nombre completo <span class="req">*</span></label>
+          <input type="text" name="full_name" placeholder="Juan Pérez" required autocomplete="name" />
+        </div>
+        <div class="field">
+          <label>Correo electrónico <span class="req">*</span></label>
+          <input type="email" name="email" placeholder="correo@ejemplo.com" required autocomplete="email" />
+        </div>
+        <div class="field">
+          <label>Teléfono <span class="req">*</span></label>
+          <input type="tel" name="telefono" placeholder="+50312345678" required autocomplete="tel" />
+          <small class="hint">Formato internacional, ej: +50312345678</small>
+        </div>
+        <div class="field">
+          <label>Contraseña <span class="req">*</span></label>
+          <input type="password" name="password" placeholder="Mín. 8 caracteres con letras y números" required autocomplete="new-password" />
+        </div>
+        <div class="field">
+          <label>Tipo de usuario <span class="req">*</span></label>
+          <select name="user_type" required>
+            <option value="" disabled selected>Selecciona una opción</option>
+            <option value="estudiante">🎓 Estudiante</option>
+            <option value="empleado">💼 Empleado</option>
+            <option value="comun">👤 Usuario común</option>
+          </select>
+        </div>
+
+        <div class="security-section">
+          <div class="security-title">🔐 Preguntas de seguridad</div>
+          <small class="hint">Se usarán para recuperar tu contraseña si la olvidas.</small>
+
+          <div class="field" style="margin-top:0.75rem">
+            <label>Pregunta 1 <span class="req">*</span></label>
+            <select name="q1_index" id="q1_select" required onchange="filterQ2()">
+              <option value="" disabled selected>Elige una pregunta</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Tu respuesta <span class="req">*</span></label>
+            <input type="text" name="q1_answer" placeholder="Tu respuesta..." required autocomplete="off" />
+          </div>
+
+          <div class="field">
+            <label>Pregunta 2 <span class="req">*</span></label>
+            <select name="q2_index" id="q2_select" required onchange="filterQ1()">
+              <option value="" disabled selected>Elige una pregunta</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Tu respuesta <span class="req">*</span></label>
+            <input type="text" name="q2_answer" placeholder="Tu respuesta..." required autocomplete="off" />
+          </div>
+        </div>
+
+        <div id="register-error" class="error-msg"></div>
+        <button type="submit" class="btn-primary">Crear cuenta →</button>
+      </form>
+
+      <!-- ══ RECUPERAR CONTRASEÑA ══ -->
+      <div id="form-recover" class="auth-form">
+
+        <!-- Paso 1: ingresar correo -->
+        <div id="recover-step-email">
+          <p class="recover-info">Ingresa tu correo y responde tus preguntas de seguridad para restablecer tu contraseña.</p>
+          <div class="field">
+            <label>Correo electrónico</label>
+            <input type="email" id="recover-email" placeholder="correo@ejemplo.com" required />
+          </div>
+          <div id="recover-error-email" class="error-msg"></div>
+          <button class="btn-primary" onclick="startRecovery()">Continuar →</button>
+          <button type="button" class="btn-link" onclick="switchTab('login')">← Volver al login</button>
+        </div>
+
+        <!-- Paso 2: responder preguntas -->
+        <div id="recover-step-question" style="display:none">
+          <div class="recover-question-box">
+            <div class="recover-q-label">Pregunta de seguridad</div>
+            <div class="recover-q-text" id="recover-question-text"></div>
+          </div>
+          <div class="field">
+            <label>Tu respuesta</label>
+            <input type="text" id="recover-answer" placeholder="Escribe tu respuesta..." autocomplete="off" />
+          </div>
+          <div class="recover-attempts" id="recover-attempts"></div>
+          <div id="recover-error-question" class="error-msg"></div>
+          <button class="btn-primary" onclick="checkAnswer()">Verificar →</button>
+        </div>
+
+        <!-- Paso 3: nueva contraseña -->
+        <div id="recover-step-password" style="display:none">
+          <p class="recover-info" style="color:var(--green)">✅ Identidad verificada. Crea tu nueva contraseña.</p>
+          <div class="field">
+            <label>Nueva contraseña</label>
+            <input type="password" id="recover-new-password" placeholder="Mín. 8 caracteres con letras y números" />
+          </div>
+          <div id="recover-error-password" class="error-msg"></div>
+          <button class="btn-primary" onclick="resetPassword()">Restablecer contraseña →</button>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</Base>
+
+<style>
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  padding: 2rem 1rem;
+}
+.auth-bg { position: fixed; inset: 0; pointer-events: none; }
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.15;
+}
+.orb1 { width: 500px; height: 500px; background: var(--accent); top: -100px; left: -100px; animation: float 8s ease-in-out infinite; }
+.orb2 { width: 400px; height: 400px; background: var(--green); bottom: -100px; right: -100px; animation: float 10s ease-in-out infinite reverse; }
+.grid-lines {
+  position: absolute; inset: 0;
+  background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 48px 48px; opacity: 0.3;
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-30px) scale(1.05); }
+}
+.auth-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2rem 2rem 2.5rem;
+  width: 100%;
+  max-width: 460px;
+  position: relative;
+  z-index: 1;
+  box-shadow: var(--card-shadow);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.logo {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 1.5rem; font-weight: 800; margin-bottom: 1.5rem; justify-content: center;
+}
+.logo-icon { color: var(--accent); font-size: 1.8rem; }
+.logo-pro {
+  font-size: 0.65rem; background: var(--accent); color: white;
+  padding: 2px 6px; border-radius: 4px; font-weight: 700;
+  letter-spacing: 0.05em; align-self: flex-start; margin-top: 4px;
+}
+.tabs {
+  display: flex; gap: 0; background: var(--bg3);
+  border-radius: 10px; padding: 4px; margin-bottom: 1.5rem;
+}
+.tab {
+  flex: 1; padding: 0.6rem; border: none !important;
+  background: transparent !important; color: var(--text2) !important;
+  border-radius: 8px !important; cursor: pointer; font-weight: 600;
+  font-size: 0.9rem; transition: all 0.2s;
+}
+.tab.active { background: var(--bg2) !important; color: var(--text) !important; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+.auth-form { display: none; flex-direction: column; gap: 0.85rem; }
+.auth-form.active { display: flex; }
+.field { display: flex; flex-direction: column; gap: 0.35rem; }
+.field label {
+  font-size: 0.78rem; font-weight: 700; color: var(--text2);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.field input, .field select {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 10px; padding: 0.75rem 1rem; color: var(--text);
+  outline: none; transition: border-color 0.2s;
+}
+.field input:focus, .field select:focus { border-color: var(--accent); }
+.hint { font-size: 0.75rem; color: var(--text3); }
+.req { color: var(--red); }
+.error-msg { color: var(--red); font-size: 0.82rem; min-height: 1em; }
+.btn-primary {
+  background: var(--accent) !important; color: white !important;
+  border: none !important; border-radius: 10px !important;
+  padding: 0.8rem !important; font-weight: 700; font-size: 1rem;
+  cursor: pointer; transition: opacity 0.2s, transform 0.1s; margin-top: 0.25rem;
+}
+.btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+.btn-link {
+  background: none !important; border: none !important;
+  color: var(--accent) !important; font-size: 0.85rem;
+  cursor: pointer; text-align: center; padding: 0.25rem !important;
+  text-decoration: underline;
+}
+.security-section {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem;
+}
+.security-title { font-size: 0.85rem; font-weight: 700; color: var(--text); }
+.recover-info { font-size: 0.88rem; color: var(--text2); line-height: 1.5; }
+.recover-question-box {
+  background: var(--bg3); border: 1px solid var(--accent);
+  border-radius: 10px; padding: 1rem;
+}
+.recover-q-label { font-size: 0.72rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem; }
+.recover-q-text { font-size: 0.95rem; color: var(--text); font-weight: 600; line-height: 1.4; }
+.recover-attempts { font-size: 0.78rem; color: var(--text3); }
+</style>
+
+<script>
+const QUESTIONS = [
+  '¿Cuál fue el nombre de tu primera mascota?',
+  '¿En qué ciudad o pueblo nació tu madre?',
+  '¿Cuál era el apellido de tu maestro favorito de la escuela?',
+  '¿Cuál fue el nombre de la primera escuela a la que asististe?',
+  '¿Cuál era el apodo que tenía tu familia para ti cuando eras niño?',
+  '¿Cuál fue el nombre de tu mejor amigo de la infancia?',
+  '¿Cuál fue el primer videojuego que recuerdas haber jugado?',
+  '¿Cuál era el nombre de la calle donde viviste durante tu infancia?',
+  '¿Cuál fue el primer concierto o evento al que asististe?',
+  '¿Cuál era el nombre de tu personaje favorito cuando eras niño?',
+];
+
+// Poblar selects de preguntas
+function populateQuestions() {
+  const q1 = document.getElementById('q1_select');
+  const q2 = document.getElementById('q2_select');
+  if (!q1 || !q2) return;
+
+  QUESTIONS.forEach((q, i) => {
+    q1.add(new Option(q, i));
+    q2.add(new Option(q, i));
+  });
+}
+
+function filterQ2() {
+  const q1Val = document.getElementById('q1_select').value;
+  const q2 = document.getElementById('q2_select');
+  Array.from(q2.options).forEach(opt => {
+    opt.disabled = opt.value === q1Val && opt.value !== '';
+  });
+  if (q2.value === q1Val) q2.value = '';
+}
+
+function filterQ1() {
+  const q2Val = document.getElementById('q2_select').value;
+  const q1 = document.getElementById('q1_select');
+  Array.from(q1.options).forEach(opt => {
+    opt.disabled = opt.value === q2Val && opt.value !== '';
+  });
+  if (q1.value === q2Val) q1.value = '';
+}
+
+function switchTab(tab) {
+  ['login','register','recover'].forEach(t => {
+    document.getElementById('tab-login')?.classList.toggle('active', t === 'login' && tab === 'login');
+    document.getElementById('tab-register')?.classList.toggle('active', t === 'register' && tab === 'register');
+    const form = document.getElementById('form-' + t);
+    if (form) form.classList.toggle('active', t === tab);
+  });
+
+  const tabs = document.getElementById('main-tabs');
+  if (tabs) tabs.style.display = tab === 'recover' ? 'none' : '';
+}
+
+// ── LOGIN ──────────────────────────────────────────────────────────────────
+async function handleLogin(e) {
+  e.preventDefault();
+  const form = e.target;
+  const btn = form.querySelector('button[type=submit]');
+  const err = document.getElementById('login-error');
+  btn.disabled = true; btn.textContent = 'Entrando...'; err.textContent = '';
+
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: form.email.value, password: form.password.value })
+    });
+    const data = await res.json();
+    if (data.ok) { window.location.href = '/dashboard'; }
+    else { err.textContent = data.error || 'Error al iniciar sesión'; }
+  } catch { err.textContent = 'Error de red'; }
+  btn.disabled = false; btn.textContent = 'Entrar →';
+}
+
+// ── REGISTRO ───────────────────────────────────────────────────────────────
+async function handleRegister(e) {
+  e.preventDefault();
+  const form = e.target;
+  const btn = form.querySelector('button[type=submit]');
+  const err = document.getElementById('register-error');
+  btn.disabled = true; btn.textContent = 'Creando...'; err.textContent = '';
+
+  const telefono = form.telefono.value.trim();
+  const phoneRegex = /^\+?[1-9]\d{6,14}$/;
+  if (!phoneRegex.test(telefono)) {
+    err.textContent = 'Teléfono inválido. Usa formato internacional, ej: +50312345678';
+    btn.disabled = false; btn.textContent = 'Crear cuenta →'; return;
+  }
+
+  const pwd = form.password.value;
+  if (!/^(?=.*[a-zA-Z])(?=.*\d).{8,}$/.test(pwd)) {
+    err.textContent = 'La contraseña debe tener mínimo 8 caracteres, incluir letras y números.';
+    btn.disabled = false; btn.textContent = 'Crear cuenta →'; return;
+  }
+
+  const q1 = form.q1_index.value;
+  const q2 = form.q2_index.value;
+  if (!q1 || !q2) {
+    err.textContent = 'Selecciona las dos preguntas de seguridad.';
+    btn.disabled = false; btn.textContent = 'Crear cuenta →'; return;
+  }
+  if (q1 === q2) {
+    err.textContent = 'Las dos preguntas deben ser diferentes.';
+    btn.disabled = false; btn.textContent = 'Crear cuenta →'; return;
+  }
+
+  try {
+    const res = await fetch('/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        full_name: form.full_name.value,
+        email: form.email.value,
+        telefono,
+        password: pwd,
+        user_type: form.user_type.value,
+        q1_index: Number(q1),
+        q1_answer: form.q1_answer.value,
+        q2_index: Number(q2),
+        q2_answer: form.q2_answer.value,
+      })
+    });
+    const data = await res.json();
+    if (data.ok) { window.location.href = '/dashboard'; }
+    else { err.textContent = data.error || 'Error al registrarse'; }
+  } catch { err.textContent = 'Error de red'; }
+  btn.disabled = false; btn.textContent = 'Crear cuenta →';
+}
+
+// ── RECUPERACIÓN ───────────────────────────────────────────────────────────
+let recoverEmail = '';
+let recoverQuestionIndex = null;
+let recoverToken = '';
+
+async function startRecovery() {
+  const email = document.getElementById('recover-email').value.trim();
+  const err = document.getElementById('recover-error-email');
+  err.textContent = '';
+
+  if (!email) { err.textContent = 'Ingresa tu correo.'; return; }
+
+  const res = await fetch('/api/auth/recover', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'get_question', email })
+  });
+  const data = await res.json();
+
+  if (!data.ok) { err.textContent = data.error; return; }
+
+  recoverEmail = email;
+  recoverQuestionIndex = data.question_index;
+  document.getElementById('recover-question-text').textContent = data.question;
+  document.getElementById('recover-attempts').textContent = `Intentos restantes: ${data.attempts_left}`;
+  document.getElementById('recover-step-email').style.display = 'none';
+  document.getElementById('recover-step-question').style.display = '';
+}
+
+async function checkAnswer() {
+  const answer = document.getElementById('recover-answer').value.trim();
+  const err = document.getElementById('recover-error-question');
+  err.textContent = '';
+
+  if (!answer) { err.textContent = 'Escribe tu respuesta.'; return; }
+
+  const res = await fetch('/api/auth/recover', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'check_answer', email: recoverEmail, answer, question_index: recoverQuestionIndex })
+  });
+  const data = await res.json();
+
+  if (data.deleted) {
+    document.getElementById('recover-step-question').style.display = 'none';
+    err.textContent = data.error;
+    return;
+  }
+
+  if (!data.ok) {
+    // Respuesta incorrecta, mostrar siguiente pregunta
+    if (data.next_question) {
+      recoverQuestionIndex = data.next_question_index;
+      document.getElementById('recover-question-text').textContent = data.next_question;
+      document.getElementById('recover-attempts').textContent = `Intentos restantes: ${data.attempts_left}`;
+      document.getElementById('recover-answer').value = '';
+    }
+    err.textContent = data.message || data.error;
+    return;
+  }
+
+  // Correcto
+  recoverToken = data.recovery_token;
+  document.getElementById('recover-step-question').style.display = 'none';
+  document.getElementById('recover-step-password').style.display = '';
+}
+
+async function resetPassword() {
+  const pwd = document.getElementById('recover-new-password').value;
+  const err = document.getElementById('recover-error-password');
+  err.textContent = '';
+
+  if (!/^(?=.*[a-zA-Z])(?=.*\d).{8,}$/.test(pwd)) {
+    err.textContent = 'Mínimo 8 caracteres con letras y números.'; return;
+  }
+
+  const res = await fetch('/api/auth/recover', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'reset_password', token: recoverToken, new_password: pwd })
+  });
+  const data = await res.json();
+
+  if (data.ok) {
+    alert('✅ Contraseña restablecida. Ahora puedes iniciar sesión.');
+    switchTab('login');
+    document.getElementById('main-tabs').style.display = '';
+  } else {
+    err.textContent = data.error;
+  }
+}
+
+// Init
+window.switchTab = switchTab;
+window.handleLogin = handleLogin;
+window.handleRegister = handleRegister;
+window.startRecovery = startRecovery;
+window.checkAnswer = checkAnswer;
+window.resetPassword = resetPassword;
+window.filterQ1 = filterQ1;
+window.filterQ2 = filterQ2;
+
+populateQuestions();
+</script>
