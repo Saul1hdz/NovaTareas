@@ -2,13 +2,13 @@
   "name": "novatareas-pro",
   "type": "module",
   "scripts": {
-  "dev": "astro dev",
-  "build": "astro build",
-  "preview": "astro preview",
-  "start": "astro start",
-  "bot:dev": "node --experimental-sqlite telegram/bot.js",
-  "bot:scheduler": "node --experimental-sqlite telegram/scheduler.js"
-},
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "start": "astro start",
+    "bot:dev": "node --experimental-sqlite telegram/bot.js",
+    "bot:scheduler": "node --experimental-sqlite telegram/scheduler.js"
+  },
   "dependencies": {
     "@astrojs/node": "^8.0.0",
     "@astrojs/react": "^3.0.0",
@@ -16,6 +16,7 @@
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^9.0.0",
     "dotenv": "^16.0.0",
+    "googleapis": "^173.0.0",
     "jose": "^6.2.3",
     "react": "^18.0.0",
     "react-dom": "^18.0.0"
