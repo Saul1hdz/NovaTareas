@@ -4,6 +4,7 @@
 .env.*.local
 .env.example
 
+
 # ── Base de datos ──────────────────────────────────────────────
 *.db
 *.db-shm
