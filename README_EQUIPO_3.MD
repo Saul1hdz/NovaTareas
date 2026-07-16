@@ -188,7 +188,7 @@ https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://abc123.ngrok.io/api/t
 
 ```env
 # ── OBLIGATORIAS ──────────────────────────────────────────────
-GEMINI_API_KEY=          # API key de Google AI Studio (sin esto la IA no funciona)
+ZAI_API_KEY=          # API key de Google AI Studio (sin esto la IA no funciona)
 TELEGRAM_BOT_TOKEN=      # Token del bot de @BotFather (sin esto el bot no responde)
 SECRET_KEY=              # Cadena secreta para firmar JWT (sin esto nadie puede iniciar sesión)
 
