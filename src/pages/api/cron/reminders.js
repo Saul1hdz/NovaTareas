@@ -8,8 +8,12 @@ const REMINDER_WINDOW_MIN = Number(process.env.REMINDER_WINDOW_MINUTES) || 30;
 
 export async function GET({ request }) {
   // ── Verificar secret ───────────────────────────────────────────────────────
-  const url    = new URL(request.url);
-  const secret = url.searchParams.get('secret');
+  // Antes iba como ?secret=... en la URL, lo cual queda expuesto en logs de
+  // servidor y de cualquier proxy intermedio. Ahora se espera como header:
+  //   Authorization: Bearer <CRON_SECRET>
+  const authHeader = request.headers.get('authorization') || '';
+  const match       = authHeader.match(/^Bearer\s+(.+)$/i);
+  const secret      = match ? match[1] : null;
 
   if (CRON_SECRET && secret !== CRON_SECRET) {
     return new Response(JSON.stringify({ error: 'No autorizado' }), { status: 401 });

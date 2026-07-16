@@ -1,11 +1,34 @@
-
-
 import { getDb }                         from '../../../../lib/db.js';
 import { getUser }                       from '../../../../lib/auth.js';
 import { getRagContext, reindexTask }    from '../../../../lib/rag.js';
 
 const OLLAMA_URL   = process.env.OLLAMA_URL   || 'http://localhost:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b';
+const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
+const ZAI_URL      = 'https://api.z.ai/api/paas/v4/chat/completions';
+const ZAI_MODEL    = process.env.ZAI_MODEL || 'glm-5.2';
+
+// ── Rate limiting simple en memoria ──────────────────────────────────────────
+// Cada llamada exitosa a z.ai cuesta saldo real. Sin este límite, un usuario
+// (o un bug en el frontend que reintente en bucle) puede agotar la cuenta.
+// Es en memoria porque basta para un solo proceso; si se despliega con varias
+// instancias, reemplazar por un store compartido (Redis, tabla en SQLite, etc.)
+const RATE_LIMIT_MAX    = Number(process.env.AI_RATE_LIMIT_MAX)    || 5;  // llamadas
+const RATE_LIMIT_WINDOW = Number(process.env.AI_RATE_LIMIT_WINDOW) || 5 * 60 * 1000; // ms (5 min)
+const rateLimitLog = new Map(); // userId -> [timestamps]
+
+function isRateLimited(userId) {
+  const now   = Date.now();
+  const calls = (rateLimitLog.get(userId) || []).filter(t => now - t < RATE_LIMIT_WINDOW);
+  rateLimitLog.set(userId, calls);
+  return calls.length >= RATE_LIMIT_MAX;
+}
+
+function registerCall(userId) {
+  const calls = rateLimitLog.get(userId) || [];
+  calls.push(Date.now());
+  rateLimitLog.set(userId, calls);
+}
 
 export const POST = async ({ request, params }) => {
   const user = await getUser(request);
@@ -15,9 +38,15 @@ export const POST = async ({ request, params }) => {
   const task = db.prepare('SELECT * FROM tasks WHERE id=? AND user_id=?').get(params.id, user.userId);
   if (!task) return json({ error: 'No encontrado' }, 404);
 
+  if (isRateLimited(user.userId)) {
+    return json({
+      error: `Límite de ${RATE_LIMIT_MAX} recomendaciones cada ${RATE_LIMIT_WINDOW / 60000} minutos alcanzado. Intenta de nuevo más tarde.`
+    }, 429);
+  }
+  registerCall(user.userId);
+
   const userRecord = db.prepare('SELECT user_type FROM users WHERE id=?').get(user.userId);
   const userType   = userRecord?.user_type || 'comun';
-  const geminiKey  = process.env.GEMINI_API_KEY?.trim();
 
   // ── RAG: recuperar contexto del historial del usuario ─────────────────────
   // Esta operación indexa tareas sin embedding al vuelo y busca las similares.
@@ -29,9 +58,9 @@ export const POST = async ({ request, params }) => {
   // ── Construir prompt (con o sin contexto RAG) ─────────────────────────────
   const prompt = buildPrompt(task, userType, ragContext);
 
-  // ── 1. Gemini con contexto RAG ────────────────────────────────────────────
-  if (geminiKey) {
-    const text = await tryGemini(prompt, geminiKey);
+  // ── 1. z.ai con contexto RAG ──────────────────────────────────────────────
+  if (ZAI_API_KEY) {
+    const text = await tryZai(prompt);
     if (text) return saveAndReturn(db, params.id, text, hasRag);
   }
 
@@ -92,35 +121,50 @@ function buildPrompt(task, userType, ragContext) {
 
 // ─── Capas de LLM ─────────────────────────────────────────────────────────────
 
-async function tryGemini(prompt, geminiKey) {
-  const models = ['gemini-2.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
-  for (const model of models) {
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(geminiKey)}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { maxOutputTokens: 2048, temperature: 0.7 }
-          })
-        }
-      );
-      if (response.status === 429 || response.status === 403 || response.status === 404) continue;
-      if (!response.ok) continue;
-      const data = await response.json().catch(() => null);
-      const text = (
-        data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-        data?.candidates?.[0]?.content?.text || ''
-      ).trim();
-      if (text) return text;
-    } catch { continue; }
+async function tryZai(prompt) {
+  try {
+    const response = await fetch(ZAI_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${ZAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: ZAI_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 700,
+        temperature: 0.7
+      }),
+      signal: AbortSignal.timeout(45000)
+    });
+
+    if (!response.ok) {
+      console.error('[Z.AI] Error:', response.status, await response.text().catch(() => ''));
+      return null;
+    }
+
+    const data = await response.json().catch(() => null);
+    return trimToCompleteSentence(data?.choices?.[0]?.message?.content?.trim() || null);
+  } catch (e) {
+    console.error('[Z.AI] Excepción:', e.message);
+    return null;
   }
-  return null;
+}
+
+async function isOllamaUp() {
+  try {
+    const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(1500) });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 async function tryOllama(prompt) {
+  // Chequeo rápido: si Ollama no responde en 1.5s, ni lo intentamos.
+  // Evita esperar 20s a un timeout cuando Ollama no está corriendo.
+  if (!(await isOllamaUp())) return null;
+
   try {
     const response = await fetch(`${OLLAMA_URL}/api/generate`, {
       method: 'POST',
@@ -135,8 +179,23 @@ async function tryOllama(prompt) {
     });
     if (!response.ok) return null;
     const data = await response.json().catch(() => null);
-    return data?.response?.trim() || null;
+    return trimToCompleteSentence(data?.response?.trim() || null);
   } catch { return null; }
+}
+
+// ─── Recorte de seguridad: nunca dejar una oración a medias ──────────────────
+// max_tokens puede cortar el texto en cualquier punto. Si el texto ya termina
+// en punto/exclamación/interrogación se deja igual; si no, se recorta hasta el
+// último signo de cierre siempre que no se pierda más del 30% del contenido.
+function trimToCompleteSentence(text) {
+  if (!text) return text;
+  const trimmed = text.trim();
+  if (/[.!?…]["')\]]?$/.test(trimmed)) return trimmed;
+
+  const lastEnd = Math.max(trimmed.lastIndexOf('.'), trimmed.lastIndexOf('!'), trimmed.lastIndexOf('?'));
+  if (lastEnd > trimmed.length * 0.7) return trimmed.slice(0, lastEnd + 1);
+
+  return trimmed; // no hay un corte seguro sin perder demasiado; se deja tal cual
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

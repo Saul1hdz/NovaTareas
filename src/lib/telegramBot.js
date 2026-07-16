@@ -13,7 +13,9 @@ const {
 
 const BOT_TOKEN      = process.env.TELEGRAM_BOT_TOKEN;
 const API_BASE       = `https://api.telegram.org/bot${BOT_TOKEN}`;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
+const ZAI_URL       = 'https://api.z.ai/api/paas/v4/chat/completions';
+const ZAI_MODEL     = process.env.ZAI_MODEL || 'glm-5.2';
 const OLLAMA_URL     = process.env.OLLAMA_URL   || 'http://localhost:11434';
 const OLLAMA_MODEL   = process.env.OLLAMA_MODEL || 'llama3.2:3b';
 
@@ -398,10 +400,10 @@ async function getAiRecommendation(taskDescription, userType = 'comun', userId =
     `Cada una debe tener máximo 3 oraciones. Sin introducciones ni conclusiones. ` +
     `Responde solo con las 3 recomendaciones en español.`;
 
-  // 1. Gemini
-  if (GEMINI_API_KEY) {
-    const geminiText = await tryGemini(prompt);
-    if (geminiText) return geminiText;
+  // 1. z.ai
+  if (ZAI_API_KEY) {
+    const zaiText = await tryZai(prompt);
+    if (zaiText) return zaiText;
   }
 
   // 2. Ollama
@@ -418,36 +420,33 @@ async function getAiRecommendation(taskDescription, userType = 'comun', userId =
   return getRulesRecommendation(taskDescription, userType);
 }
 
-async function tryGemini(prompt) {
-  const models = ['gemini-2.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
-  for (const model of models) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { maxOutputTokens: 2048, temperature: 0.75 },
-          }),
-          signal: AbortSignal.timeout(30000),
-        }
-      );
-      if (!res.ok) {
-        const errText = await res.text();
-        console.error(`[tryGemini] ${model} error ${res.status}:`, errText);
-        continue;
-      }
-      const data = await res.json().catch(() => null);
-      const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
-      if (text) return text;
-    } catch (err) {
-      console.error(`[tryGemini] ${model} excepción:`, err.message);
-      continue;
+async function tryZai(prompt) {
+  try {
+    const res = await fetch(ZAI_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${ZAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: ZAI_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 800,
+        temperature: 0.75
+      }),
+      signal: AbortSignal.timeout(30000)
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.error(`[tryZai] error ${res.status}:`, errText);
+      return null;
     }
+    const data = await res.json().catch(() => null);
+    return data?.choices?.[0]?.message?.content?.trim() || null;
+  } catch (err) {
+    console.error('[tryZai] excepción:', err.message);
+    return null;
   }
-  return null;
 }
 
 async function tryOllama(prompt) {

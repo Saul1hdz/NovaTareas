@@ -1,18 +1,27 @@
-const GEMINI_KEY     = process.env.GEMINI_API_KEY?.trim();
+import { getDb } from "./db";
+
+const ZAI_API_KEY      = process.env.ZAI_API_KEY?.trim();
+const ZAI_EMB_URL      = 'https://api.z.ai/api/paas/v4/embeddings';
+// Modelos de embedding de z.ai en orden de preferencia (el primero que funcione se usa)
+const ZAI_EMB_MODELS   = ['embedding-2', 'embedding-3', 'text-embedding-ada-002'];
+
 const OLLAMA_URL     = process.env.OLLAMA_URL    || 'http://localhost:11434';
 const OLLAMA_EMB_MODEL = process.env.OLLAMA_EMB_MODEL || 'nomic-embed-text'; // modelo de embedding local
 const TOP_K          = 5;   // cuántas tareas similares recuperar
 const MIN_SIMILARITY = 0.25; // similitud mínima para considerar relevante
+
+// Si ZAI_EMB_ENABLED=false, salta directamente a Ollama
+let zaiEmbEnabled = process.env.ZAI_EMB_ENABLED !== 'false';
 
 // ───  Generación de embeddings ──────────────────────────────────────────────
 
 export async function generateEmbedding(text) {
   const clean = text.trim().slice(0, 2000); // límite de tokens seguro
 
-  // Gemini embeddings
-  if (GEMINI_KEY) {
-    const vec = await tryGeminiEmbedding(clean);
-    if (vec) return vec;
+  // z.ai embeddings
+  if (ZAI_API_KEY && zaiEmbEnabled) {
+    const result = await tryZaiEmbedding(clean);
+    if (result.vector) return result.vector;
   }
 
   // Ollama embeddings (requiere: ollama pull nomic-embed-text)
@@ -20,33 +29,52 @@ export async function generateEmbedding(text) {
   return vec; // puede ser null si Ollama tampoco está disponible
 }
 
-async function tryGeminiEmbedding(text) {
-  // Modelos de embedding de Gemini en orden de preferencia
-  const models = ['text-embedding-004', 'embedding-001'];
-  for (const model of models) {
+async function tryZaiEmbedding(text) {
+  // Permitir override con variable de entorno
+  const customModel  = process.env.ZAI_EMB_MODEL?.trim();
+  const modelsToTry   = customModel ? [customModel] : ZAI_EMB_MODELS;
+
+  for (const model of modelsToTry) {
     try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent?key=${GEMINI_KEY}`,
-        {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model:   `models/${model}`,
-            content: { parts: [{ text }] },
-            taskType: 'RETRIEVAL_DOCUMENT',
-          }),
-        }
-      );
-      // 404 = modelo no disponible con esta clave, probar el siguiente
-      if (res.status === 404 || res.status === 429 || res.status === 403) continue;
+      const res = await fetch(ZAI_EMB_URL, {
+        method:  'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ZAI_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: model,
+          input: text
+        }),
+        signal: AbortSignal.timeout(8000) // 8s máximo por modelo
+      });
+
+      // 429 = sin saldo, no tiene sentido probar más modelos
+      if (res.status === 429) {
+        console.warn('[Z.AI EMB] Sin saldo, desactivando embeddings z.ai');
+        zaiEmbEnabled = false;
+        return { vector: null, model: null };
+      }
+
+      // 400/404 = modelo no encontrado, probar el siguiente
+      if (res.status === 400 || res.status === 404) continue;
       if (!res.ok) continue;
+
       const data = await res.json().catch(() => null);
-      return data?.embedding?.values || null;
+
+      // Formato OpenAI estándar
+      const embedding = data?.data?.[0]?.embedding;
+      if (embedding) return { vector: embedding, model };
+
+      // Formato alternativo
+      const altEmbedding = data?.embedding?.values;
+      if (altEmbedding) return { vector: altEmbedding, model };
     } catch {
       continue;
     }
   }
-  return null; // todos los modelos de Gemini fallaron → Ollama toma el relevo
+
+  return { vector: null, model: null }; // todos los modelos de z.ai fallaron → Ollama toma el relevo
 }
 
 async function tryOllamaEmbedding(text) {
@@ -150,7 +178,7 @@ export async function indexArchivedTasks(userId) {
     const vector = await generateEmbedding(text);
     if (!vector) continue; // si no hay embedding disponible, saltar
 
-    const model = GEMINI_KEY ? 'text-embedding-004' : OLLAMA_EMB_MODEL;
+    const model = ZAI_API_KEY ? 'zai-embedding' : OLLAMA_EMB_MODEL;
     saveEmbedding(db, task.id, userId, vector, model);
     indexed++;
   }
@@ -296,6 +324,6 @@ export async function reindexTask(taskId, userId) {
   const vector = await generateEmbedding(text);
   if (!vector)  return;
 
-  const model = GEMINI_KEY ? 'text-embedding-004' : OLLAMA_EMB_MODEL;
+  const model = ZAI_API_KEY ? 'zai-embedding' : OLLAMA_EMB_MODEL;
   saveEmbedding(db, taskId, userId, vector, model);
 }

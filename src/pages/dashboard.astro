@@ -2421,7 +2421,7 @@ async function genAI(taskId) {
     subtaskDiv.className = 'ai-result-box';
     card.querySelector('.task-actions').before(subtaskDiv);
   }
-  subtaskDiv.innerHTML = `<div class="ai-generating"><div class="spinner"></div> Gemini está analizando tu tarea...</div>`;
+  subtaskDiv.innerHTML = `<div class="ai-generating"><div class="spinner"></div> El asistente está analizando tu tarea...</div>`;
 
   const res = await fetch(`/api/tasks/${taskId}/ai`, { method: 'POST' });
   const data = await res.json();

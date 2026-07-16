@@ -1,7 +1,9 @@
 import { getDb } from '../../../../lib/db.js';
 import { getUser } from '../../../../lib/auth.js';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
+const ZAI_URL       = 'https://api.z.ai/api/paas/v4/chat/completions';
+const ZAI_MODEL     = process.env.ZAI_MODEL || 'glm-5.2';
 const OLLAMA_URL     = process.env.OLLAMA_URL   || 'http://localhost:11434';
 const OLLAMA_MODEL   = process.env.OLLAMA_MODEL || 'llama3.2:3b';
 
@@ -101,9 +103,9 @@ const historyLines = history.length > 0
     `da una respuesta de ayuda práctica y específica. ` +
     `Máximo 4 oraciones. Sin introducciones. Responde directamente en español.`;
 
-  // 1. Gemini
-  if (GEMINI_API_KEY) {
-    const text = await tryGemini(prompt);
+  // 1. z.ai
+  if (ZAI_API_KEY) {
+    const text = await tryZai(prompt);
     if (text) return text;
   }
 
@@ -118,44 +120,34 @@ const historyLines = history.length > 0
   );
 }
 
-async function tryGemini(prompt) {
-  const models = ['gemini-2.5-flash', 'gemini-1.5-pro'];
+async function tryZai(prompt) {
+  try {
+    const res = await fetch(ZAI_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${ZAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: ZAI_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 512,
+        temperature: 0.7
+      }),
+      signal: AbortSignal.timeout(25000)
+    });
 
-  for (const model of models) {
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              maxOutputTokens: 512,
-              temperature: 0.7
-            }
-          }),
-          signal: AbortSignal.timeout(25000)
-        }
-      );
-
-      if (!res.ok) continue;
-
-      const data = await res.json().catch(() => null);
-      const text = (
-        data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-      ).trim();
-
-      if (text) {
-        return text;
-      }
-
-    } catch {
-      continue;
+    if (!res.ok) {
+      console.error('[Z.AI] Error:', res.status, await res.text().catch(() => ''));
+      return null;
     }
-  }
 
-  return null;
+    const data = await res.json().catch(() => null);
+    return data?.choices?.[0]?.message?.content?.trim() || null;
+  } catch (e) {
+    console.error('[Z.AI] Excepción:', e.message);
+    return null;
+  }
 }
 
 async function tryOllama(prompt) {
