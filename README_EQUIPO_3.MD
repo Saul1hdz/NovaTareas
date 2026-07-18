@@ -50,11 +50,13 @@ El sistema registra automáticamente cada cambio realizado sobre una tarea (hist
 
 ## 4. Dónde está la inteligencia artificial
 
-La IA vive en tres archivos concretos:
+La IA vive en estos archivos concretos:
 
 ```
+src/lib/aiEngine.js                 ← motor de recomendaciones reutilizable (API pública)
 src/lib/rag.js                      ← genera embeddings y recupera tareas similares
 src/pages/api/tasks/[id]/ai.js      ← endpoint de recomendaciones (dashboard)
+src/pages/api/v1/recommend.js       ← endpoint de IA consumible por API externa
 src/lib/telegramBot.js              ← función getAiRecommendation (bot)
 ```
 
@@ -69,7 +71,7 @@ Busca las 5 tareas más similares del historial del usuario (similitud coseno, m
         ↓
 Construye prompt con: tarea + tareas similares + historial de cambios + comentarios previos + tipo de usuario
         ↓
-Envía a Gemini 2.5 Flash → si falla → Ollama local → si falla → historial archivado → si falla → reglas locales
+Envía a z.ai (GLM) → si falla → Ollama local → si falla → historial archivado → si falla → reglas locales
         ↓
 Devuelve recomendación en español al dashboard o Telegram
 ```
@@ -80,13 +82,15 @@ Devuelve recomendación en español al dashboard o Telegram
 
 | Componente | Detalle |
 |---|---|
-| **Modelo principal** | Google Gemini 2.5 Flash (`gemini-2.5-flash`) |
-| **Modelo de embeddings** | Gemini `text-embedding-004` / Ollama `nomic-embed-text` |
+| **Modelo principal** | z.ai — GLM (`glm-4.5-flash`) |
+| **Modelo de embeddings** | z.ai (`embedding-2` / `embedding-3`) con fallback Ollama `nomic-embed-text` |
 | **Modelo local (fallback)** | Ollama + Llama 3.2:3b |
 | **Técnica RAG** | Retrieval-Augmented Generation con similitud coseno |
 | **Tipo de IA** | IA generativa (LLM) + búsqueda semántica |
-| **NLP** | Implícito vía Gemini (transformers internos) |
-| **Sistema de fallback** | Cascada: Gemini → Ollama → historial → reglas locales |
+| **NLP** | Implícito vía el modelo GLM (transformers internos) |
+| **Sistema de fallback** | Cascada: z.ai → Ollama → historial → reglas locales |
+
+> **Nota:** el proyecto migró de Google Gemini a z.ai (GLM). El código llama a la API de z.ai mediante `fetch` directo al endpoint `https://api.z.ai/api/paas/v4/chat/completions`, y el modelo se configura con la variable de entorno `ZAI_MODEL`.
 
 ---
 
@@ -107,7 +111,7 @@ Devuelve recomendación en español al dashboard o Telegram
 ### Salida del modelo
 ```
 - Texto en español con recomendaciones prácticas
-- Máximo 2048 tokens
+- Oraciones cortas separadas por punto (máximo ~130 palabras)
 - Formato: texto plano con Markdown (convertido a HTML para Telegram)
 - Sin introducciones genéricas — responde directamente al contexto de la tarea
 ```
@@ -122,11 +126,32 @@ Salida:   "Divide la presentación en 3 bloques lógicos antes de redactar.
 
 ---
 
-## 7. Instalación y ejecución
+## 7. API Inteligente (Semana 2)
+
+La capacidad de IA se expone como servicio consumible desde cualquier cliente externo (curl, Postman, Swagger). Es independiente del dashboard: no requiere sesión ni que la tarea exista en la base de datos.
+
+| Método | Ruta | Propósito |
+|---|---|---|
+| GET  | `/api/v1/health`    | Verificar que el servicio está activo. |
+| GET  | `/api/v1/metadata`  | Versión, modelo, propósito y contrato. |
+| POST | `/api/v1/recommend` | Generar una recomendación de productividad. |
+
+**Ejemplo de uso:**
+```bash
+curl -X POST http://localhost:4321/api/v1/recommend \
+  -H "Content-Type: application/json" \
+  -d '{"titulo":"Estudiar para el examen de cálculo","prioridad":"alta","tipo_usuario":"estudiante"}'
+```
+
+Contrato completo, validaciones y evidencia de prueba en [`docs/api.md`](docs/api.md).
+
+---
+
+## 8. Instalación y ejecución
 
 ### Requisitos previos
 - Node.js 20 o superior
-- API key de [Google AI Studio](https://aistudio.google.com/apikey) (gratuita)
+- API key de [z.ai](https://z.ai) (para las llamadas al modelo GLM)
 - Bot de Telegram creado con [@BotFather](https://t.me/BotFather)
 - (Opcional) [Ollama](https://ollama.com) con `nomic-embed-text` y `llama3.2:3b` para fallback local
 
@@ -184,11 +209,12 @@ https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://abc123.ngrok.io/api/t
 
 ---
 
-## 8. Variables de entorno requeridas
+## 9. Variables de entorno requeridas
 
 ```env
 # ── OBLIGATORIAS ──────────────────────────────────────────────
-ZAI_API_KEY=          # API key de Google AI Studio (sin esto la IA no funciona)
+ZAI_API_KEY=             # API key de z.ai (sin esto la IA no funciona)
+ZAI_MODEL=glm-4.5-flash  # Modelo de chat de z.ai
 TELEGRAM_BOT_TOKEN=      # Token del bot de @BotFather (sin esto el bot no responde)
 SECRET_KEY=              # Cadena secreta para firmar JWT (sin esto nadie puede iniciar sesión)
 
@@ -201,6 +227,10 @@ OLLAMA_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.2:3b
 OLLAMA_EMB_MODEL=nomic-embed-text
 
+# ── OPCIONALES (rate limiting de la API de IA) ─────────────────
+AI_RATE_LIMIT_MAX=20         # Máx. peticiones por ventana
+AI_RATE_LIMIT_WINDOW=300000  # Ventana en milisegundos (5 min)
+
 # ── GOOGLE CALENDAR (en desarrollo) ───────────────────────────
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
@@ -211,7 +241,7 @@ GOOGLE_REDIRECT_URI=http://localhost:4321/api/google/callback
 
 ---
 
-## 9. Arquitectura
+## 10. Arquitectura
 
 ### Arquitectura actual (monolítica modular)
 
@@ -221,10 +251,10 @@ Usuario Web ──→ Dashboard Astro (SSR)
 Usuario Telegram ──→ Webhook /api/telegram/webhook
                       ↓
               API Routes (src/pages/api/)
-              tasks.js · [id].js · comments.js · ai.js
+              tasks.js · [id].js · comments.js · ai.js · v1/recommend.js
                       ↓
               Capa de inteligencia
-              rag.js → Gemini API / Ollama → respuesta
+              aiEngine.js · rag.js → z.ai (GLM) / Ollama → respuesta
                       ↓
               SQLite (novatareas.db)
               users · tasks · task_history · task_comments · task_embeddings
@@ -244,13 +274,13 @@ API Gateway
 
 ---
 
-## 10. Limitaciones conocidas del prototipo
+## 11. Limitaciones conocidas del prototipo
 
 1. **SQLite no soporta escrituras concurrentes** — el sistema es para uso individual o grupos pequeños; múltiples usuarios simultáneos pueden generar errores de lock.
 2. **El bot y el scheduler requieren terminales manuales** — no hay un proceso único que los inicie todos.
 3. **El estado de conversación del bot vive en memoria** — un reinicio del servidor cancela cualquier flujo de creación de tarea a medio completar.
 4. **El webhook requiere URL pública** — en desarrollo local es necesario ngrok; si se cae, el bot deja de responder.
-5. **Cuota de Gemini limitada** — la capa gratuita tiene límite de solicitudes por minuto; bajo carga alta cae al fallback.
+5. **Cuota de z.ai limitada** — el saldo/paquete de la cuenta puede agotarse; al fallar, el sistema cae al fallback local u offline.
 6. **Sin pruebas automatizadas** — no hay tests unitarios ni de integración; los errores solo se detectan manualmente.
 7. **RAG recién implementado** — los embeddings existen en la BD pero no todas las rutas del código los usan aún.
 8. **Google Calendar en desarrollo** — los archivos existen (`/api/google/`) pero la integración no está conectada al dashboard.
@@ -258,32 +288,32 @@ API Gateway
 
 ---
 
-## 11. Plan de mejora (semanas 2 a 6)
+## 12. Plan de mejora (semanas 2 a 6)
 
-### Semana 2 — Estabilizar lo que existe
-- Conectar el RAG al flujo completo de recomendaciones del dashboard y el bot.
-- Agregar `node-cron` interno para que el scheduler corra automáticamente sin terminal separada.
-- Persistir el estado de conversación del bot en SQLite en lugar de memoria.
+### Semana 2 — API inteligente y estabilización ✅
+- Exponer la capacidad de IA como API consumible (`/api/v1/health`, `/api/v1/metadata`, `/api/v1/recommend`).
+- Contrato de entrada/salida documentado, validación básica y manejo de errores.
+- Conectar el RAG al flujo de recomendaciones del dashboard y el bot.
 
 ### Semana 3 — Calidad y observabilidad
-- Logging estructurado de cada llamada a Gemini: modelo usado, tokens consumidos, latencia y si usó fallback.
+- Logging estructurado de cada llamada a z.ai: modelo usado, tokens consumidos, latencia y si usó fallback.
 - Sistema de feedback en recomendaciones (👍/👎) para evaluar la utilidad del modelo.
-- Pruebas automatizadas con Jest para los endpoints críticos (`/api/tasks`, `/api/tasks/:id`, `/api/tasks/:id/ai`).
+- Pruebas automatizadas con Jest para los endpoints críticos (`/api/v1/recommend`, `/api/tasks`, `/api/tasks/:id`).
 
 ### Semana 4 — Completar funciones inconclusas
 - Conectar Google Calendar al dashboard: importar eventos como tareas con fecha límite.
 - Implementar interfaz de recuperación de contraseña.
-- Caché de recomendaciones: no volver a llamar a Gemini si la tarea no cambió desde la última consulta.
+- Caché de recomendaciones: no volver a llamar a z.ai si la tarea no cambió desde la última consulta.
 
-### Semana 5 — Colaboración básica, limpieza de codigo y mejoras en css
+### Semana 5 — Colaboración básica, limpieza de código y mejoras en CSS
 - Espacios de equipo: múltiples usuarios comparten un conjunto de tareas.
 - Asignación de tareas a miembros del equipo.
 - Notificaciones de Telegram cuando alguien del equipo modifica una tarea asignada.
-- Limpieza de el codigo, eliminar funciones o partes de el codigo que no esten siendo utilizadas o que solo fueron utilizadas durante las pruebas y ya no afectan al rendimiento de el proyecto
-- mejoras visuales para el proyecto 
+- Limpieza del código: eliminar funciones o partes que no se usan o que solo sirvieron durante pruebas (por ejemplo, la tabla `categories` reemplazada por `label`, y scripts sueltos como `fix_categories.cjs`).
+- Mejoras visuales para el proyecto.
 
 ### Semana 6 — Despliegue y producción
 - Migrar de SQLite a PostgreSQL para soportar concurrencia real.
 - Configurar CI/CD con GitHub Actions: lint, tests y despliegue automático.
 - Desplegar en VPS (Railway, Render o DigitalOcean) con dominio HTTPS propio.
-- Versionamiento del prompt del sistema para rastrear cambios de calidad en las respuestas de Gemini.
+- Versionamiento del prompt del sistema para rastrear cambios de calidad en las respuestas del modelo.,
