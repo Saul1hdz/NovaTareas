@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    name: Pruebas y build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # `npm ci` es más rápido y reproducible que `npm install`:
+      # instala exactamente las versiones del package-lock.json.
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Verificar tipos y sintaxis
+        run: npm run lint
+        continue-on-error: true   # informativo por ahora; se hará bloqueante más adelante
+
+      # NOTA: no se define ZAI_API_KEY a propósito.
+      # Sin esa variable, el motor de IA usa su fallback de reglas locales,
+      # por lo que las pruebas son deterministas, rápidas y no consumen saldo.
+      - name: Ejecutar pruebas
+        run: npm test
+        env:
+          SECRET_KEY: clave-solo-para-pruebas-de-ci
+          CRON_SECRET: cron-solo-para-pruebas-de-ci
+
+      - name: Compilar el proyecto
+        run: npm run build
+        env:
+          SECRET_KEY: clave-solo-para-pruebas-de-ci
+          CRON_SECRET: cron-solo-para-pruebas-de-ci
