@@ -53,8 +53,4 @@ El archivo `.github/workflows/ci.yml` ejecuta automáticamente en GitHub Actions
 Registro de errores detectados y corregidos:
 [`docs/registro-pruebas-semana-3.md`](docs/registro-pruebas-semana-3.md).
 
-### Migraciones de base de datos
 
-```bash
-npm run migrate   # ejecuta las 5 migraciones en el orden correcto
-```

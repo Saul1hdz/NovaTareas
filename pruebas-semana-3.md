@@ -145,7 +145,6 @@ El workflow de CI aprovecha esto y **no define esa variable** en el paso de prue
 ```bash
 npm install   # instala dependencias, incluida Vitest
 npm test      # ejecuta las 25 pruebas
-npm run lint          # verificar tipos y sintaxis del proyecto
 ```
 
 Resultado esperado: 25 pruebas superadas, sin necesidad de conexión a internet ni credenciales.

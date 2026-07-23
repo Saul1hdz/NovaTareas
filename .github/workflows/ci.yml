@@ -28,7 +28,6 @@ jobs:
 
       - name: Verificar tipos y sintaxis
         run: npm run lint
-        continue-on-error: true   # informativo por ahora; se hará bloqueante más adelante
 
       # NOTA: no se define ZAI_API_KEY a propósito.
       # Sin esa variable, el motor de IA usa su fallback de reglas locales,

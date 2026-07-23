@@ -166,6 +166,7 @@ console.log("process.env:", process.env.GEMINI_API_KEY);
 ```bash
 npm install     # instala dependencias, incluida Vitest
 npm test        # ejecuta las 25 pruebas
+npm run lint          # verificar tipos y sintaxis del proyecto
 ```
 
 Resultado esperado: 25 pruebas superadas, sin necesidad de conexión a internet ni de credenciales.

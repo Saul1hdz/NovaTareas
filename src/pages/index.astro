@@ -270,29 +270,29 @@ const QUESTIONS = [
 
 // Poblar selects de preguntas
 function populateQuestions() {
-  const q1 = document.getElementById('q1_select');
-  const q2 = document.getElementById('q2_select');
+  const q1 = document.getElementById('q1_select') as HTMLSelectElement | null;
+  const q2 = document.getElementById('q2_select') as HTMLSelectElement | null;
   if (!q1 || !q2) return;
 
   QUESTIONS.forEach((q, i) => {
-    q1.add(new Option(q, i));
-    q2.add(new Option(q, i));
+    q1.add(new Option(q, String(i)));
+    q2.add(new Option(q, String(i)));
   });
 }
 
 function filterQ2() {
-  const q1Val = document.getElementById('q1_select').value;
-  const q2 = document.getElementById('q2_select');
-  Array.from(q2.options).forEach(opt => {
+  const q1Val = (document.getElementById('q1_select') as HTMLSelectElement).value;
+  const q2 = document.getElementById('q2_select') as HTMLSelectElement;
+  Array.from(q2.options).forEach((opt) => {
     opt.disabled = opt.value === q1Val && opt.value !== '';
   });
   if (q2.value === q1Val) q2.value = '';
 }
 
 function filterQ1() {
-  const q2Val = document.getElementById('q2_select').value;
-  const q1 = document.getElementById('q1_select');
-  Array.from(q1.options).forEach(opt => {
+  const q2Val = (document.getElementById('q2_select') as HTMLSelectElement).value;
+  const q1 = document.getElementById('q1_select') as HTMLSelectElement;
+  Array.from(q1.options).forEach((opt) => {
     opt.disabled = opt.value === q2Val && opt.value !== '';
   });
   if (q1.value === q2Val) q1.value = '';
@@ -392,7 +392,7 @@ let recoverQuestionIndex = null;
 let recoverToken = '';
 
 async function startRecovery() {
-  const email = document.getElementById('recover-email').value.trim();
+  const email = (document.getElementById('recover-email') as HTMLInputElement).value.trim();
   const err = document.getElementById('recover-error-email');
   err.textContent = '';
 
@@ -416,7 +416,7 @@ async function startRecovery() {
 }
 
 async function checkAnswer() {
-  const answer = document.getElementById('recover-answer').value.trim();
+  const answer = (document.getElementById('recover-answer') as HTMLInputElement).value.trim();
   const err = document.getElementById('recover-error-question');
   err.textContent = '';
 
@@ -441,7 +441,7 @@ async function checkAnswer() {
       recoverQuestionIndex = data.next_question_index;
       document.getElementById('recover-question-text').textContent = data.next_question;
       document.getElementById('recover-attempts').textContent = `Intentos restantes: ${data.attempts_left}`;
-      document.getElementById('recover-answer').value = '';
+      (document.getElementById('recover-answer') as HTMLInputElement).value = '';
     }
     err.textContent = data.message || data.error;
     return;
@@ -454,7 +454,7 @@ async function checkAnswer() {
 }
 
 async function resetPassword() {
-  const pwd = document.getElementById('recover-new-password').value;
+  const pwd = (document.getElementById('recover-new-password') as HTMLInputElement).value;
   const err = document.getElementById('recover-error-password');
   err.textContent = '';
 
@@ -479,6 +479,19 @@ async function resetPassword() {
 }
 
 // Init
+declare global {
+  interface Window {
+    switchTab: (tab: string) => void;
+    handleLogin: (e: Event) => void;
+    handleRegister: (e: Event) => void;
+    startRecovery: () => void;
+    checkAnswer: () => void;
+    resetPassword: () => void;
+    filterQ1: () => void;
+    filterQ2: () => void;
+  }
+}
+
 window.switchTab = switchTab;
 window.handleLogin = handleLogin;
 window.handleRegister = handleRegister;

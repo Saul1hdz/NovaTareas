@@ -7,10 +7,20 @@ const session = await getUser(Astro.request);
 if (!session) return Astro.redirect('/');
 
 const db = getDb();
-const user = db.prepare('SELECT id, full_name, email, telefono, user_type, avatar_url, telegram_chat_id, theme FROM users WHERE id = ?').get(session.userId);
+const user = db.prepare('SELECT id, full_name, email, telefono, user_type, avatar_url, telegram_chat_id, theme FROM users WHERE id = ?').get(session.userId) as
+  {
+    id: number;
+    full_name?: string;
+    email?: string;
+    telefono?: string;
+    user_type?: string;
+    avatar_url?: string;
+    telegram_chat_id?: string;
+    theme?: string;
+  } | undefined;
 const theme = user?.theme || 'dark';
 
-const USER_TYPE_LABELS = { estudiante: '🎓 Estudiante', empleado: '💼 Empleado', comun: '👤 Usuario común' };
+const USER_TYPE_LABELS: Record<string, string> = { estudiante: '🎓 Estudiante', empleado: '💼 Empleado', comun: '👤 Usuario común' };
 ---
 
 <Base title="Mi Perfil" theme={theme}>
@@ -33,7 +43,7 @@ const USER_TYPE_LABELS = { estudiante: '🎓 Estudiante', empleado: '💼 Emplea
       </div>
       <div class="avatar-info">
         <div class="avatar-name">{user?.full_name}</div>
-        <div class="avatar-type">{USER_TYPE_LABELS[user?.user_type] || 'Usuario'}</div>
+        <div class="avatar-type">{USER_TYPE_LABELS[user?.user_type ?? ''] || 'Usuario'}</div>
         <div class="avatar-email">{user?.email}</div>
       </div>
       <div id="avatar-msg" class="msg"></div>
@@ -183,7 +193,7 @@ async function uploadAvatar(event) {
     msg.className = 'msg ok';
     const preview = document.getElementById('avatar-preview');
     if (preview.tagName === 'IMG') {
-      preview.src = data.avatar_url + '?t=' + Date.now();
+      (preview as HTMLImageElement).src = data.avatar_url + '?t=' + Date.now();
     } else {
       const img = document.createElement('img');
       img.src = data.avatar_url;
@@ -237,6 +247,14 @@ async function savePassword(e) {
   const data = await res.json();
   if (data.ok) { msg.textContent = '✅ Contraseña actualizada'; msg.className = 'msg ok'; form.reset(); }
   else { msg.textContent = '❌ ' + (data.error || 'Error'); msg.className = 'msg err'; }
+}
+
+declare global {
+  interface Window {
+    uploadAvatar: (event: Event) => void;
+    saveProfile: (e: Event) => void;
+    savePassword: (e: Event) => void;
+  }
 }
 
 window.uploadAvatar = uploadAvatar;
