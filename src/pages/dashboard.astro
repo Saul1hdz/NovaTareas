@@ -5,6 +5,8 @@ import { getDb } from '../lib/db.js';
 
 const rawUser = await getUser(Astro.request);
 if (!rawUser) return Astro.redirect('/');
+Astro.response.headers.set('Cache-Control', 'private, no-store, max-age=0');
+Astro.response.headers.set('Pragma', 'no-cache');
 const user = rawUser as { username: string; userId: number };
 
 const db = getDb();
@@ -53,7 +55,7 @@ const labels = labelsRows.map((r) => r.label);
         <div class="labels-title">ETIQUETAS</div>
         <div id="labels-list">
           {labels.map((l: string) => (
-            <button class="label-chip" onclick={`filterByLabel('${l}')`}>{l}</button>
+            <button class="label-chip" data-label={l}>{l}</button>
           ))}
         </div>
       </div>
@@ -1860,7 +1862,6 @@ let selectedDate = new Date().toISOString().split('T')[0];
 let calendarView = 'month';
 window.selectedDate = selectedDate;
 let calendarItems = [];
-let googleEvents = [];
 let selectedDayTasks = [];
 let dayPanelOpen = true;
 let searchTimeout;
@@ -1946,6 +1947,12 @@ function setView(v) {
 // ── FILTERS ──
 function setPriority(p) {
   currentPriority = p;
+  if (p === '') {
+    currentLabel = '';
+    document.querySelectorAll('.label-chip').forEach(chip => {
+      chip.classList.remove('active');
+    });
+  }
   document.querySelectorAll('.filter-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.p === p);
   });
@@ -1959,6 +1966,14 @@ function filterByLabel(l) {
   });
   loadTasks();
 }
+
+document.querySelectorAll('#labels-list .label-chip').forEach(button => {
+  button.addEventListener('click', () => filterByLabel(button.dataset.label || ''));
+});
+
+window.addEventListener('pageshow', event => {
+  if (event.persisted) window.location.reload();
+});
 
 function debouncedSearch() {
   clearTimeout(searchTimeout);
@@ -1992,12 +2007,6 @@ async function loadArchive() {
 }
 
 // ── RENDER TASKS ──
-function markdownToHtml(text) {
-  return text
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/\n/g, '<br>');
-}
 function toggleArchiveCard(id) {
   const card = document.getElementById(`archive-card-${id}`);
   if (!card) return;
@@ -2006,328 +2015,165 @@ function toggleArchiveCard(id) {
 }
 function renderTasks(tasks, containerId, isArchive = false) {
   const container = document.getElementById(containerId);
+  container.replaceChildren();
 
   if (!tasks.length) {
-    container.innerHTML = `
-      <div class="empty-state">
-        ${isArchive ? "El archivo está vacío" : "Sin tareas pendientes"}
-      </div>
-    `;
+    container.appendChild(createTextElement(
+      'div',
+      'empty-state',
+      isArchive ? 'El archivo está vacío' : 'Sin tareas pendientes'
+    ));
     return;
   }
 
-  container.innerHTML = tasks.map(t => {
-
+  tasks.forEach(t => {
     const isDone = t.status === "completada";
-
     const normalDate = normalizeDueDateStr(t.due_date);
-
     const dueDateMs = normalDate
       ? new Date(normalDate + "T12:00:00").getTime()
       : null;
-
     const isOverdue =
       dueDateMs &&
       dueDateMs < Date.now() &&
       !isDone;
-
     const dueLabel = normalDate
       ? new Date(normalDate + "T12:00:00").toLocaleDateString(
           "es",
-          {
-            month: "short",
-            day: "numeric"
-          }
+          { month: "short", day: "numeric" }
         )
       : "";
 
-    const subtasksHtml =
-      t.subtasks?.length
-        ? `
-        <div class="ai-result-box">
-
-          <div class="ai-recs-header">
-             Recomendación Para Iniciar
-          </div>
-
-          ${t.subtasks
-            .map(
-              s => `
-            <div class="subtask-item">
-
-              <div class="subtask-text ${s.done ? "checked" : ""}">
-                ${markdownToHtml(escHtml(s.text))}
-              </div>
-
-            </div>
-          `
-            )
-            .join("")}
-
-        </div>
-      `
-        : "";
-
-    // ===========================
-    // VISTA ARCHIVADOS
-    // ===========================
-
     if (isArchive) {
+      const card = document.createElement('div');
+      card.className = `archive-card p-${t.priority}`;
+      card.id = `archive-card-${t.id}`;
 
-      return `
+      const header = document.createElement('div');
+      header.className = 'archive-header';
+      header.append(
+        createTextElement('div', 'archive-title', t.title),
+        createTextElement('button', 'archive-expand', '▼')
+      );
+      header.addEventListener('click', () => toggleArchiveCard(t.id));
+      card.appendChild(header);
 
-      <div
-        class="archive-card p-${t.priority}"
-        id="archive-card-${t.id}"
-      >
+      const content = document.createElement('div');
+      content.className = 'archive-content';
+      const info = document.createElement('div');
+      info.className = 'archive-info';
+      info.appendChild(createTextElement('span', `badge badge-${t.priority}`, t.priority));
+      if (normalDate) {
+        info.appendChild(createTextElement('span', 'badge badge-due', dueLabel));
+      }
+      content.appendChild(info);
+      appendTaskText(content, null, t.description);
+      appendTaskText(content, 'Qué salió bien', t.what_worked);
+      appendTaskText(content, 'Qué salió mal', t.what_failed);
+      appendTaskText(content, 'Observaciones', t.observations);
+      appendTaskText(content, 'Comentarios', t.archive_comments);
+      appendSubtasks(content, t.subtasks);
 
-        <div
-          class="archive-header"
-          onclick="toggleArchiveCard(${t.id})"
-        >
-
-          <div class="archive-title">
-
-             ${escHtml(t.title)}
-
-          </div>
-
-          <button class="archive-expand">
-
-            ▼
-
-          </button>
-
-        </div>
-
-        <div class="archive-content">
-
-          <div class="archive-info">
-
-            <span class="badge badge-${t.priority}">
-              ${t.priority}
-            </span>
-
-            ${
-              normalDate
-                ? `<span class="badge badge-due">${dueLabel}</span>`
-                : ""
-            }
-
-          </div>
-
-          ${
-            t.description
-              ? `
-              <div class="task-desc">
-
-                ${escHtml(t.description)}
-
-              </div>
-            `
-              : ""
-          }
-
-          ${
-            t.what_worked
-              ? `
-              <h4> Qué salió bien</h4>
-
-              <div class="task-desc">
-
-                ${escHtml(t.what_worked)}
-
-              </div>
-            `
-              : ""
-          }
-
-          ${
-            t.what_failed
-              ? `
-              <h4> Qué salió mal</h4>
-
-              <div class="task-desc">
-
-                ${escHtml(t.what_failed)}
-
-              </div>
-            `
-              : ""
-          }
-
-          ${
-            t.observations
-              ? `
-              <h4> Observaciones</h4>
-
-              <div class="task-desc">
-
-                ${escHtml(t.observations)}
-
-              </div>
-            `
-              : ""
-          }
-
-          ${
-            t.archive_comments
-              ? `
-              <h4> Comentarios</h4>
-
-              <div class="task-desc">
-
-                ${escHtml(t.archive_comments)}
-
-              </div>
-            `
-              : ""
-          }
-
-          ${subtasksHtml}
-
-          <div class="task-actions">
-
-            <button
-              class="complete-btn"
-              onclick="unarchiveTask(${t.id})"
-            >
-              Reabrir
-            </button>
-
-            <button
-              class="history-btn"
-              onclick="openHistoryModal(${t.id}, \`${escHtml(t.title)}\`)"
-            >
-               Historial
-            </button>
-
-            <button
-              class="del-btn"
-              onclick="deleteTask(${t.id})"
-            >
-              Borrar
-            </button>
-
-          </div>
-
-        </div>
-
-      </div>
-
-      `;
+      const actions = document.createElement('div');
+      actions.className = 'task-actions';
+      actions.append(
+        createActionButton('complete-btn', 'Reabrir', () => unarchiveTask(t.id)),
+        createActionButton('history-btn', 'Historial', () => openHistoryModal(t.id)),
+        createActionButton('del-btn', 'Borrar', () => deleteTask(t.id))
+      );
+      content.appendChild(actions);
+      card.appendChild(content);
+      container.appendChild(card);
+      return;
     }
 
+    const card = document.createElement('div');
+    card.className = `task-card p-${t.priority}${isDone ? ' done' : ''}${isOverdue ? ' overdue' : ''}`;
+    card.id = `card-${t.id}`;
+    const frame = document.createElement('div');
+    frame.className = 'task-frame';
+    const tab = document.createElement('div');
+    tab.className = 'task-tab';
+    tab.appendChild(createActionButton(
+      'task-check',
+      isDone ? '✓' : '',
+      () => toggleTask(t.id, t.status)
+    ));
 
-    return `
+    const taskInfo = document.createElement('div');
+    taskInfo.className = 'task-info';
+    taskInfo.appendChild(createTextElement('div', 'task-title', t.title));
+    tab.appendChild(taskInfo);
 
-      <div class="task-card p-${t.priority} ${isDone ? "done" : ""} ${isOverdue ? "overdue" : ""}" id="card-${t.id}">
+    const badges = document.createElement('div');
+    badges.style.cssText = 'margin-left:auto;display:flex;gap:.5rem;align-items:center';
+    badges.appendChild(createTextElement('span', `badge badge-${t.priority}`, t.priority));
+    if (normalDate) {
+      badges.appendChild(createTextElement(
+        'span',
+        `badge ${isOverdue ? 'badge-overdue' : 'badge-due'}`,
+        dueLabel
+      ));
+    }
+    tab.appendChild(badges);
+    frame.appendChild(tab);
 
-        <div class="task-frame">
+    const body = document.createElement('div');
+    body.className = 'task-body';
+    appendTaskText(body, null, t.description);
+    appendSubtasks(body, t.subtasks);
 
-          <div class="task-tab">
+    const actions = document.createElement('div');
+    actions.className = 'task-actions';
+    actions.append(
+      createActionButton('complete-btn', isDone ? 'Reabrir' : 'Terminada', () => toggleTask(t.id, t.status)),
+      createActionButton('ai-btn', 'Consejos', () => genAI(t.id)),
+      createActionButton('archive-btn', isDone ? 'Archivar' : 'Arch', () => archiveTask(t.id)),
+      createActionButton('history-btn', 'Historial', () => openHistoryModal(t.id)),
+      createActionButton('del-btn', 'Borrar', () => deleteTask(t.id))
+    );
+    body.appendChild(actions);
+    frame.appendChild(body);
+    card.appendChild(frame);
+    container.appendChild(card);
+  });
+}
 
-            <button
-              class="task-check"
-              onclick="toggleTask(${t.id},'${t.status}')"
-            >
-              ${isDone ? "✓" : ""}
-            </button>
+function createTextElement(tag, className, text) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  element.textContent = text == null ? '' : String(text);
+  return element;
+}
 
-            <div class="task-info">
+function createActionButton(className, label, handler) {
+  const button = createTextElement('button', className, label);
+  button.type = 'button';
+  button.addEventListener('click', handler);
+  return button;
+}
 
-              <div class="task-title">
+function appendTaskText(parent, heading, value) {
+  if (!value) return;
+  if (heading) parent.appendChild(createTextElement('h4', '', heading));
+  parent.appendChild(createTextElement('div', 'task-desc', value));
+}
 
-                ${escHtml(t.title)}
-
-              </div>
-
-            </div>
-
-            <div
-              style="margin-left:auto;display:flex;gap:.5rem;align-items:center;"
-            >
-
-              <span class="badge badge-${t.priority}">
-                ${t.priority}
-              </span>
-
-              ${
-                normalDate
-                  ? `
-                  <span class="badge ${isOverdue ? "badge-overdue" : "badge-due"}">
-                    ${dueLabel}
-                  </span>
-                `
-                  : ""
-              }
-
-            </div>
-
-          </div>
-
-          <div class="task-body">
-
-            ${
-              t.description
-                ? `
-                  <div class="task-desc">
-                    ${escHtml(t.description)}
-                  </div>
-                `
-                : ""
-            }
-
-            ${subtasksHtml}
-
-            <div class="task-actions">
-
-              <button
-                class="complete-btn"
-                onclick="toggleTask(${t.id},'${t.status}')"
-              >
-                ${isDone ? "Reabrir" : "Terminada"}
-              </button>
-
-              <button
-                class="ai-btn"
-                onclick="genAI(${t.id})"
-              >
-                 Consejos
-              </button>
-
-              <button
-                class="archive-btn"
-                onclick="archiveTask(${t.id})"
-              >
-                ${isDone ? "Archivar" : "Arch"}
-              </button>
-
-              <button
-                class="history-btn"
-                onclick="openHistoryModal(${t.id}, \`${escHtml(t.title)}\`)"
-              >
-                 Historial
-              </button>
-
-              <button
-                class="del-btn"
-                onclick="deleteTask(${t.id})"
-              >
-                Borrar
-              </button>
-
-            </div>
-
-          </div>
-
-        </div>
-
-      </div>
-
-    `;
-
-  }).join("");
+function appendSubtasks(parent, subtasks) {
+  if (!subtasks?.length) return;
+  const box = document.createElement('div');
+  box.className = 'ai-result-box';
+  box.appendChild(createTextElement('div', 'ai-recs-header', 'Recomendación Para Iniciar'));
+  subtasks.forEach(subtask => {
+    const item = document.createElement('div');
+    item.className = 'subtask-item';
+    item.appendChild(createTextElement(
+      'div',
+      `subtask-text${subtask.done ? ' checked' : ''}`,
+      subtask.text
+    ));
+    box.appendChild(item);
+  });
+  parent.appendChild(box);
 }
 
 // ── STATS ──
@@ -2422,16 +2268,22 @@ async function genAI(taskId) {
     subtaskDiv.className = 'ai-result-box';
     card.querySelector('.task-actions').before(subtaskDiv);
   }
-  subtaskDiv.innerHTML = `<div class="ai-generating"><div class="spinner"></div> El asistente está analizando tu tarea...</div>`;
+  const loading = document.createElement('div');
+  loading.className = 'ai-generating';
+  loading.append(
+    createTextElement('div', 'spinner', ''),
+    document.createTextNode(' El asistente está analizando tu tarea...')
+  );
+  subtaskDiv.replaceChildren(loading);
 
   const res = await fetch(`/api/tasks/${taskId}/ai`, { method: 'POST' });
   const data = await res.json();
   if (btn) { btn.disabled = false; btn.textContent = ' Consejos'; }
 
   if (data.error) {
-    subtaskDiv.innerHTML = `<div style="color:var(--red);font-size:.82rem;padding:0.5rem 0;display:flex;gap:0.4rem;align-items:flex-start;">
-      <span>⚠️</span><span>${data.error}</span>
-    </div>`;
+    const errorBox = createTextElement('div', '', `⚠️ ${data.error}`);
+    errorBox.style.cssText = 'color:var(--red);font-size:.82rem;padding:.5rem 0';
+    subtaskDiv.replaceChildren(errorBox);
     return;
   }
   loadTasks();
@@ -2470,6 +2322,10 @@ async function createTask() {
     document.getElementById('new-label').value = '';
     document.getElementById('new-duedate').value = '';
     document.getElementById('new-priority').value = 'media';
+    currentLabel = '';
+    document.querySelectorAll('.label-chip').forEach(chip => {
+      chip.classList.remove('active');
+    });
     loadTasks();
     updateLabelsList();
   } else {
@@ -2483,9 +2339,13 @@ async function updateLabelsList() {
   const tasks = await res.json();
   const labels = [...new Set(tasks.map(t => t.label).filter(Boolean))].sort();
   const list = document.getElementById('labels-list');
-  list.innerHTML = labels.map(l =>
-    `<button class="label-chip ${l === currentLabel ? 'active' : ''}" onclick="filterByLabel('${l}')">${l}</button>`
-  ).join('');
+  list.replaceChildren(...labels.map(label => {
+    const button = document.createElement('button');
+    button.className = `label-chip ${label === currentLabel ? 'active' : ''}`;
+    button.textContent = label;
+    button.addEventListener('click', () => filterByLabel(label));
+    return button;
+  }));
 }
 
 
@@ -2501,16 +2361,10 @@ function normalizeDueDateStr(due_date) {
 }
 
 async function loadCalendarTasks() {
-  const year = calDate.getFullYear();
-  const month = calDate.getMonth();
-  const firstDay = `${year}-${String(month+1).padStart(2,'0')}-01`;
-  const lastDay = `${year}-${String(month+1).padStart(2,'0')}-${String(new Date(year, month+1, 0).getDate()).padStart(2,'0')}`;
   const res = await fetch(`/api/tasks?archived=0`);
   const tasks = res.ok ? await res.json() : [];
 
   calendarItems = tasks.map(t => ({ ...t, due_date: normalizeDueDateStr(t.due_date) || t.due_date, _source: 'task' }));
-  window._cal = calendarItems;
-  console.log('[cal] items:', calendarItems);
 
   renderCalendar();
   selectCalendarDay(selectedDate);
@@ -2540,22 +2394,25 @@ function renderCalendar() {
   const daysInPrev = new Date(year, month, 0).getDate();
 
   const taskMap = {};
-  console.log('[renderCalendar] calendarItems.length:', calendarItems.length);
   calendarItems.forEach(t => {
     const dateKey = normalizeDueDateStr(t.due_date);
-    console.log('[renderCalendar] t.due_date:', t.due_date, '-> dateKey:', dateKey);
     if (dateKey) {
       if (!taskMap[dateKey]) taskMap[dateKey] = [];
       taskMap[dateKey].push(t);
     }
   });
-  console.log('[renderCalendar] taskMap:', taskMap);
 
   document.getElementById('cal-month-title').textContent = `${monthNames[month]} ${year}`;
-  let html = `${dayNames.map(d => `<div class="cal-day-name">${d}</div>`).join('')}`;
+  grid.replaceChildren();
+  dayNames.forEach(dayName => {
+    grid.appendChild(createTextElement('div', 'cal-day-name', dayName));
+  });
 
   for (let i = firstDay - 1; i >= 0; i--) {
-    html += `<div class="cal-day other-month"><div class="cal-day-num">${daysInPrev - i}</div></div>`;
+    const day = document.createElement('div');
+    day.className = 'cal-day other-month';
+    day.appendChild(createTextElement('div', 'cal-day-num', daysInPrev - i));
+    grid.appendChild(day);
   }
 
   for (let d = 1; d <= daysInMonth; d++) {
@@ -2563,28 +2420,34 @@ function renderCalendar() {
     const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
     const dayTasks = taskMap[dateStr] || [];
     const isSelected = selectedDate === dateStr;
-    html += `<div class="cal-day ${isToday ? 'today' : ''} ${dayTasks.length ? 'has-tasks' : ''} ${isSelected ? 'selected' : ''}" onclick="selectCalendarDay('${dateStr}')">
-      <div class="cal-day-num">${d}</div>
-      ${dayTasks.length ? `
-  <div class="cal-dots" title="${dayTasks.length} evento${dayTasks.length !== 1 ? 's' : ''}">
-    ${dayTasks.map(t => `
-      <span
-        class="cal-dot p-${t.priority}"
-        title="${escHtml(t.title)}"
-      ></span>
-    `).join("")}
-  </div>
-` : ""}
-    </div>`;
+    const day = document.createElement('div');
+    day.className = `cal-day${isToday ? ' today' : ''}${dayTasks.length ? ' has-tasks' : ''}${isSelected ? ' selected' : ''}`;
+    day.addEventListener('click', () => selectCalendarDay(dateStr));
+    day.appendChild(createTextElement('div', 'cal-day-num', d));
+
+    if (dayTasks.length) {
+      const dots = document.createElement('div');
+      dots.className = 'cal-dots';
+      dots.title = `${dayTasks.length} evento${dayTasks.length !== 1 ? 's' : ''}`;
+      dayTasks.forEach(task => {
+        const dot = document.createElement('span');
+        dot.className = `cal-dot p-${task.priority}`;
+        dot.title = task.title;
+        dots.appendChild(dot);
+      });
+      day.appendChild(dots);
+    }
+    grid.appendChild(day);
   }
 
   const total = firstDay + daysInMonth;
   const remaining = total % 7 === 0 ? 0 : 7 - (total % 7);
   for (let i = 1; i <= remaining; i++) {
-    html += `<div class="cal-day other-month"><div class="cal-day-num">${i}</div></div>`;
+    const day = document.createElement('div');
+    day.className = 'cal-day other-month';
+    day.appendChild(createTextElement('div', 'cal-day-num', i));
+    grid.appendChild(day);
   }
-
-  grid.innerHTML = html;
 }
 
 async function selectCalendarDay(date) {
@@ -2621,40 +2484,89 @@ function renderDayDetails() {
     : 'No hay eventos para este día';
 
   if (!selectedDayTasks.length) {
-    list.innerHTML = `<div class="empty-state">Selecciona otro día del calendario para ver eventos o tareas.</div>`;
+    list.replaceChildren(createTextElement(
+      'div',
+      'empty-state',
+      'Selecciona otro día del calendario para ver eventos o tareas.'
+    ));
     return;
   }
 
-  list.innerHTML = selectedDayTasks.map(t => `
-    <article class="day-task-card">
-      <div class="day-task-title">${escHtml(t.title)}</div>
-      ${t.description ? `<p class="day-task-desc">${escHtml(t.description)}</p>` : ''}
-      <div class="day-task-meta">
-        <span class="badge ${t._source === 'google' ? 'badge-google' : `badge-${t.priority}`} ">${t._source === 'google' ? 'Google' : escHtml(t.priority)}</span>
-        ${t.label ? `<span class="badge badge-label">#${escHtml(t.label)}</span>` : ''}
-        <span class="badge badge-due">${t._source === 'google' ? 'Calendario' : (t.status === 'completada' ? 'Completada' : 'Pendiente')}</span>
-      </div>
-    </article>`).join('');
+  list.replaceChildren(...selectedDayTasks.map(createCalendarListItem));
 }
 
 function renderAgenda() {
   const agenda = document.getElementById('agenda-list');
-  if (!calendarItems.length) {
-    agenda.innerHTML = `<div class="empty-state">No hay eventos programados para este mes.</div>`;
+  const year = calDate.getFullYear();
+  const month = String(calDate.getMonth() + 1).padStart(2, '0');
+  const monthPrefix = `${year}-${month}-`;
+  const items = calendarItems
+    .filter(item => normalizeDueDateStr(item.due_date)?.startsWith(monthPrefix))
+    .sort((a, b) => a.due_date.localeCompare(b.due_date));
+
+  if (!items.length) {
+    agenda.replaceChildren(createTextElement(
+      'div',
+      'empty-state',
+      'No hay eventos programados para este mes.'
+    ));
     return;
   }
-  const items = [...calendarItems].sort((a,b) => a.due_date.localeCompare(b.due_date));
-  agenda.innerHTML = items.map(t => `
-    <div class="agenda-item">
-      <div class="agenda-item-title">${escHtml(t.title)}</div>
-      <div class="agenda-item-meta">
-        <span>${t.due_date ? new Date(t.due_date + 'T12:00:00').toLocaleDateString('es', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Sin fecha'}</span>
-        <span class="badge ${t._source === 'google' ? 'badge-google' : `badge-${t.priority}`} ">${t._source === 'google' ? 'Google Calendar' : escHtml(t.priority)}</span>
-        ${t.label ? `<span class="badge badge-label">#${escHtml(t.label)}</span>` : ''}
-        <span class="badge badge-due">${t._source === 'google' ? 'Evento' : (t.status === 'completada' ? 'Completada' : 'Pendiente')}</span>
-      </div>
-      ${t.description ? `<p class="day-task-desc">${escHtml(t.description)}</p>` : ''}
-    </div>`).join('');
+  agenda.replaceChildren(...items.map(t => {
+    const item = document.createElement('div');
+    item.className = 'agenda-item';
+    item.appendChild(createTextElement('div', 'agenda-item-title', t.title));
+    const meta = document.createElement('div');
+    meta.className = 'agenda-item-meta';
+    meta.appendChild(createTextElement(
+      'span',
+      '',
+      t.due_date
+        ? new Date(t.due_date + 'T12:00:00').toLocaleDateString(
+            'es',
+            { weekday: 'short', day: 'numeric', month: 'short' }
+          )
+        : 'Sin fecha'
+    ));
+    appendCalendarBadges(meta, t, true);
+    item.appendChild(meta);
+    if (t.description) {
+      item.appendChild(createTextElement('p', 'day-task-desc', t.description));
+    }
+    return item;
+  }));
+}
+
+function createCalendarListItem(task) {
+  const article = document.createElement('article');
+  article.className = 'day-task-card';
+  article.appendChild(createTextElement('div', 'day-task-title', task.title));
+  if (task.description) {
+    article.appendChild(createTextElement('p', 'day-task-desc', task.description));
+  }
+  const meta = document.createElement('div');
+  meta.className = 'day-task-meta';
+  appendCalendarBadges(meta, task, false);
+  article.appendChild(meta);
+  return article;
+}
+
+function appendCalendarBadges(parent, task, agendaView) {
+  const google = task._source === 'google';
+  parent.appendChild(createTextElement(
+    'span',
+    `badge ${google ? 'badge-google' : `badge-${task.priority}`}`,
+    google ? (agendaView ? 'Google Calendar' : 'Google') : task.priority
+  ));
+  if (task.label) {
+    parent.appendChild(createTextElement('span', 'badge badge-label', `#${task.label}`));
+  }
+  parent.appendChild(createTextElement(
+    'span',
+    'badge badge-due',
+    google ? (agendaView ? 'Evento' : 'Calendario') :
+      (task.status === 'completada' ? 'Completada' : 'Pendiente')
+  ));
 }
 
 async function goToday() {
@@ -2667,12 +2579,13 @@ async function calNav(dir) {
   calDate = new Date(calDate.getFullYear(), calDate.getMonth() + dir, 1);
   const nextDate = new Date(calDate.getFullYear(), calDate.getMonth(), 1).toISOString().split('T')[0];
   await selectCalendarDay(nextDate);
+  if (calendarView === 'agenda') renderAgenda();
 }
 
 // ── LOGOUT ──
 async function logout() {
-  await fetch('/api/logout', { method: 'POST' });
-  window.location.href = '/';
+  await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+  window.location.replace('/');
 }
 
 // ── PRIORITY ADVISOR ──
@@ -2756,16 +2669,6 @@ function updateAdvisor(tasks) {
   scoreEl.className    = `advisor-badge ${top.task.priority}`;
 }
 
-// ── UTILS ──
-function escHtml(str) {
-  return String(str)
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;')
-    .replace(/'/g,'&#39;');
-}
-
 // ── KEYBOARD ──
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') document.getElementById('modal').classList.remove('open');
@@ -2814,11 +2717,11 @@ __novaHandlers.archiveTask = archiveTask;
 
 // ── HISTORIAL Y COMENTARIOS ──
 
-async function openHistoryModal(taskId, taskTitle) {
+async function openHistoryModal(taskId) {
   document.getElementById('history-task-id').value = taskId;
   document.getElementById('new-comment-body').value = '';
-  document.getElementById('history-changes').innerHTML = '<em>Cargando...</em>';
-  document.getElementById('history-comments').innerHTML = '<em style="color:var(--text2)">Cargando...</em>';
+  setStatusText(document.getElementById('history-changes'), 'Cargando...');
+  setStatusText(document.getElementById('history-comments'), 'Cargando...');
 
   const task = allTasks.find(t => t.id === taskId) || archiveTasks.find(t => t.id === taskId);
   if (task) {
@@ -2845,41 +2748,57 @@ async function loadHistoryData(taskId) {
     // Cambios automáticos
     const changesEl = document.getElementById('history-changes');
     if (!data.history?.length) {
-      changesEl.innerHTML = '<em style="color:var(--text2)">Sin cambios registrados aún.</em>';
+      setStatusText(changesEl, 'Sin cambios registrados aún.');
     } else {
-      changesEl.innerHTML = data.history.map(h => `
-        <div style="padding:.3rem 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;flex-wrap:wrap">
-          <span>
-            <span style="color:var(--accent);font-weight:600">${h.field}</span>:
-            <span style="text-decoration:line-through;color:var(--text2);font-size:.8rem">${h.old_value || '—'}</span>
-            → <strong>${h.new_value || '—'}</strong>
-          </span>
-          <span style="font-size:.74rem;color:var(--text2);white-space:nowrap">${formatDateShort(h.changed_at)}</span>
-        </div>
-      `).join('');
+      changesEl.replaceChildren(...data.history.map(h => {
+        const row = document.createElement('div');
+        row.style.cssText = 'padding:.3rem 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;flex-wrap:wrap';
+        const change = document.createElement('span');
+        const field = createTextElement('span', '', `${h.field}: `);
+        field.style.cssText = 'color:var(--accent);font-weight:600';
+        const oldValue = createTextElement('span', '', h.old_value || '—');
+        oldValue.style.cssText = 'text-decoration:line-through;color:var(--text2);font-size:.8rem';
+        const arrow = document.createTextNode(' → ');
+        const newValue = createTextElement('strong', '', h.new_value || '—');
+        change.append(field, oldValue, arrow, newValue);
+        const date = createTextElement('span', '', formatDateShort(h.changed_at));
+        date.style.cssText = 'font-size:.74rem;color:var(--text2);white-space:nowrap';
+        row.append(change, date);
+        return row;
+      }));
     }
 
     // Comentarios
     const commentsEl = document.getElementById('history-comments');
     if (!data.comments?.length) {
-      commentsEl.innerHTML = '<em style="color:var(--text2)">Sin comentarios aún.</em>';
+      setStatusText(commentsEl, 'Sin comentarios aún.');
     } else {
-      commentsEl.innerHTML = data.comments.map(c => `
-        <div style="padding:.7rem .85rem;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid var(--border)">
-          <div style="font-size:.75rem;color:var(--text2);margin-bottom:.3rem">${formatDateShort(c.created_at)}</div>
-          <div style="color:var(--text);line-height:1.5">${escHtml(c.body)}</div>
-          ${c.ai_reply ? `
-            <div style="margin-top:.6rem;padding:.5rem .75rem;background:rgba(124,106,247,0.1);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;font-size:.82rem;color:var(--text);line-height:1.5">
-              🤖 ${escHtml(c.ai_reply)}
-            </div>
-          ` : ''}
-        </div>
-      `).join('');
+      commentsEl.replaceChildren(...data.comments.map(c => {
+        const card = document.createElement('div');
+        card.style.cssText = 'padding:.7rem .85rem;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid var(--border)';
+        const date = createTextElement('div', '', formatDateShort(c.created_at));
+        date.style.cssText = 'font-size:.75rem;color:var(--text2);margin-bottom:.3rem';
+        const body = createTextElement('div', '', c.body);
+        body.style.cssText = 'color:var(--text);line-height:1.5';
+        card.append(date, body);
+        if (c.ai_reply) {
+          const reply = createTextElement('div', '', `🤖 ${c.ai_reply}`);
+          reply.style.cssText = 'margin-top:.6rem;padding:.5rem .75rem;background:rgba(124,106,247,0.1);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;font-size:.82rem;color:var(--text);line-height:1.5';
+          card.appendChild(reply);
+        }
+        return card;
+      }));
     }
   } catch(err) {
     console.error('Error cargando historial:', err);
-    document.getElementById('history-changes').innerHTML = '<em style="color:var(--red)">Error al cargar.</em>';
+    setStatusText(document.getElementById('history-changes'), 'Error al cargar.', true);
   }
+}
+
+function setStatusText(container, message, error = false) {
+  const status = createTextElement('em', '', message);
+  status.style.color = error ? 'var(--red)' : 'var(--text2)';
+  container.replaceChildren(status);
 }
 
 async function submitComment(askAi) {
@@ -2924,13 +2843,16 @@ async function saveQuickEdit() {
 }
 
 async function unarchiveTask(id) {
-  await fetch(`/api/tasks/${id}`, {
+  const response = await fetch(`/api/tasks/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ archived: false }),
   });
-  loadArchive();
-  loadTasks();
+  if (!response.ok) {
+    console.error('No se pudo reabrir la tarea archivada.');
+    return;
+  }
+  await Promise.all([loadArchive(), loadTasks()]);
 }
 
 function formatDateShort(dateStr) {

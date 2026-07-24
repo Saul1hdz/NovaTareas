@@ -5,6 +5,8 @@ import { getDb } from '../lib/db.js';
 
 const session = await getUser(Astro.request);
 if (!session) return Astro.redirect('/');
+Astro.response.headers.set('Cache-Control', 'private, no-store, max-age=0');
+Astro.response.headers.set('Pragma', 'no-cache');
 
 const db = getDb();
 const user = db.prepare('SELECT id, full_name, email, telefono, user_type, avatar_url, telegram_chat_id, theme FROM users WHERE id = ?').get(session.userId) as
@@ -103,11 +105,16 @@ const USER_TYPE_LABELS: Record<string, string> = { estudiante: '🎓 Estudiante'
       ) : (
         <div class="telegram-pending">
           <p>❌ Aún no has vinculado tu cuenta de Telegram.</p>
-          <p>Para recibir recordatorios de tareas:</p>
+          <p>Genera un código temporal y envíalo al bot. Nunca compartas tu contraseña por Telegram.</p>
           <ol>
             <li>Busca <strong>@NovasTareasBot</strong> en Telegram</li>
-            <li>Escribe: <code>/vincular {user?.email} tu_contraseña</code></li>
+            <li>Presiona el botón para generar un código válido durante 10 minutos</li>
+            <li>Envía al bot el comando que aparecerá aquí</li>
           </ol>
+          <button type="button" class="btn-primary" id="telegram-link-button" onclick="generateTelegramLinkCode()">
+            Generar código de vinculación
+          </button>
+          <div id="telegram-link-result" class="telegram-code" aria-live="polite"></div>
         </div>
       )}
     </section>
@@ -173,6 +180,8 @@ h2 { font-size: 1rem; font-weight: 700; margin-bottom: 1.25rem; color: var(--tex
 .telegram-ok { display: flex; flex-direction: column; gap: 0.4rem; color: var(--green); }
 .telegram-pending { display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.9rem; color: var(--text2); }
 .telegram-pending ol { padding-left: 1.25rem; }
+.telegram-code { min-height: 1.5rem; color: var(--text); }
+.telegram-code code { display: inline-block; margin-top: 0.3rem; user-select: all; }
 code { background: var(--bg3); padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.85em; }
 </style>
 
@@ -249,15 +258,54 @@ async function savePassword(e) {
   else { msg.textContent = '❌ ' + (data.error || 'Error'); msg.className = 'msg err'; }
 }
 
+async function generateTelegramLinkCode() {
+  const button = document.getElementById('telegram-link-button') as HTMLButtonElement | null;
+  const result = document.getElementById('telegram-link-result');
+  if (!button || !result) return;
+
+  button.disabled = true;
+  result.textContent = 'Generando código...';
+
+  try {
+    const response = await fetch('/api/telegram/link-code', {
+      method: 'POST',
+      credentials: 'include',
+    });
+    const data = await response.json();
+    result.replaceChildren();
+
+    if (!response.ok) {
+      result.textContent = data.error || 'No se pudo generar el código.';
+      return;
+    }
+
+    const message = document.createElement('span');
+    message.textContent = 'Envía al bot: ';
+    const command = document.createElement('code');
+    command.textContent = data.command;
+    result.append(message, command);
+  } catch {
+    result.textContent = 'No se pudo conectar con el servidor.';
+  } finally {
+    button.disabled = false;
+  }
+}
+
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) window.location.reload();
+});
+
 declare global {
   interface Window {
     uploadAvatar: (event: Event) => void;
     saveProfile: (e: Event) => void;
     savePassword: (e: Event) => void;
+    generateTelegramLinkCode: () => void;
   }
 }
 
 window.uploadAvatar = uploadAvatar;
 window.saveProfile = saveProfile;
 window.savePassword = savePassword;
+window.generateTelegramLinkCode = generateTelegramLinkCode;
 </script>

@@ -3,13 +3,15 @@ const require = createRequire(import.meta.url);
 const {
   db,
   getUserByTelegramChatId,
-  getUserByEmail,
   linkTelegram,
+  consumeTelegramLinkCode,
   getTasksByUser,
   getCategoriesByUser,
   getUsersWithDueTasks,
   markReminderSent,
 } = require('./db.bot.cjs');
+import { consumeRateLimit, resetRateLimit, safeErrorSummary } from './security.js';
+import { validateTaskInput } from './taskValidation.js';
 
 const BOT_TOKEN      = process.env.TELEGRAM_BOT_TOKEN;
 const API_BASE       = `https://api.telegram.org/bot${BOT_TOKEN}`;
@@ -35,9 +37,16 @@ function displayName(user) {
   return user?.full_name || user?.username || 'Usuario';
 }
 
+function escapeTelegramHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 // Convierte Markdown de Gemini a HTML de Telegram
 function mdToHtml(text) {
-  return text
+  return escapeTelegramHtml(text)
     .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
     .replace(/\*(.*?)\*/g, '<i>$1</i>')
     .replace(/#{1,3} (.*)/g, '<b>$1</b>')
@@ -54,8 +63,7 @@ export async function sendMessage(chatId, text, extra = {}) {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const err = await res.text();
-    console.error(`[bot] sendMessage error (${chatId}):`, err);
+    console.error('[bot] Telegram rechazó sendMessage:', res.status);
   }
 }
 
@@ -115,7 +123,6 @@ export async function handleUpdate(update) {
 
   if (session.step) {
     if (session.step.startsWith('task_')) return handleTaskStep(chatId, text, session);
-    if (session.step.startsWith('link_')) return handleLinkStep(chatId, text, session);
     if (session.step.startsWith('rec_'))  return handleRecStep(chatId, text, session);
   }
 
@@ -137,14 +144,15 @@ async function handleStart(chatId) {
   const user = getUserByTelegramChatId(chatId);
   if (user) {
     await sendMessage(chatId,
-      `👋 ¡Hola de nuevo, <b>${displayName(user)}</b>!\n\n` +
+      `👋 ¡Hola de nuevo, <b>${escapeTelegramHtml(displayName(user))}</b>!\n\n` +
       `Escribe /ayuda para ver todo lo que puedo hacer por ti.`
     );
   } else {
     await sendMessage(chatId,
       `👋 ¡Bienvenido a <b>NovaTareas Bot</b>!\n\n` +
       `Para comenzar, vincula tu cuenta con:\n` +
-      `<code>/vincular tu@correo.com tu_contraseña</code>\n\n` +
+      `<code>/vincular CODIGO</code>\n\n` +
+      `Genera el código temporal desde tu perfil web.\n\n` +
       `Escribe /ayuda para más información.`
     );
   }
@@ -156,7 +164,7 @@ async function handleAyuda(chatId) {
     `📋 <b>Comandos disponibles</b>\n\n` +
     `/start — Bienvenida\n` +
     `/ayuda — Muestra esta ayuda\n` +
-    `/vincular &lt;correo&gt; &lt;contraseña&gt; — Conecta tu cuenta\n` +
+    `/vincular &lt;código temporal&gt; — Conecta tu cuenta\n` +
     `/desvincular — Desconecta tu cuenta\n` +
     `/nuevatarea — Crea una tarea paso a paso\n` +
     `/recomendacion — Sugerencias de IA para una tarea`
@@ -166,26 +174,35 @@ async function handleAyuda(chatId) {
 // ─── Vinculación ──────────────────────────────────────────────────────────────
 
 async function handleVincular(chatId, args) {
-  const parts    = (args || '').trim().split(/\s+/);
-  const email    = parts[0];
-  const password = parts.slice(1).join(' ');
-
-  if (!email || !password) {
-    return sendMessage(chatId, '⚠️ Uso correcto: <code>/vincular tu@correo.com tu_contraseña</code>');
+  const code = (args || '').trim().toUpperCase();
+  if (!/^[A-Z0-9_-]{8}$/.test(code)) {
+    return sendMessage(
+      chatId,
+      '⚠️ Uso correcto: <code>/vincular CODIGO</code>\nGenera el código desde tu perfil web.'
+    );
   }
 
-  const bcrypt = await import('bcryptjs');
-  const user   = getUserByEmail(email);
+  const limit = consumeRateLimit(
+    'telegram-link-attempt',
+    String(chatId),
+    8,
+    15 * 60 * 1000
+  );
+  if (!limit.allowed) {
+    return sendMessage(chatId, '⏳ Demasiados intentos. Intenta nuevamente más tarde.');
+  }
 
-  if (!user) return sendMessage(chatId, '❌ No encontré una cuenta con ese correo.');
-
-  const valid = await bcrypt.default.compare(password, user.password_hash);
-  if (!valid) return sendMessage(chatId, '❌ Contraseña incorrecta.');
-
-  linkTelegram(user.id, chatId);
+  const user = consumeTelegramLinkCode(code, chatId);
+  if (!user) {
+    return sendMessage(
+      chatId,
+      '❌ Código inválido o vencido. Genera uno nuevo desde tu perfil.'
+    );
+  }
+  resetRateLimit('telegram-link-attempt', String(chatId));
   await sendMessage(chatId,
     `✅ ¡Cuenta vinculada!\n` +
-    `Bienvenido, <b>${displayName(user)}</b>. Recibirás recordatorios aquí.\n\n` +
+    `Bienvenido, <b>${escapeTelegramHtml(displayName(user))}</b>. Recibirás recordatorios aquí.\n\n` +
     `Escribe /ayuda para ver los comandos.`
   );
 }
@@ -197,17 +214,13 @@ async function handleDesvincular(chatId) {
   await sendMessage(chatId, '✅ Tu cuenta ha sido desvinculada de Telegram.');
 }
 
-async function handleLinkStep(chatId, text, session) {
-  clearSession(chatId);
-}
-
 // ─── Creación de tareas ───────────────────────────────────────────────────────
 
 async function handleNuevaTarea(chatId) {
   const user = getUserByTelegramChatId(chatId);
   if (!user) {
     return sendMessage(chatId,
-      '⚠️ Primero vincula tu cuenta.\n<code>/vincular tu@correo.com tu_contraseña</code>'
+      '⚠️ Primero vincula tu cuenta.\nGenera un código en tu perfil web y envía <code>/vincular CODIGO</code>'
     );
   }
 
@@ -224,16 +237,21 @@ async function handleTaskStep(chatId, text, session) {
 
   switch (step) {
     case 'task_title': {
-      if (!text || text.length < 2) {
-        return sendMessage(chatId, '⚠️ El título debe tener al menos 2 caracteres.');
+      const normalizedTitle = String(text || '').trim();
+      if (normalizedTitle.length < 2 || normalizedTitle.length > 200) {
+        return sendMessage(chatId, '⚠️ El título debe tener entre 2 y 200 caracteres.');
       }
-      data.title   = text;
+      data.title   = normalizedTitle;
       session.step = 'task_description';
       return sendMessage(chatId, '📄 ¿Cuál es la <b>descripción</b>?\n<i>(Escribe "no" para omitir)</i>');
     }
 
     case 'task_description': {
-      data.description = text.toLowerCase() === 'no' ? '' : text;
+      const normalizedDescription = String(text || '').trim();
+      if (normalizedDescription.length > 2000) {
+        return sendMessage(chatId, '⚠️ La descripción no puede superar 2000 caracteres.');
+      }
+      data.description = normalizedDescription.toLowerCase() === 'no' ? '' : normalizedDescription;
       session.step     = 'task_due_date';
       return sendMessage(chatId,
         '📅 ¿Cuál es la <b>fecha límite</b>?\n' +
@@ -246,14 +264,17 @@ async function handleTaskStep(chatId, text, session) {
       if (text.toLowerCase() === 'no') {
         data.due_date = null;
       } else {
-        const cleaned = text.trim().replace(' ', 'T');
-        const parsed  = new Date(cleaned);
-        if (isNaN(parsed.getTime())) {
+        const candidate = text.trim();
+        const validation = validateTaskInput({
+          title: data.title,
+          due_date: candidate,
+        });
+        if (validation.error) {
           return sendMessage(chatId,
-            '⚠️ Fecha inválida. Usa el formato <code>2025-12-31</code> o <code>2025-12-31 09:00</code>'
+            '⚠️ Fecha inválida. Usa el formato <code>2025-12-31</code>.'
           );
         }
-        data.due_date = text.trim().slice(0, 10);
+        data.due_date = candidate;
       }
       session.step = 'task_priority';
       return sendMessage(chatId, '🔢 ¿Cuál es la <b>prioridad</b>?', {
@@ -280,7 +301,7 @@ async function handleTaskStep(chatId, text, session) {
         data.category_id = null;
       } else {
         const catId = parseInt(text, 10);
-        if (isNaN(catId)) {
+        if (!Number.isInteger(catId) || catId <= 0) {
           return sendMessage(chatId, '⚠️ Escribe el número de la categoría o "no".');
         }
         data.category_id = catId;
@@ -315,28 +336,49 @@ async function saveTask(chatId, session) {
   const { userId, title, description, due_date, priority, category_id } = session.data;
 
   try {
+    const validation = validateTaskInput({
+      title,
+      description: description || '',
+      due_date: due_date || null,
+      priority: priority || 'media',
+    });
+    if (validation.error) {
+      clearSession(chatId);
+      return sendMessage(chatId, `⚠️ ${escapeTelegramHtml(validation.error)}`);
+    }
+
+    if (category_id) {
+      const ownedCategory = db.prepare(
+        'SELECT id FROM categories WHERE id = ? AND user_id = ?'
+      ).get(category_id, userId);
+      if (!ownedCategory) {
+        return sendMessage(chatId, '⚠️ La categoría seleccionada no pertenece a tu cuenta.');
+      }
+    }
+
+    const task = validation.values;
     db.prepare(
       `INSERT INTO tasks (user_id, title, description, due_date, priority, category_id, completed, reminder_sent)
        VALUES (?, ?, ?, ?, ?, ?, 0, 0)`
     ).run(
       userId,
-      title,
-      description || '',
-      due_date    || null,
-      priority    || 'media',
+      task.title,
+      task.description || '',
+      task.due_date || null,
+      task.priority || 'media',
       category_id || null
     );
 
     clearSession(chatId);
     await sendMessage(chatId,
       `✅ <b>Tarea creada</b>\n\n` +
-      `📌 <b>${title}</b>\n` +
-      (description ? `📄 ${description}\n` : '') +
-      (due_date    ? `📅 Vence: ${due_date}\n` : '') +
-      `🔢 Prioridad: ${priority || 'media'}`
+      `📌 <b>${escapeTelegramHtml(task.title)}</b>\n` +
+      (task.description ? `📄 ${escapeTelegramHtml(task.description)}\n` : '') +
+      (task.due_date ? `📅 Vence: ${task.due_date}\n` : '') +
+      `🔢 Prioridad: ${escapeTelegramHtml(task.priority || 'media')}`
     );
   } catch (err) {
-    console.error('[bot] Error al guardar tarea:', err);
+    console.error('[bot] Error al guardar tarea:', err?.code || err?.name || 'error');
     clearSession(chatId);
     await sendMessage(chatId, '❌ Error al guardar la tarea. Inténtalo de nuevo.');
   }
@@ -348,7 +390,7 @@ async function handleRecomendacion(chatId) {
   const user = getUserByTelegramChatId(chatId);
   if (!user) {
     return sendMessage(chatId,
-      '⚠️ Primero vincula tu cuenta.\n<code>/vincular tu@correo.com tu_contraseña</code>'
+      '⚠️ Primero vincula tu cuenta.\nGenera un código en tu perfil web y envía <code>/vincular CODIGO</code>'
     );
   }
 
@@ -437,14 +479,13 @@ async function tryZai(prompt) {
       signal: AbortSignal.timeout(30000)
     });
     if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      console.error(`[tryZai] error ${res.status}:`, errText);
+      console.error('[tryZai] Respuesta no exitosa:', res.status);
       return null;
     }
     const data = await res.json().catch(() => null);
     return data?.choices?.[0]?.message?.content?.trim() || null;
   } catch (err) {
-    console.error('[tryZai] excepción:', err.message);
+    console.error('[tryZai] Fallo de red o proveedor');
     return null;
   }
 }
@@ -601,7 +642,7 @@ async function handleCallback(chatId, data, session) {
     const desc = `${task.title}${task.description ? ': ' + task.description : ''}`;
     const rec  = await getAiRecommendation(desc, user?.user_type || session.data?.userType || 'comun', user?.id);
     clearSession(chatId);
-    return sendLongMessage(chatId, `💡 <b>Recomendaciones para "${task.title}"</b>\n\n${mdToHtml(rec)}`);
+    return sendLongMessage(chatId, `💡 <b>Recomendaciones para "${escapeTelegramHtml(task.title)}"</b>\n\n${mdToHtml(rec)}`);
   }
 
   if (data === 'rec_manual') {
@@ -623,13 +664,13 @@ export async function sendReminders(windowMinutes = 30) {
       await sendMessage(
         row.telegram_chat_id,
         `⏰ <b>Recordatorio de tarea</b>\n\n` +
-        `📌 <b>${row.title}</b>\n` +
+        `📌 <b>${escapeTelegramHtml(row.title)}</b>\n` +
         `🗓️ Vence: ${formatted}\n\n` +
         `¡No olvides completarla a tiempo!`
       );
       markReminderSent(row.task_id);
     } catch (err) {
-      console.error(`[bot] Error enviando recordatorio a ${row.telegram_chat_id}:`, err);
+      console.error('[bot] Error enviando recordatorio:', safeErrorSummary(err));
     }
   }
 }

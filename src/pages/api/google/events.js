@@ -1,10 +1,18 @@
 import { google } from 'googleapis';
 import { getUser } from '../../../lib/auth.js';
 import { getDb } from '../../../lib/db.js';
+import { safeErrorSummary } from '../../../lib/security.js';
 
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI;
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function validDate(value) {
+  if (!DATE_PATTERN.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
 
 function getOAuthClient() {
   return new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
@@ -15,7 +23,7 @@ async function refreshAccessToken(oauth2Client, refreshToken) {
     const result = await oauth2Client.refreshToken(refreshToken);
     return result?.credentials || null;
   } catch (error) {
-    console.error('Google token refresh failed:', error);
+    console.error('Google token refresh failed:', safeErrorSummary(error));
     return null;
   }
 }
@@ -54,6 +62,12 @@ export const GET = async ({ request }) => {
   const url = new URL(request.url);
   const from = url.searchParams.get('from');
   const to = url.searchParams.get('to');
+  if ((from && !validDate(from)) || (to && !validDate(to)) || (from && to && from > to)) {
+    return new Response(JSON.stringify({ error: 'Rango de fechas inválido.' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
   const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
   const params = {
     timeMin: from ? new Date(`${from}T00:00:00Z`).toISOString() : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -81,7 +95,7 @@ export const GET = async ({ request }) => {
     });
     return new Response(JSON.stringify(events), { status: 200, headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
-    console.error('Google events error:', error);
+    console.error('Google events error:', safeErrorSummary(error));
     return new Response(JSON.stringify({ error: 'Error al obtener eventos de Google Calendar.' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 };

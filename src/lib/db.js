@@ -3,7 +3,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const db = new Database(path.join(__dirname, '..', '..', 'novatareas.db'));
+const defaultDbPath = path.join(__dirname, '..', '..', 'novatareas.db');
+export const db = new Database(path.resolve(process.env.NOVATAREAS_DB_PATH || defaultDbPath));
 
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
@@ -89,18 +90,16 @@ export function getArchivedTasksWithObservations(userId) {
 }
 
 export function getUsersWithDueTasks(windowMinutes = 30) {
-  const now = Date.now();
-  const limit = now + windowMinutes * 60 * 1000;
   return db.prepare(`
     SELECT t.id AS task_id, t.title, t.due_date,
            u.id AS user_id, u.telegram_chat_id
     FROM tasks t JOIN users u ON t.user_id = u.id
     WHERE u.telegram_chat_id IS NOT NULL
       AND t.reminder_sent = 0 AND t.completed = 0
-      AND t.due_date IS NOT NULL
-      AND CAST(t.due_date AS INTEGER) >= ?
-      AND CAST(t.due_date AS INTEGER) <= ?
-  `).all(now, limit);
+      AND t.reminder_at IS NOT NULL
+      AND datetime(t.reminder_at) >= datetime('now')
+      AND datetime(t.reminder_at) <= datetime('now', '+' || ? || ' minutes')
+  `).all(windowMinutes);
 }
 
 export function getPendingTasksForUser(userId) {

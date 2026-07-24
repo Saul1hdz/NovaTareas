@@ -1,4 +1,5 @@
 import { getDb } from "./db";
+import { safeErrorSummary } from './security.js';
 
 const ZAI_API_KEY      = process.env.ZAI_API_KEY?.trim();
 const ZAI_EMB_URL      = 'https://api.z.ai/api/paas/v4/embeddings';
@@ -307,7 +308,7 @@ export async function getRagContext(userId, task) {
 
     return buildRagContext(similar);
   } catch (err) {
-    console.error('[RAG] Error en pipeline:', err);
+    console.error('[RAG] Error en pipeline:', safeErrorSummary(err));
     return ''; // fallo silencioso — el sistema sigue funcionando sin RAG
   }
 }

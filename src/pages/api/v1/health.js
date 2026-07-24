@@ -2,6 +2,7 @@
 export const prerender = false;
 
 const ZAI_API_KEY = process.env.ZAI_API_KEY?.trim();
+const AI_API_KEY  = process.env.AI_API_KEY?.trim();
 const OLLAMA_URL  = process.env.OLLAMA_URL || 'http://localhost:11434';
 
 async function checkOllama() {
@@ -20,6 +21,7 @@ export async function GET() {
     timestamp: new Date().toISOString(),
     checks: {
       zai_configured: Boolean(ZAI_API_KEY),
+      external_api_configured: Boolean(AI_API_KEY),
       ollama_available: ollamaUp,
       // El servicio SIEMPRE puede responder gracias al fallback de reglas locales,
       // por eso el estado general es "ok" aunque z.ai y Ollama estén caídos.

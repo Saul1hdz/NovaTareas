@@ -135,13 +135,13 @@ async function tryZai(prompt) {
       signal: AbortSignal.timeout(45000),
     });
     if (!res.ok) {
-      console.error('[aiEngine/zai] error:', res.status, await res.text().catch(() => ''));
+      console.error('[aiEngine/zai] respuesta no exitosa:', res.status);
       return null;
     }
     const data = await res.json().catch(() => null);
     return trimToCompleteSentence(data?.choices?.[0]?.message?.content?.trim() || null);
   } catch (e) {
-    console.error('[aiEngine/zai] excepción:', e.message);
+    console.error('[aiEngine/zai] fallo de red o proveedor');
     return null;
   }
 }

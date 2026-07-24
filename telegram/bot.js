@@ -1,6 +1,5 @@
 import 'dotenv/config';
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
+import { safeErrorSummary } from '../src/lib/security.js';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -34,11 +33,11 @@ async function poll() {
       for (const update of result) {
         offset = update.update_id + 1;
         handleUpdate(update).catch((err) =>
-          console.error('[bot] Error en update:', err)
+          console.error('[bot] Error en update:', safeErrorSummary(err))
         );
       }
     } catch (err) {
-      console.error('[bot] Error en polling:', err.message);
+      console.error('[bot] Error en polling:', safeErrorSummary(err));
       await new Promise((r) => setTimeout(r, 5000));
     }
   }

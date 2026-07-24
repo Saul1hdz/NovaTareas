@@ -1,5 +1,14 @@
+import { safeErrorSummary } from './security.js';
+
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const API_BASE  = `https://api.telegram.org/bot${BOT_TOKEN}`;
+
+function escapeTelegramHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 
 // ─── Utilidad base ────────────────────────────────────────────────────────────
 
@@ -12,11 +21,10 @@ async function sendMessage(chatId, text) {
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
     });
     if (!res.ok) {
-      const err = await res.text();
-      console.error(`[telegramNotify] Error enviando a ${chatId}:`, err);
+      console.error('[telegramNotify] Telegram rechazó sendMessage:', res.status);
     }
   } catch (err) {
-    console.error(`[telegramNotify] Fallo de red:`, err.message);
+    console.error('[telegramNotify] Fallo de red');
   }
 }
 
@@ -58,13 +66,13 @@ export async function notifyTaskCreated(chatId, task) {
   const { title, description, priority = 'media', due_date } = task;
   const emoji    = PRIORITY_EMOJI[priority] || '🟡';
   const dateLine = due_date ? `\n📅 Vence: <b>${formatDate(due_date)}</b>` : '';
-  const descLine = description ? `\n📄 ${description}` : '';
+  const descLine = description ? `\n📄 ${escapeTelegramHtml(description)}` : '';
 
   await sendMessage(
     chatId,
     `🆕 <b>Tarea creada</b>\n\n` +
-    `📌 ${title}${descLine}${dateLine}\n` +
-    `${emoji} Prioridad: <b>${priority}</b>`
+    `📌 ${escapeTelegramHtml(title)}${descLine}${dateLine}\n` +
+    `${emoji} Prioridad: <b>${escapeTelegramHtml(priority)}</b>`
   );
 }
 
@@ -82,7 +90,7 @@ export async function notifyTaskCompleted(chatId, task) {
   await sendMessage(
     chatId,
     `✅ <b>¡Tarea completada!</b>\n\n` +
-    `📌 <b>${title}</b>${dateLine}\n\n` +
+    `📌 <b>${escapeTelegramHtml(title)}</b>${dateLine}\n\n` +
     `¡Buen trabajo! Sigue así 💪`
   );
 }
@@ -100,13 +108,13 @@ export async function notifyTaskUrgent(chatId, task) {
   const dateLine = due_date
     ? `\n📅 Vence: <b>${formatDate(due_date)}</b>`
     : '\n📅 Sin fecha límite definida';
-  const descLine = description ? `\n📄 ${description}` : '';
+  const descLine = description ? `\n📄 ${escapeTelegramHtml(description)}` : '';
 
   await sendMessage(
     chatId,
     `🔴 <b>¡Tarea urgente!</b>\n\n` +
     `Esta tarea necesita tu atención inmediata:\n\n` +
-    `📌 <b>${title}</b>${descLine}${dateLine}\n\n` +
+    `📌 <b>${escapeTelegramHtml(title)}</b>${descLine}${dateLine}\n\n` +
     `⚡ Prioridad: <b>URGENTE</b> — actúa cuanto antes.`
   );
 }
@@ -133,13 +141,13 @@ export async function notifyReminders(getUsersWithDueTasks, markReminderSent, wi
         row.telegram_chat_id,
         `⏰ <b>Recordatorio</b>\n\n` +
         `Tu tarea vence pronto:\n\n` +
-        `📌 <b>${row.title}</b>\n` +
+        `📌 <b>${escapeTelegramHtml(row.title)}</b>\n` +
         `🗓️ Vence: <b>${formatted}</b>\n\n` +
         `¡No olvides completarla a tiempo!`
       );
       markReminderSent(row.task_id);
     } catch (err) {
-      console.error(`[telegramNotify] Error recordatorio ${row.telegram_chat_id}:`, err.message);
+      console.error('[telegramNotify] Error recordatorio:', safeErrorSummary(err));
     }
   }
 
@@ -179,15 +187,15 @@ export async function notifyOverdueTasks(db) {
         row.telegram_chat_id,
         `🔴 <b>Tarea vencida</b>\n\n` +
         `La siguiente tarea ya pasó su fecha límite:\n\n` +
-        `📌 <b>${row.title}</b>\n` +
+        `📌 <b>${escapeTelegramHtml(row.title)}</b>\n` +
         `📅 Venció: <b>${formatDate(row.due_date)}</b>\n` +
-        `${emoji} Prioridad: <b>${row.priority}</b>\n\n` +
+        `${emoji} Prioridad: <b>${escapeTelegramHtml(row.priority)}</b>\n\n` +
         `⚠️ Complétala o reagéndala desde el dashboard.`
       );
       // Marcar para no volver a notificar
       db.prepare('UPDATE tasks SET overdue_notified = 1 WHERE id = ?').run(row.task_id);
     } catch (err) {
-      console.error(`[telegramNotify] Error vencida ${row.telegram_chat_id}:`, err.message);
+      console.error('[telegramNotify] Error vencida:', safeErrorSummary(err));
     }
   }
 

@@ -113,7 +113,7 @@ if (user) return Astro.redirect('/dashboard');
           </div>
           <div id="recover-error-email" class="error-msg"></div>
           <button class="btn-primary" onclick="startRecovery()">Continuar →</button>
-          <button type="button" class="btn-link" onclick="switchTab('login')">← Volver al login</button>
+          <button type="button" class="btn-link" onclick="cancelRecovery()">← Volver al login</button>
         </div>
 
         <!-- Paso 2: responder preguntas -->
@@ -129,6 +129,7 @@ if (user) return Astro.redirect('/dashboard');
           <div class="recover-attempts" id="recover-attempts"></div>
           <div id="recover-error-question" class="error-msg"></div>
           <button class="btn-primary" onclick="checkAnswer()">Verificar →</button>
+          <button type="button" class="btn-link" onclick="cancelRecovery()">← Volver al login</button>
         </div>
 
         <!-- Paso 3: nueva contraseña -->
@@ -140,6 +141,7 @@ if (user) return Astro.redirect('/dashboard');
           </div>
           <div id="recover-error-password" class="error-msg"></div>
           <button class="btn-primary" onclick="resetPassword()">Restablecer contraseña →</button>
+          <button type="button" class="btn-link" onclick="cancelRecovery()">← Volver al login</button>
         </div>
 
       </div>
@@ -321,6 +323,7 @@ async function handleLogin(e) {
   try {
     const res = await fetch('/api/login', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: form.email.value, password: form.password.value })
     });
@@ -390,6 +393,22 @@ async function handleRegister(e) {
 let recoverEmail = '';
 let recoverQuestionIndex = null;
 let recoverToken = '';
+
+function cancelRecovery() {
+  recoverEmail = '';
+  recoverQuestionIndex = null;
+  recoverToken = '';
+  (document.getElementById('recover-email') as HTMLInputElement).value = '';
+  (document.getElementById('recover-answer') as HTMLInputElement).value = '';
+  (document.getElementById('recover-new-password') as HTMLInputElement).value = '';
+  document.getElementById('recover-step-email').style.display = '';
+  document.getElementById('recover-step-question').style.display = 'none';
+  document.getElementById('recover-step-password').style.display = 'none';
+  document.querySelectorAll('#form-recover .error-msg').forEach(element => {
+    element.textContent = '';
+  });
+  switchTab('login');
+}
 
 async function startRecovery() {
   const email = (document.getElementById('recover-email') as HTMLInputElement).value.trim();
@@ -471,8 +490,7 @@ async function resetPassword() {
 
   if (data.ok) {
     alert('✅ Contraseña restablecida. Ahora puedes iniciar sesión.');
-    switchTab('login');
-    document.getElementById('main-tabs').style.display = '';
+    cancelRecovery();
   } else {
     err.textContent = data.error;
   }
@@ -487,6 +505,7 @@ declare global {
     startRecovery: () => void;
     checkAnswer: () => void;
     resetPassword: () => void;
+    cancelRecovery: () => void;
     filterQ1: () => void;
     filterQ2: () => void;
   }
@@ -498,6 +517,7 @@ window.handleRegister = handleRegister;
 window.startRecovery = startRecovery;
 window.checkAnswer = checkAnswer;
 window.resetPassword = resetPassword;
+window.cancelRecovery = cancelRecovery;
 window.filterQ1 = filterQ1;
 window.filterQ2 = filterQ2;
 

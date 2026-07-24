@@ -1,6 +1,8 @@
 import { getDb } from '../../lib/db.js';
 import { getUser } from '../../lib/auth.js';
 import { notifyTaskCreated, notifyTaskUrgent } from '../../lib/telegramNotify.js';
+import { validateTaskInput } from '../../lib/taskValidation.js';
+import { safeErrorSummary } from '../../lib/security.js';
 
 export const GET = async ({ request }) => {
   const user = await getUser(request);
@@ -14,6 +16,19 @@ export const GET = async ({ request }) => {
   const from     = url.searchParams.get('from')     || '';
   const to       = url.searchParams.get('to')       || '';
   const archived = url.searchParams.get('archived') === '1' ? 1 : 0;
+  if (search.length > 200 || label.length > 80) {
+    return json({ error: 'Filtro demasiado largo' }, 400);
+  }
+  if (priority && !['baja', 'media', 'alta', 'urgente'].includes(priority)) {
+    return json({ error: 'Prioridad inválida' }, 400);
+  }
+  for (const value of [date, from, to].filter(Boolean)) {
+    const validation = validateTaskInput({ title: 'filtro', due_date: value });
+    if (validation.error) return json({ error: validation.error }, 400);
+  }
+  if (from && to && from > to) {
+    return json({ error: 'Rango de fechas inválido' }, 400);
+  }
 
   const db = getDb();
   let query = `SELECT t.*, GROUP_CONCAT(s.id || '::' || s.text || '::' || s.done, '||') as subtasks_raw
@@ -51,35 +66,55 @@ export const POST = async ({ request }) => {
   const user = await getUser(request);
   if (!user) return new Response(JSON.stringify({ error: 'No autenticado' }), { status: 401 });
 
-  const { title, description, priority, label, due_date } = await request.json();
-  if (!title?.trim()) return new Response(JSON.stringify({ error: 'Título requerido' }), { status: 400 });
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: 'JSON inválido' }, 400);
+  }
+  const validation = validateTaskInput(body);
+  if (validation.error) return json({ error: validation.error }, 400);
+  const {
+    title,
+    description = '',
+    priority = 'media',
+    label = '',
+    due_date = null,
+  } = validation.values;
 
   const db = getDb();
 
   // ── Insertar tarea ──────────────────────────────────────────────────────────
   const result = db.prepare(
     'INSERT INTO tasks (user_id, title, description, priority, label, due_date) VALUES (?,?,?,?,?,?)'
-  ).run(user.userId, title.trim(), description || '', priority || 'media', label || '', due_date || null);
+  ).run(user.userId, title, description, priority, label, due_date);
 
   // ── Notificaciones Telegram (solo si el usuario tiene chat vinculado) ───────
   const dbUser = db.prepare('SELECT telegram_chat_id FROM users WHERE id = ?').get(user.userId);
   const chatId = dbUser?.telegram_chat_id;
 
   if (chatId) {
-    const task = { title: title.trim(), description, priority: priority || 'media', due_date };
+    const task = { title, description, priority, due_date };
 
     // Notificación de tarea creada
     notifyTaskCreated(chatId, task).catch(err =>
-      console.error('[tasks.js] notifyTaskCreated:', err.message)
+      console.error('[tasks.js] notifyTaskCreated:', safeErrorSummary(err))
     );
 
     // Si es urgente, enviar también alerta de urgencia
     if (priority === 'urgente') {
       notifyTaskUrgent(chatId, task).catch(err =>
-        console.error('[tasks.js] notifyTaskUrgent:', err.message)
+        console.error('[tasks.js] notifyTaskUrgent:', safeErrorSummary(err))
       );
     }
   }
 
-  return new Response(JSON.stringify({ id: result.lastInsertRowid }), { status: 201 });
+  return json({ id: result.lastInsertRowid }, 201);
 };
+
+function json(data, status) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}

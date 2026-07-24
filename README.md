@@ -65,7 +65,7 @@ NovaTareas Pro es una aplicación web full-stack con bot de Telegram integrado. 
 
 - **Dashboard web** (Astro SSR): gestión visual de tareas con prioridades, etiquetas, calendario, historial de cambios y comentarios de progreso.
 - **Bot de Telegram**: creación de tareas conversacional, recomendaciones de IA y notificaciones proactivas (tarea creada, completada, urgente, próxima a vencer, vencida).
-- **API pública**: la capacidad inteligente expuesta como servicio REST consumible desde cualquier cliente externo.
+- **API externa protegida**: la capacidad inteligente expuesta como servicio REST para clientes autorizados mediante una API key propia.
 
 El sistema registra automáticamente cada cambio realizado sobre una tarea (historial) y permite al usuario agregar notas de progreso. Toda esa información acumulada se usa como contexto para mejorar las respuestas de la IA con el tiempo.
 
@@ -76,7 +76,7 @@ El sistema registra automáticamente cada cambio realizado sobre una tarea (hist
 La IA vive en estos archivos concretos:
 
 ```
-src/lib/aiEngine.js                 ← motor de recomendaciones reutilizable (API pública)
+src/lib/aiEngine.js                 ← motor de recomendaciones reutilizable
 src/lib/rag.js                      ← genera embeddings y recupera tareas similares
 src/pages/api/tasks/[id]/ai.js      ← endpoint de recomendaciones (dashboard)
 src/pages/api/v1/recommend.js       ← endpoint de IA consumible por API externa
@@ -184,6 +184,7 @@ La capacidad de IA se expone como servicio REST consumible desde cualquier clien
 ```bash
 curl -X POST http://localhost:4321/api/v1/recommend \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $AI_API_KEY" \
   -d '{"titulo":"Estudiar para el examen de cálculo","prioridad":"alta","tipo_usuario":"estudiante"}'
 ```
 
@@ -227,9 +228,15 @@ npm run lint          # verificar tipos y sintaxis del proyecto
 | Archivo | Pruebas | Cobertura |
 |---|---|---|
 | `tests/aiEngine.test.js` | 14 | Validación de entrada: títulos vacíos o muy largos, descripciones fuera de límite, prioridades no permitidas, fechas mal formadas, cuerpos que no son objetos |
-| `tests/api.test.js` | 11 | Endpoints `/api/v1/health`, `/api/v1/metadata` y `/api/v1/recommend`, con respuestas exitosas y errores controlados (400, 405) |
+| `tests/api.test.js` | 13 | Endpoints `/api/v1/health`, `/api/v1/metadata` y `/api/v1/recommend`, incluida la autenticación de la API externa |
+| `tests/appFlows.test.js` | 10 | Registro con sesión, login, tareas, ownership, validación de inputs, eliminación segura y vinculación de Telegram |
+| `tests/security.test.js` | 6 | Sesiones, cookies, rate limiting, secretos, logs seguros y Google OAuth `state` |
+| `tests/migrations.test.js` | 2 | Creación idempotente del esquema y rechazo seguro de bases heredadas |
+| `tests/taskValidation.test.js` | 3 | Validación de tareas, fechas, estados, etiquetas y comentarios |
+| `tests/integrationSecurity.test.js` | 7 | Cron, webhook y carga de avatares válidos, falsificados o con MIME incorrecto |
 
-**Total: 25 pruebas.** Tiempo de ejecución: menos de 1 segundo.
+**Total: 55 pruebas.** Las pruebas de base de datos usan un archivo SQLite
+temporal y aislado de la base de desarrollo.
 
 ### Cómo funcionan
 
@@ -256,13 +263,13 @@ Los errores detectados durante la implementación, las correcciones aplicadas y 
 El archivo `.github/workflows/ci.yml` ejecuta automáticamente en GitHub Actions con cada `push` o `pull request`:
 
 1. **Descarga** del repositorio (`actions/checkout`).
-2. **Configuración** de Node.js 20 con caché de npm.
+2. **Configuración** de Node.js 22.12 con caché de npm.
 3. **Instalación** de dependencias con `npm ci` (reproducible desde `package-lock.json`).
 4. **Verificación** de tipos y sintaxis (`npm run lint`).
-5. **Ejecución** de las 25 pruebas (`npm test`).
+5. **Ejecución** de las 55 pruebas (`npm test`).
 6. **Compilación** del proyecto (`npm run build`).
 
-El workflow **no expone `ZAI_API_KEY`** de forma intencional, por las razones explicadas en la sección anterior. Sí inyecta `SECRET_KEY` y `CRON_SECRET` con valores de prueba, porque el módulo de autenticación falla al arrancar si no están definidos.
+El workflow **no expone `ZAI_API_KEY` ni credenciales reales**. Las pruebas usan secretos ficticios y un `AI_API_KEY` exclusivo del entorno de test, además de forzar el fallback local para no consumir saldo.
 
 ---
 
@@ -270,7 +277,7 @@ El workflow **no expone `ZAI_API_KEY`** de forma intencional, por las razones ex
 
 ### Requisitos previos
 
-- Node.js 20 o superior
+- Node.js `>=22.12.0 <23.0.0` (la versión indicada en `.nvmrc`)
 - API key de [z.ai](https://z.ai) para el modelo `glm-4.5-flash`
 - Bot de Telegram creado con [@BotFather](https://t.me/BotFather)
 - (Opcional) [Ollama](https://ollama.com) con `nomic-embed-text` y `llama3.2:3b` para fallback local
@@ -278,15 +285,17 @@ El workflow **no expone `ZAI_API_KEY`** de forma intencional, por las razones ex
 ### Pasos
 
 ```bash
-# 1. Instalar dependencias
-npm install
+# 1. Usar Node 22 e instalar exactamente el lockfile
+nvm use 22
+npm ci
 
 # 2. Configurar entorno
 cp .env.example .env
 # Editar .env con tus claves reales (ver sección de variables de entorno)
 
-# 3. Ejecutar las migraciones de base de datos
-npm run migrate
+# 3. Crear o actualizar de forma segura la base SQLite local
+npm run db:init
+# El migrador puede repetirse y rechaza bases heredadas no inventariadas
 
 # 4. Verificar que todo funciona
 npm test
@@ -321,8 +330,8 @@ https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://abc123.ngrok.io/api/t
 
 | Acción | ¿Automático? |
 |---|---|
-| Instalar dependencias (`npm install`) | ✅ Automático |
-| Crear tablas de BD (`npm run migrate`) | ✅ Automático |
+| Instalar dependencias (`npm ci`) | ✅ Automático con Node 22.12 o posterior |
+| Crear tablas de BD (`npm run db:init`) | ✅ Migrador transaccional e idempotente |
 | Ejecutar pruebas (`npm test`) | ✅ Automático |
 | Validación en cada push (GitHub Actions) | ✅ Automático |
 | Iniciar servidor web | ✅ Un comando |
@@ -339,9 +348,12 @@ https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://abc123.ngrok.io/api/t
 # ── OBLIGATORIAS ──────────────────────────────────────────────
 ZAI_API_KEY=             # API key de z.ai (sin esto la IA principal no funciona)
 ZAI_MODEL=glm-4.5-flash  # Modelo de chat de z.ai
+AI_API_KEY=              # Autoriza clientes de POST /api/v1/recommend; no reutilizar ZAI_API_KEY
 TELEGRAM_BOT_TOKEN=      # Token del bot de @BotFather (sin esto el bot no responde)
 SECRET_KEY=              # Clave para firmar JWT (el servidor no arranca sin ella)
 CRON_SECRET=             # Protege el endpoint /api/cron/reminders
+TELEGRAM_WEBHOOK_SECRET= # Valida solicitudes recibidas por el webhook
+NOVATAREAS_DB_PATH=novatareas.db # Ruta de la base SQLite local
 
 # ── IMPORTANTES ───────────────────────────────────────────────
 REMINDER_WINDOW_MINUTES=30   # Minutos de anticipación para recordatorios
@@ -376,7 +388,7 @@ novatareas-pro/
 │   ├── pages/
 │   │   ├── dashboard.astro
 │   │   └── api/
-│   │       ├── v1/{health,metadata,recommend}.js   # API pública
+│   │       ├── v1/{health,metadata,recommend}.js   # API externa protegida
 │   │       ├── tasks.js
 │   │       ├── tasks/[id].js
 │   │       ├── tasks/[id]/{history,comments,ai}.js
@@ -392,8 +404,9 @@ novatareas-pro/
 │       ├── telegramBot.js
 │       └── telegramNotify.js
 ├── tests/
-│   ├── aiEngine.test.js     # 14 pruebas de validación
-│   └── api.test.js          # 11 pruebas de endpoints
+│   ├── aiEngine.test.js           # 14 pruebas de validación
+│   ├── api.test.js                # 13 pruebas de endpoints
+│   └── integrationSecurity.test.js # cron, webhook y avatares
 ├── telegram/                # bot.js y scheduler.js (procesos aparte)
 ├── migrations/              # 5 scripts de esquema de BD
 ├── tools/                   # utilidades de diagnóstico y reindexado
@@ -419,7 +432,7 @@ Usuario Web ──────→ Dashboard Astro (SSR)
                           ↓
 Usuario Telegram ─→ Webhook /api/telegram/webhook
                           ↓
-Cliente externo ──→ API pública /api/v1/*
+Cliente autorizado → API externa /api/v1/* (Bearer AI_API_KEY)
                           ↓
                   API Routes (src/pages/api/)
                   tasks.js · [id].js · comments.js · ai.js · v1/recommend.js
@@ -452,15 +465,15 @@ API Gateway
 3. **El estado de conversación del bot vive en memoria** — un reinicio del servidor cancela cualquier flujo de creación de tarea a medio completar.
 4. **El webhook requiere URL pública** — en desarrollo local es necesario ngrok; si se cae, el bot deja de responder.
 5. **Cuota de z.ai limitada** — el saldo de la cuenta puede agotarse; al fallar, el sistema cae al fallback local u offline.
-6. **Cobertura de pruebas parcial** — las 25 pruebas cubren la validación y los endpoints de IA. Los endpoints de tareas (`/api/tasks`) requieren base de datos y aún no tienen pruebas.
+6. **Cobertura de pruebas parcial** — las 55 pruebas ya cubren autenticación, recuperación, ownership, tareas, migraciones, cron, webhook, avatares, códigos de vinculación de Telegram y la API inteligente; aún faltan pruebas completas de recordatorios, conversación del bot y Google.
 7. **RAG parcialmente conectado** — los embeddings existen en la base de datos, pero no todas las rutas del código los consumen todavía.
 8. **Sin métrica formal de calidad** — no existe aún un sistema de feedback que mida la utilidad real de las recomendaciones.
 9. **Sin logging estructurado** — las llamadas al modelo no registran modelo usado, tokens consumidos ni latencia.
 10. **Rate limiting en memoria** — el contador se reinicia con el servidor y no funcionaría con varias instancias desplegadas.
-11. **Migraciones sin control de versión de esquema** — existen archivos con numeración duplicada (`002_*` y `003_*`); el script `npm run migrate` fija el orden, pero no hay registro de qué migración se aplicó.
+11. **Migraciones heredadas aisladas** — `npm run db:init` usa únicamente migraciones nuevas, transaccionales y registradas. Si detecta una base heredada sin inventariar, se detiene sin modificarla; los scripts antiguos no forman parte del flujo normal.
 12. **Código muerto pendiente de limpieza** — los módulos de una migración a Supabase abandonada (`src/lib/supabase.ts`, `src/lib/supabase-helpers.ts`, `src/lib/database.types.ts`, `supabase/schema.sql`) siguen en el repositorio sin ser importados por ningún archivo.
 13. **Google Calendar en desarrollo** — los archivos existen (`/api/google/`) pero la integración no está conectada al dashboard.
-14. **Sin recuperación de contraseña funcional** — el endpoint `auth/recover.js` existe pero no tiene interfaz de usuario.
+14. **Recuperación limitada a preguntas de seguridad** — la interfaz ya funciona, evita revelar si una cuenta existe, limita intentos y usa tokens de un solo uso; para un servicio público convendría sustituirla por enlaces enviados por un canal verificado.
 15. **Sin despliegue público** — el proyecto se ejecuta localmente; el adaptador de Node y el uso de SQLite con escrituras impiden usar hosting estático.
 
 ---
@@ -481,9 +494,9 @@ API Gateway
 
 ### Semana 3 — Calidad y automatización
 
-- ✅ **Pruebas automatizadas** con Vitest: 25 pruebas sobre la API inteligente.
+- ✅ **Pruebas automatizadas** con Vitest: 55 pruebas sobre API, autenticación, tareas, seguridad, migraciones, cron, webhook, avatares y vinculación temporal de Telegram.
 - ✅ **Pipeline CI/CD** con GitHub Actions: instala, valida, prueba y compila en cada push.
-- ✅ **Script de migraciones** (`npm run migrate`) que reemplaza la ejecución manual.
+- ✅ **Esquema SQLite reproducible** mediante `npm run db:init`, sin ejecutar migraciones heredadas.
 - ⬜ **Logging estructurado** de cada llamada a z.ai: modelo usado, tokens consumidos, latencia y si usó fallback.
 - ⬜ **Sistema de feedback** (👍/👎) en las recomendaciones para medir la utilidad real del modelo.
 
@@ -493,7 +506,7 @@ API Gateway
 
 - Contenedor Docker para el servidor web.
 - Conectar Google Calendar al dashboard: importar eventos como tareas con fecha límite.
-- Implementar la interfaz de recuperación de contraseña.
+- Ampliar la recuperación con un canal verificado antes de considerar un uso público.
 - Caché de recomendaciones: no volver a llamar a z.ai si la tarea no cambió.
 - Pruebas de los endpoints que dependen de base de datos (SQLite en memoria).
 
@@ -521,6 +534,7 @@ API Gateway
 | [`api.md`](\api.md) | Contratos de la API: payloads, respuestas, validaciones, códigos de error y comandos de prueba |
 | [`docs/pruebas-semana-3.md`](docs/pruebas-semana-3.md) | Mapa de pruebas: qué comportamientos se validan, por qué aportan valor y con qué datos |
 | [`docs/registro-pruebas-semana-3.md`](docs/registro-pruebas-semana-3.md) | Registro de errores detectados, correcciones aplicadas y bloqueos técnicos abiertos |
+| [`docs/CIERRE_BLOQUE_1.md`](docs/CIERRE_BLOQUE_1.md) | Evidencia del cierre de seguridad, actualización de dependencias y separación de credenciales de IA |
 
 ---
 
@@ -528,12 +542,12 @@ API Gateway
 
 | Capa | Tecnología |
 |---|---|
-| Framework web | Astro 4.x (SSR con adaptador Node) |
+| Framework web | Astro 7.x (SSR con adaptador Node) |
 | Base de datos | SQLite + better-sqlite3 |
 | IA generativa | z.ai — GLM (`glm-4.5-flash`) |
 | IA local (fallback) | Ollama + Llama 3.2 |
 | Bot | Telegram Bot API |
 | Autenticación | bcryptjs + JWT (jose) |
-| Pruebas | Vitest + @vitest/coverage-v8 |
+| Pruebas | Vitest 4 + @vitest/coverage-v8 |
 | CI/CD | GitHub Actions |
-| Runtime | Node.js 20 |
+| Runtime | Node.js 22.12 o posterior dentro de la línea 22 |

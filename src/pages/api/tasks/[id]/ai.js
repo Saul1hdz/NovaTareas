@@ -1,6 +1,6 @@
 import { getDb }                         from '../../../../lib/db.js';
 import { getUser }                       from '../../../../lib/auth.js';
-import { getRagContext, reindexTask }    from '../../../../lib/rag.js';
+import { getRagContext }                 from '../../../../lib/rag.js';
 
 const OLLAMA_URL   = process.env.OLLAMA_URL   || 'http://localhost:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b';
@@ -139,14 +139,14 @@ async function tryZai(prompt) {
     });
 
     if (!response.ok) {
-      console.error('[Z.AI] Error:', response.status, await response.text().catch(() => ''));
+      console.error('[Z.AI] Respuesta no exitosa:', response.status);
       return null;
     }
 
     const data = await response.json().catch(() => null);
     return trimToCompleteSentence(data?.choices?.[0]?.message?.content?.trim() || null);
   } catch (e) {
-    console.error('[Z.AI] Excepción:', e.message);
+    console.error('[Z.AI] Fallo de red o proveedor');
     return null;
   }
 }

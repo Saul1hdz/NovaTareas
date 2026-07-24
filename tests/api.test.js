@@ -14,11 +14,13 @@ import { GET as metadataGET }   from '../src/pages/api/v1/metadata.js';
 import { POST as recommendPOST, GET as recommendGET } from '../src/pages/api/v1/recommend.js';
 
 /** Construye un contexto de petición similar al que entrega Astro. */
-function makeContext(body, ip = '127.0.0.1') {
+function makeContext(body, ip = '127.0.0.1', apiKey = 'api-externa-solo-para-pruebas') {
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
   return {
     request: new Request('http://localhost:4321/api/v1/recommend', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: typeof body === 'string' ? body : JSON.stringify(body),
     }),
     clientAddress: ip,
@@ -106,6 +108,20 @@ describe('POST /api/v1/recommend — payload válido', () => {
 });
 
 describe('POST /api/v1/recommend — errores controlados', () => {
+  it('rechaza peticiones sin la API key externa', async () => {
+    const response = await recommendPOST(
+      makeContext({ titulo: 'Intento sin autorización' }, '10.0.0.9', null)
+    );
+    expect(response.status).toBe(401);
+  });
+
+  it('rechaza una API key externa incorrecta', async () => {
+    const response = await recommendPOST(
+      makeContext({ titulo: 'Intento con clave incorrecta' }, '10.0.0.10', 'incorrecta')
+    );
+    expect(response.status).toBe(401);
+  });
+
   it('responde 400 cuando falta el título', async () => {
     const response = await recommendPOST(makeContext({ prioridad: 'alta' }, '10.0.0.1'));
 

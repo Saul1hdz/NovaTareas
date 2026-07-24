@@ -1,6 +1,8 @@
 import { getDb } from '../../../lib/db.js';
 import { getUser } from '../../../lib/auth.js';
 import { notifyTaskCompleted, notifyTaskUrgent } from '../../../lib/telegramNotify.js';
+import { validateTaskInput } from '../../../lib/taskValidation.js';
+import { safeErrorSummary } from '../../../lib/security.js';
 
 // Campos que se rastrean en el historial con etiquetas legibles
 const TRACKED_FIELDS = {
@@ -41,7 +43,15 @@ export const PATCH = async ({ request, params }) => {
   const task = db.prepare('SELECT * FROM tasks WHERE id=? AND user_id=?').get(params.id, user.userId);
   if (!task) return json({ error: 'No encontrado' }, 404);
 
-  const body   = await request.json();
+  let rawBody;
+  try {
+    rawBody = await request.json();
+  } catch {
+    return json({ error: 'JSON inválido' }, 400);
+  }
+  const validation = validateTaskInput(rawBody, { partial: true });
+  if (validation.error) return json({ error: validation.error }, 400);
+  const body = validation.values;
   const fields = [];
   const vals   = [];
 
@@ -116,13 +126,13 @@ export const PATCH = async ({ request, params }) => {
     if (body.status === 'completada' && task.status !== 'completada') {
       const updatedTask = db.prepare('SELECT * FROM tasks WHERE id=?').get(params.id);
       notifyTaskCompleted(chatId, updatedTask).catch(err =>
-        console.error('[tasks/[id].js] notifyTaskCompleted:', err.message)
+        console.error('[tasks/[id].js] notifyTaskCompleted:', safeErrorSummary(err))
       );
     }
     if (body.priority === 'urgente' && task.priority !== 'urgente') {
       const updatedTask = db.prepare('SELECT * FROM tasks WHERE id=?').get(params.id);
       notifyTaskUrgent(chatId, updatedTask).catch(err =>
-        console.error('[tasks/[id].js] notifyTaskUrgent:', err.message)
+        console.error('[tasks/[id].js] notifyTaskUrgent:', safeErrorSummary(err))
       );
     }
   }
@@ -135,7 +145,9 @@ export const DELETE = async ({ request, params }) => {
   if (!user) return json({ error: 'No autenticado' }, 401);
 
   const db = getDb();
-  db.prepare('DELETE FROM tasks WHERE id=? AND user_id=?').run(params.id, user.userId);
+  const result = db.prepare('DELETE FROM tasks WHERE id=? AND user_id=?')
+    .run(params.id, user.userId);
+  if (result.changes === 0) return json({ error: 'No encontrado' }, 404);
   return json({ ok: true }, 200);
 };
 

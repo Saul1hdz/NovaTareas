@@ -2,7 +2,9 @@
 
 Documento de contratos de integración (Semana 2, Módulo 4).
 
-La API expone la capacidad de IA del proyecto (recomendaciones de productividad) como un servicio consumible desde cualquier cliente externo (curl, Postman, Swagger, interfaz web). Es **independiente del dashboard**: no requiere sesión ni que la tarea exista previamente en la base de datos.
+La API expone la capacidad de IA del proyecto como un servicio para clientes
+externos autorizados. Es independiente de la sesión del dashboard, pero
+`POST /api/v1/recommend` exige `Authorization: Bearer <AI_API_KEY>`.
 
 **URL base (desarrollo):** `http://localhost:4321`
 
@@ -31,6 +33,7 @@ Verifica el estado del servicio y de sus dependencias.
   "timestamp": "2026-07-16T04:00:00.000Z",
   "checks": {
     "zai_configured": true,
+    "external_api_configured": true,
     "ollama_available": false,
     "fallback_rules": true
   }
@@ -52,6 +55,12 @@ Devuelve información del servicio y el contrato de entrada/salida.
 ## 3. `POST /api/v1/recommend`
 
 Genera una recomendación de productividad para una tarea.
+
+### Autenticación
+
+El cliente debe enviar `Authorization: Bearer <AI_API_KEY>`. Esta credencial
+autoriza el consumo de NovaTareas y es distinta de `ZAI_API_KEY`, que únicamente
+usa el servidor para comunicarse con z.ai.
 
 ### Payload de entrada
 
@@ -97,6 +106,8 @@ El campo `fuente` indica qué motor generó la respuesta: `zai` (modelo principa
 
 | Código | Causa | Cuerpo |
 |---|---|---|
+| 401 | Bearer ausente o incorrecto | `{ "error": "No autorizado." }` |
+| 503 | `AI_API_KEY` no configurada en el servidor | `{ "error": "API externa no configurada." }` |
 | 400 | JSON malformado | `{ "error": "El cuerpo de la petición no es JSON válido." }` |
 | 400 | Falta `titulo` | `{ "error": "El campo \"titulo\" es obligatorio y no puede estar vacío." }` |
 | 400 | `prioridad` inválida | `{ "error": "El campo \"prioridad\" debe ser uno de: baja, media, alta, urgente." }` |
@@ -123,6 +134,7 @@ Herramienta usada: **curl** (equivalente en Postman/Swagger).
 ```bash
 curl -X POST http://localhost:4321/api/v1/recommend \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $AI_API_KEY" \
   -d '{"titulo":"Estudiar para el examen de cálculo","prioridad":"alta","tipo_usuario":"estudiante"}'
 ```
 
@@ -133,6 +145,7 @@ Respuesta esperada: `200` con el campo `recomendacion`.
 ```bash
 curl -X POST http://localhost:4321/api/v1/recommend \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $AI_API_KEY" \
   -d '{"prioridad":"alta"}'
 ```
 
@@ -157,4 +170,6 @@ curl http://localhost:4321/api/v1/health
 2. Ejecuta los comandos curl de arriba, o impórtalos en Postman.
 3. Para capturas de evidencia, guarda la salida de cada comando (éxito + error).
 
-> **Nota de seguridad:** ninguna clave (`ZAI_API_KEY`, etc.) se expone en las respuestas ni en este documento. Todas viven en el archivo `.env`, que no se versiona.
+> **Nota de seguridad:** ninguna clave se expone en las respuestas. `ZAI_API_KEY`
+> es solo del servidor; `AI_API_KEY` se comparte únicamente con los clientes
+> cerrados autorizados. Ambas viven fuera de Git.

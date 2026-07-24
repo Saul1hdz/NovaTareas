@@ -9,7 +9,12 @@ export async function GET() {
     endpoints: {
       health:    { method: 'GET',  path: '/api/v1/health',    description: 'Estado del servicio.' },
       metadata:  { method: 'GET',  path: '/api/v1/metadata',  description: 'Información del servicio y contrato.' },
-      recommend: { method: 'POST', path: '/api/v1/recommend', description: 'Genera una recomendación de productividad para una tarea.' },
+      recommend: {
+        method: 'POST',
+        path: '/api/v1/recommend',
+        authentication: 'Authorization: Bearer <AI_API_KEY>',
+        description: 'Genera una recomendación de productividad para una tarea.',
+      },
     },
     input_contract: {
       titulo:       'string, obligatorio, máx 200 caracteres',

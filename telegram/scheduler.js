@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { sendReminders } from '../src/lib/telegramBot.js';
+import { safeErrorSummary } from '../src/lib/security.js';
 
 const WINDOW_MINUTES = parseInt(process.env.REMINDER_WINDOW_MINUTES || '30', 10);
 
@@ -9,7 +10,7 @@ const WINDOW_MINUTES = parseInt(process.env.REMINDER_WINDOW_MINUTES || '30', 10)
     await sendReminders(WINDOW_MINUTES);
     console.log('[scheduler] Listo.');
   } catch (err) {
-    console.error('[scheduler] Error:', err);
+    console.error('[scheduler] Error:', safeErrorSummary(err));
     process.exit(1);
   }
 })();

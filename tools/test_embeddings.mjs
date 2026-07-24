@@ -19,7 +19,7 @@ const OLLAMA_URL   = process.env.OLLAMA_URL || 'http://localhost:11434';
 const TEST_TEXT    = 'Estudiar para el examen de matemáticas';
 
 console.log('=== DIAGNÓSTICO DE EMBEDDINGS ===\n');
-console.log(`GEMINI_API_KEY : ${GEMINI_KEY ? GEMINI_KEY.slice(0,8) + '...' : '❌ NO DEFINIDA'}`);
+console.log(`GEMINI_API_KEY : ${GEMINI_KEY ? '✅ CONFIGURADA' : '❌ NO DEFINIDA'}`);
 console.log(`OLLAMA_URL     : ${OLLAMA_URL}`);
 console.log('');
 
@@ -46,10 +46,9 @@ if (GEMINI_KEY) {
       console.log(`  ✅ Gemini OK — vector de ${vec?.length} dimensiones`);
     } else {
       console.log(`  ❌ Gemini falló — HTTP ${res.status}`);
-      console.log(`  Respuesta: ${body.slice(0, 300)}`);
     }
-  } catch (e) {
-    console.log(`  ❌ Gemini error de red: ${e.message}`);
+  } catch {
+    console.log('  ❌ Gemini error de red');
   }
 } else {
   console.log('⏭  Gemini: clave no definida, saltando.');
@@ -84,11 +83,10 @@ try {
           const data = await embRes.json();
           console.log(`  ✅ nomic-embed-text OK — vector de ${data?.embedding?.length} dimensiones`);
         } else {
-          const t = await embRes.text();
-          console.log(`  ❌ nomic-embed-text falló — HTTP ${embRes.status}: ${t.slice(0,200)}`);
+          console.log(`  ❌ nomic-embed-text falló — HTTP ${embRes.status}`);
         }
-      } catch (e) {
-        console.log(`  ❌ nomic-embed-text error: ${e.message}`);
+      } catch {
+        console.log('  ❌ nomic-embed-text error de red');
       }
     }
 
@@ -100,8 +98,8 @@ try {
   } else {
     console.log(`  ❌ Ollama respondió HTTP ${res.status}`);
   }
-} catch (e) {
-  console.log(`  ❌ Ollama no disponible: ${e.message}`);
+} catch {
+  console.log('  ❌ Ollama no disponible');
 }
 
 console.log('\n=== FIN DEL DIAGNÓSTICO ===');

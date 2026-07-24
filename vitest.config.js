@@ -7,6 +7,8 @@ export default defineConfig({
 
     // Solo se ejecutan los archivos dentro de tests/
     include: ['tests/**/*.test.js'],
+    globalSetup: ['./tests/globalSetup.js'],
+    fileParallelism: false,
 
     // ─────────────────────────────────────────────────────────────────────────
     // AISLAMIENTO DEL ENTORNO DE PRUEBAS
@@ -24,9 +26,12 @@ export default defineConfig({
     // ─────────────────────────────────────────────────────────────────────────
     env: {
       ZAI_API_KEY: '',
+      AI_API_KEY: 'api-externa-solo-para-pruebas',
       OLLAMA_URL: 'http://127.0.0.1:1',
       SECRET_KEY: 'clave-solo-para-pruebas',
       CRON_SECRET: 'cron-solo-para-pruebas',
+      TELEGRAM_WEBHOOK_SECRET: 'telegram-solo-para-pruebas',
+      NOVATAREAS_DB_PATH: 'tmp/vitest-novatareas.sqlite',
     },
 
     // Con el fallback local la respuesta es casi inmediata; 10 s es margen de sobra.

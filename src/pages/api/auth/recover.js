@@ -1,7 +1,14 @@
 export const prerender = false;
 
 import bcrypt from 'bcryptjs';
+import { createHash, randomBytes } from 'node:crypto';
 import { getDb } from '../../../lib/db.js';
+import {
+  consumeRateLimit,
+  getClientIp,
+  resetRateLimit,
+  safeEqualStrings,
+} from '../../../lib/security.js';
 
 const SECURITY_QUESTIONS = [
   '¿Cuál fue el nombre de tu primera mascota?',
@@ -16,133 +23,160 @@ const SECURITY_QUESTIONS = [
   '¿Cuál era el nombre de tu personaje favorito cuando eras niño?',
 ];
 
-// Tokens temporales en memoria: { token: { userId, expires } }
+const MAX_FAILED_ANSWERS = 5;
+const LOCK_WINDOW_MS = 15 * 60 * 1000;
+const TOKEN_TTL_MS = 15 * 60 * 1000;
+const DUMMY_ANSWER_HASH = '$2a$10$tlsd66MMP/MEMBxqiZ38OuDtrpEKn/muoJxToPm4z1OiCzsWvDkYC';
 const recoveryTokens = new Map();
-
-function generateToken() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
+const fakeRecoveryAttempts = new Map();
 
 export const POST = async ({ request }) => {
   let body;
-  try { body = await request.json(); }
-  catch { return json({ error: 'JSON inválido' }, 400); }
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: 'JSON inválido' }, 400);
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return json({ error: 'El cuerpo debe ser un objeto JSON.' }, 400);
+  }
 
-  const { action, email, answer, question_index, token, new_password } = body ?? {};
+  const { action, email, answer, question_index, token, new_password } = body;
+  const ip = getClientIp(request);
+  const ipLimit = consumeRateLimit('recovery-ip', ip, 40, LOCK_WINDOW_MS);
+  if (!ipLimit.allowed) return rateLimitResponse(ipLimit.retryAfterSeconds);
+
+  removeExpiredTokens();
   const db = getDb();
 
-  // ── Obtener pregunta ──────────────────────────────────────────────────────
   if (action === 'get_question') {
-    if (!email) return json({ error: 'Correo requerido.' }, 400);
-
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim());
-    if (!user) return json({ error: 'No existe una cuenta con ese correo.' }, 404);
-
-    const sq = db.prepare('SELECT * FROM security_questions WHERE user_id = ?').get(user.id);
-    if (!sq) return json({ error: 'Esta cuenta no tiene preguntas de seguridad configuradas.' }, 400);
-
-    // Si ya agotó todos los intentos (10 preguntas fallidas), eliminar cuenta
-    if (sq.recovery_attempts >= 10) {
-      db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
-      return json({ error: 'Has fallado todas las preguntas. Tu cuenta ha sido eliminada por seguridad.' }, 403);
+    if (typeof email !== 'string' || !email || email.length > 254) {
+      return json({ error: 'Correo requerido.' }, 400);
     }
 
-    // Determinar qué preguntas ya fueron intentadas y ofrecer la siguiente
-    // Usamos recovery_attempts para saber el turno actual
-    const attempt = sq.recovery_attempts;
-    // Orden de preguntas: primero q1, luego q2, luego el resto en orden
-    const questionOrder = buildQuestionOrder(sq.q1_index, sq.q2_index);
-    const currentQuestionIndex = questionOrder[attempt % questionOrder.length];
+    const normalizedEmail = email.toLowerCase().trim();
+    const emailLimit = consumeRateLimit('recovery-email', normalizedEmail, 15, LOCK_WINDOW_MS);
+    if (!emailLimit.allowed) return rateLimitResponse(emailLimit.retryAfterSeconds);
 
+    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+
+    const security = user ? db.prepare(
+      'SELECT * FROM security_questions WHERE user_id = ?'
+    ).get(user.id) : null;
+    if (!user || !security) {
+      const fake = getFakeRecoveryState(normalizedEmail);
+      if (fake.locked) return rateLimitResponse(fake.retryAfterSeconds);
+      return fakeQuestionResponse(normalizedEmail, fake.attempts);
+    }
+
+    const lock = refreshOrReadLock(db, security);
+    if (lock.locked) return rateLimitResponse(lock.retryAfterSeconds);
+
+    const currentQuestionIndex = questionForAttempt(security, lock.attempts);
     return json({
       ok: true,
       question: SECURITY_QUESTIONS[currentQuestionIndex],
       question_index: currentQuestionIndex,
-      attempts_left: 10 - attempt,
+      attempts_left: MAX_FAILED_ANSWERS - lock.attempts,
     }, 200);
   }
 
-  // ── Verificar respuesta ───────────────────────────────────────────────────
   if (action === 'check_answer') {
-    if (!email || answer === undefined || question_index === undefined) {
+    if (typeof email !== 'string' || !email || email.length > 254 ||
+        typeof answer !== 'string' || answer.length > 200 ||
+        question_index === undefined) {
       return json({ error: 'Datos incompletos.' }, 400);
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim());
-    if (!user) return json({ error: 'Cuenta no encontrada.' }, 404);
+    const normalizedEmail = email.toLowerCase().trim();
+    const emailLimit = consumeRateLimit('recovery-answer', normalizedEmail, 10, LOCK_WINDOW_MS);
+    if (!emailLimit.allowed) return rateLimitResponse(emailLimit.retryAfterSeconds);
 
-    const sq = db.prepare('SELECT * FROM security_questions WHERE user_id = ?').get(user.id);
-    if (!sq) return json({ error: 'Sin preguntas de seguridad.' }, 400);
+    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
 
-    if (sq.recovery_attempts >= 10) {
-      db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
-      return json({ error: 'Cuenta eliminada por demasiados intentos fallidos.' }, 403);
+    const security = user ? db.prepare(
+      'SELECT * FROM security_questions WHERE user_id = ?'
+    ).get(user.id) : null;
+    if (!user || !security) {
+      await bcrypt.compare(answer.toLowerCase().trim(), DUMMY_ANSWER_HASH);
+      return handleFakeAnswer(normalizedEmail);
     }
 
-    // Verificar si la respuesta corresponde a q1 o q2
-    const isQ1 = sq.q1_index === Number(question_index);
-    const isQ2 = sq.q2_index === Number(question_index);
-    const correctAnswer = isQ1 ? sq.q1_answer : isQ2 ? sq.q2_answer : null;
+    const lock = refreshOrReadLock(db, security);
+    if (lock.locked) return rateLimitResponse(lock.retryAfterSeconds);
 
-    if (!correctAnswer) {
-      return json({ error: 'Pregunta no válida para esta cuenta.' }, 400);
+    const expectedQuestion = questionForAttempt(security, lock.attempts);
+    if (Number(question_index) !== expectedQuestion) {
+      return json({ error: 'La pregunta ya no es válida. Solicítala nuevamente.' }, 400);
     }
 
-    const isCorrect = answer.toLowerCase().trim() === correctAnswer;
+    const storedAnswer = expectedQuestion === security.q1_index
+      ? security.q1_answer
+      : security.q2_answer;
+    const normalizedAnswer = answer.toLowerCase().trim();
+    const isCorrect = await verifyStoredAnswer(normalizedAnswer, storedAnswer);
 
     if (!isCorrect) {
-      // Incrementar intentos fallidos
-      db.prepare('UPDATE security_questions SET recovery_attempts = recovery_attempts + 1, last_attempt_at = ? WHERE user_id = ?')
-        .run(Date.now(), user.id);
+      const nextAttempts = lock.attempts + 1;
+      const attemptedAt = Date.now();
+      db.prepare(`
+        UPDATE security_questions
+        SET recovery_attempts = ?, last_attempt_at = ?
+        WHERE user_id = ?
+      `).run(nextAttempts, attemptedAt, user.id);
 
-      const updatedSq = db.prepare('SELECT recovery_attempts FROM security_questions WHERE user_id = ?').get(user.id);
-
-      if (updatedSq.recovery_attempts >= 10) {
-        db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
-        return json({ error: 'Has fallado todas las preguntas de seguridad. Tu cuenta ha sido eliminada.', deleted: true }, 403);
+      if (nextAttempts >= MAX_FAILED_ANSWERS) {
+        return rateLimitResponse(Math.ceil(LOCK_WINDOW_MS / 1000));
       }
 
-      // Ofrecer la siguiente pregunta
-      const questionOrder = buildQuestionOrder(sq.q1_index, sq.q2_index);
-      const nextIndex = questionOrder[updatedSq.recovery_attempts % questionOrder.length];
-
+      const nextQuestion = questionForAttempt(security, nextAttempts);
       return json({
         ok: false,
-        next_question: SECURITY_QUESTIONS[nextIndex],
-        next_question_index: nextIndex,
-        attempts_left: 10 - updatedSq.recovery_attempts,
-        message: 'Respuesta incorrecta. Intenta con otra pregunta.',
+        next_question: SECURITY_QUESTIONS[nextQuestion],
+        next_question_index: nextQuestion,
+        attempts_left: MAX_FAILED_ANSWERS - nextAttempts,
+        message: 'Respuesta incorrecta. Intenta con la otra pregunta.',
       }, 200);
     }
 
-    // Respuesta correcta: generar token temporal (válido 15 min)
-    const recoveryToken = generateToken();
-    recoveryTokens.set(recoveryToken, { userId: user.id, expires: Date.now() + 15 * 60 * 1000 });
+    const recoveryToken = randomBytes(32).toString('base64url');
+    recoveryTokens.set(recoveryToken, {
+      userId: user.id,
+      expires: Date.now() + TOKEN_TTL_MS,
+    });
 
-    // Resetear intentos
-    db.prepare('UPDATE security_questions SET recovery_attempts = 0 WHERE user_id = ?').run(user.id);
+    db.prepare(`
+      UPDATE security_questions
+      SET recovery_attempts = 0, last_attempt_at = NULL
+      WHERE user_id = ?
+    `).run(user.id);
+    resetRateLimit('recovery-answer', normalizedEmail);
 
     return json({ ok: true, recovery_token: recoveryToken }, 200);
   }
 
-  // ── Restablecer contraseña ────────────────────────────────────────────────
   if (action === 'reset_password') {
-    if (!token || !new_password) return json({ error: 'Token y nueva contraseña requeridos.' }, 400);
+    if (typeof token !== 'string' || !token || token.length > 100 ||
+        typeof new_password !== 'string' || !new_password || new_password.length > 128) {
+      return json({ error: 'Token y nueva contraseña requeridos.' }, 400);
+    }
 
     const session = recoveryTokens.get(token);
+    recoveryTokens.delete(token);
     if (!session || session.expires < Date.now()) {
-      recoveryTokens.delete(token);
       return json({ error: 'El enlace de recuperación expiró. Intenta de nuevo.' }, 400);
     }
 
-    const PASSWORD_REGEX = /^(?=.*[a-zA-Z])(?=.*\d).{8,}$/;
-    if (!PASSWORD_REGEX.test(new_password)) {
+    if (!/^(?=.*[a-zA-Z])(?=.*\d).{8,}$/.test(new_password)) {
       return json({ error: 'La contraseña debe tener mínimo 8 caracteres, incluir letras y números.' }, 400);
     }
 
     const hash = await bcrypt.hash(new_password, 10);
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, session.userId);
-    recoveryTokens.delete(token);
+    db.prepare(`
+      UPDATE users
+      SET password_hash = ?, session_version = session_version + 1
+      WHERE id = ?
+    `).run(hash, session.userId);
 
     return json({ ok: true, message: 'Contraseña restablecida exitosamente.' }, 200);
   }
@@ -150,15 +184,123 @@ export const POST = async ({ request }) => {
   return json({ error: 'Acción no válida.' }, 400);
 };
 
-function buildQuestionOrder(q1Index, q2Index) {
-  // Las primeras 2 son las propias del usuario, luego el resto de las 10
-  const own = [q1Index, q2Index];
-  const rest = [0,1,2,3,4,5,6,7,8,9].filter(i => i !== q1Index && i !== q2Index);
-  return [...own, ...rest];
+function questionForAttempt(security, attempts) {
+  return attempts % 2 === 0 ? security.q1_index : security.q2_index;
 }
 
-function json(data, status) {
+function fakeQuestionIndexes(email) {
+  const first = createHash('sha256').update(email).digest()[0] % SECURITY_QUESTIONS.length;
+  return [first, (first + 5) % SECURITY_QUESTIONS.length];
+}
+
+function fakeQuestionForAttempt(email, attempts) {
+  const indexes = fakeQuestionIndexes(email);
+  return indexes[attempts % indexes.length];
+}
+
+function getFakeRecoveryState(email) {
+  const current = fakeRecoveryAttempts.get(email);
+  if (!current) return { locked: false, attempts: 0 };
+
+  const elapsed = Date.now() - current.lastAttemptAt;
+  if (elapsed >= LOCK_WINDOW_MS) {
+    fakeRecoveryAttempts.delete(email);
+    return { locked: false, attempts: 0 };
+  }
+  if (current.attempts < MAX_FAILED_ANSWERS) {
+    return { locked: false, attempts: current.attempts };
+  }
+  return {
+    locked: true,
+    attempts: current.attempts,
+    retryAfterSeconds: Math.ceil((LOCK_WINDOW_MS - elapsed) / 1000),
+  };
+}
+
+function fakeQuestionResponse(email, attempts) {
+  const questionIndex = fakeQuestionForAttempt(email, attempts);
+  return json({
+    ok: true,
+    question: SECURITY_QUESTIONS[questionIndex],
+    question_index: questionIndex,
+    attempts_left: MAX_FAILED_ANSWERS - attempts,
+  }, 200);
+}
+
+function handleFakeAnswer(email) {
+  const current = getFakeRecoveryState(email);
+  if (current.locked) return rateLimitResponse(current.retryAfterSeconds);
+
+  const attempts = current.attempts + 1;
+  fakeRecoveryAttempts.set(email, {
+    attempts,
+    lastAttemptAt: Date.now(),
+  });
+  if (attempts >= MAX_FAILED_ANSWERS) {
+    return rateLimitResponse(Math.ceil(LOCK_WINDOW_MS / 1000));
+  }
+
+  const nextQuestion = fakeQuestionForAttempt(email, attempts);
+  return json({
+    ok: false,
+    next_question: SECURITY_QUESTIONS[nextQuestion],
+    next_question_index: nextQuestion,
+    attempts_left: MAX_FAILED_ANSWERS - attempts,
+    message: 'Respuesta incorrecta. Intenta con la otra pregunta.',
+  }, 200);
+}
+
+function refreshOrReadLock(db, security) {
+  const attempts = Number(security.recovery_attempts || 0);
+  if (attempts < MAX_FAILED_ANSWERS) return { locked: false, attempts };
+
+  const lastAttempt = Number(security.last_attempt_at || 0);
+  const elapsed = Date.now() - lastAttempt;
+  if (elapsed >= LOCK_WINDOW_MS) {
+    db.prepare(`
+      UPDATE security_questions
+      SET recovery_attempts = 0, last_attempt_at = NULL
+      WHERE user_id = ?
+    `).run(security.user_id);
+    return { locked: false, attempts: 0 };
+  }
+
+  return {
+    locked: true,
+    attempts,
+    retryAfterSeconds: Math.ceil((LOCK_WINDOW_MS - elapsed) / 1000),
+  };
+}
+
+async function verifyStoredAnswer(candidate, stored) {
+  if (typeof stored !== 'string') return false;
+  if (/^\$2[aby]\$/.test(stored)) return bcrypt.compare(candidate, stored);
+  return safeEqualStrings(candidate, stored.toLowerCase().trim());
+}
+
+function removeExpiredTokens() {
+  const now = Date.now();
+  for (const [token, session] of recoveryTokens) {
+    if (session.expires < now) recoveryTokens.delete(token);
+  }
+  for (const [email, state] of fakeRecoveryAttempts) {
+    if (now - state.lastAttemptAt >= LOCK_WINDOW_MS) {
+      fakeRecoveryAttempts.delete(email);
+    }
+  }
+}
+
+function rateLimitResponse(retryAfterSeconds) {
+  return json(
+    { error: 'Demasiados intentos. Intenta nuevamente más tarde.' },
+    429,
+    { 'Retry-After': String(retryAfterSeconds) }
+  );
+}
+
+function json(data, status, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
-    status, headers: { 'Content-Type': 'application/json' }
+    status,
+    headers: { 'Content-Type': 'application/json', ...extraHeaders },
   });
 }

@@ -2,6 +2,9 @@
 export const prerender = false;
 
 import { validateTaskInput, generateRecommendation } from '../../../lib/aiEngine.js';
+import { safeEqualStrings, safeErrorSummary } from '../../../lib/security.js';
+
+const AI_API_KEY = process.env.AI_API_KEY?.trim();
 
 // ── Rate limiting simple en memoria (protege el saldo de z.ai) ───────────────
 const RATE_LIMIT_MAX    = Number(process.env.AI_RATE_LIMIT_MAX)    || 20;
@@ -24,6 +27,15 @@ function json(data, status) {
 }
 
 export async function POST({ request, clientAddress }) {
+  if (!AI_API_KEY) {
+    return json({ error: 'API externa no configurada.' }, 503);
+  }
+  const authorization = request.headers.get('authorization') || '';
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  if (!match || !safeEqualStrings(match[1], AI_API_KEY)) {
+    return json({ error: 'No autorizado.' }, 401);
+  }
+
   const ip = clientAddress || 'unknown';
 
   if (isRateLimited(ip)) {
@@ -59,7 +71,7 @@ export async function POST({ request, clientAddress }) {
       },
     }, 200);
   } catch (err) {
-    console.error('[v1/recommend] error inesperado:', err);
+    console.error('[v1/recommend] error inesperado:', safeErrorSummary(err));
     return json({ error: 'Error interno al generar la recomendación.' }, 500);
   }
 }

@@ -1,5 +1,6 @@
 import { getDb } from '../../../../lib/db.js';
 import { getUser } from '../../../../lib/auth.js';
+import { validateCommentInput } from '../../../../lib/taskValidation.js';
 
 const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
 const ZAI_URL       = 'https://api.z.ai/api/paas/v4/chat/completions';
@@ -19,8 +20,15 @@ export const POST = async ({ request, params }) => {
   `).get(params.id, user.userId);
   if (!task) return json({ error: 'No encontrado' }, 404);
 
-  const body = await request.json();
-  if (!body.body?.trim()) return json({ error: 'El comentario no puede estar vacío' }, 400);
+  let rawBody;
+  try {
+    rawBody = await request.json();
+  } catch {
+    return json({ error: 'JSON inválido' }, 400);
+  }
+  const validation = validateCommentInput(rawBody);
+  if (validation.error) return json({ error: validation.error }, 400);
+  const body = validation.values;
 
   // ── Construir contexto acumulado para la IA ──────────────────────────────
   let aiReply = null;
@@ -42,7 +50,7 @@ export const POST = async ({ request, params }) => {
       task,
       history,
       prevComments,
-      currentComment: body.body.trim(),
+      currentComment: body.body,
       userType: task.user_type || 'comun',
     });
   }
@@ -51,7 +59,7 @@ export const POST = async ({ request, params }) => {
   const result = db.prepare(`
     INSERT INTO task_comments (task_id, user_id, body, ai_reply)
     VALUES (?, ?, ?, ?)
-  `).run(params.id, user.userId, body.body.trim(), aiReply || null);
+  `).run(params.id, user.userId, body.body, aiReply || null);
 
   const comment = db.prepare('SELECT * FROM task_comments WHERE id=?').get(result.lastInsertRowid);
 
@@ -138,14 +146,14 @@ async function tryZai(prompt) {
     });
 
     if (!res.ok) {
-      console.error('[Z.AI] Error:', res.status, await res.text().catch(() => ''));
+      console.error('[Z.AI] Respuesta no exitosa:', res.status);
       return null;
     }
 
     const data = await res.json().catch(() => null);
     return data?.choices?.[0]?.message?.content?.trim() || null;
   } catch (e) {
-    console.error('[Z.AI] Excepción:', e.message);
+    console.error('[Z.AI] Fallo de red o proveedor');
     return null;
   }
 }

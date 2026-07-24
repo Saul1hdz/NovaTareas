@@ -1,16 +1,20 @@
-/**
- * POST /api/telegram/webhook
- * Recibe actualizaciones del bot de Telegram y las despacha al handler.
- *
- * Configurar el webhook una sola vez:
- *   https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://tu-dominio.com/api/telegram/webhook
- */
-
 export const prerender = false;
 
 import { handleUpdate } from '../../../lib/telegramBot.js';
+import { safeEqualStrings, safeErrorSummary } from '../../../lib/security.js';
+
+const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
 
 export async function POST({ request }) {
+  if (!WEBHOOK_SECRET) {
+    return new Response('Service Unavailable', { status: 503 });
+  }
+
+  const receivedSecret = request.headers.get('x-telegram-bot-api-secret-token');
+  if (!receivedSecret || !safeEqualStrings(receivedSecret, WEBHOOK_SECRET)) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
   let update;
   try {
     update = await request.json();
@@ -20,9 +24,8 @@ export async function POST({ request }) {
 
   try {
     await handleUpdate(update);
-  } catch (err) {
-    // Registrar pero responder 200 para evitar reenvíos de Telegram
-    console.error('[telegram/webhook] Error procesando update:', err);
+  } catch (error) {
+    console.error('[telegram/webhook] Error procesando update:', safeErrorSummary(error));
   }
 
   return new Response('OK', { status: 200 });
