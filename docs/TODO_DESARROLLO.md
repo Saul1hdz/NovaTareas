@@ -214,15 +214,14 @@ Prioridad: alta. Debe crecer junto con cada corrección.
 - [x] Guardar el reporte de cobertura como artefacto durante 14 días, sin
   perseguir un porcentaje artificial.
 - [x] Bloquear integración cuando falle una verificación crítica.
-- [ ] Confirmar la primera ejecución verde en GitHub Actions después de
-  autorizar el push de `testing`.
+- [x] Confirmar la primera ejecución verde en GitHub Actions sobre `testing`.
 
 ### Puerta de salida
 
 - [x] Flujos críticos deterministas en local y workflow de CI definido.
 - [x] Tests no dependen de servicios externos reales.
 - [x] Fallos muestran información suficiente para reproducirse.
-- [ ] Ejecución remota del workflow confirmada en verde.
+- [x] Ejecución remota del workflow confirmada en verde.
 
 ---
 

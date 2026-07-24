@@ -6,9 +6,9 @@ Rama: `testing`
 
 ## Estado
 
-La implementación local del Bloque 3 está completa. La única evidencia pendiente
-es confirmar la primera ejecución remota de GitHub Actions, lo cual requiere un
-push autorizado de la rama `testing`.
+El Bloque 3 está completo en local y en CI. GitHub Actions confirmó el workflow
+en verde sobre la rama `testing`:
+[ejecución 30121273529](https://github.com/Saul1hdz/NovaTareas/actions/runs/30121273529).
 
 No se realizó despliegue ni se modificó Netcup.
 
@@ -51,24 +51,27 @@ depender del corte UTC.
 | `npm run db:pg:verify` | 10 tablas, 115 restricciones, reejecución aprobada |
 | `npm audit` | 0 vulnerabilidades |
 | Smoke en navegador | Login y dashboard correctos; 0 errores de consola |
+| GitHub Actions | PostgreSQL, migraciones, 80 pruebas, cobertura y build aprobados |
 
 La prueba deliberada de fallo de Telegram registra un `503` simulado en stderr.
 Ese mensaje es evidencia del caso negativo y no un fallo de la suite.
+
+## Hallazgo del primer clon limpio
+
+La primera ejecución remota detectó que `tests/globalSetup.js` asumía que la
+carpeta `tmp/` ya existía. En Windows esa carpeta local ocultaba el defecto; en
+un clon limpio de Linux, `better-sqlite3` no podía crear el archivo.
+
+El setup ahora crea explícitamente el directorio temporal antes de abrir la base.
+Después de la corrección, la segunda ejecución terminó en verde.
 
 ## Límites y puerta de salida
 
 - No había Docker ni un servicio PostgreSQL local disponible; el esquema se
   verificó con PGlite.
-- El servicio PostgreSQL real queda preparado en el workflow, pero aún no se ha
-  ejecutado en GitHub.
+- El servicio PostgreSQL real se verificó dentro de GitHub Actions.
 - La aplicación continúa usando SQLite como runtime hasta el Bloque 4.
 
-Para cerrar completamente la puerta del bloque:
-
-1. Revisar este commit.
-2. Autorizar el push de `testing`.
-3. Confirmar que GitHub Actions termina en verde y conserva el artefacto de
-   cobertura.
-
-Hasta entonces se puede seguir probando localmente, pero no conviene declarar la
-CI remota validada ni iniciar una migración irreversible.
+La puerta del Bloque 3 queda cerrada. El siguiente trabajo técnico es el Bloque
+4, manteniendo SQLite intacto hasta validar conteos, relaciones y rollback sobre
+PostgreSQL.

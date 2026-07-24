@@ -155,7 +155,6 @@ console.log("process.env:", process.env.GEMINI_API_KEY);
 
 | Bloqueo | Descripción | Plan |
 |---|---|---|
-| Ejecución remota de CI pendiente | El workflow ya incluye PostgreSQL 16, migraciones, comprobación transaccional, cobertura y build, pero no se puede declarar verde antes de hacer un push autorizado. | Cierre del Bloque 3 |
 | Runtime aún en SQLite | PostgreSQL tiene esquema y pruebas, pero las rutas de la aplicación siguen usando SQLite hasta el Bloque 4. | Bloque 4 |
 | Rate limiting en memoria | El límite de peticiones se reinicia con el servidor y no funcionaría con varias instancias desplegadas. | Semana 6 |
 | Sin despliegue | GitHub Actions ejecuta las pruebas, pero el proyecto todavía no está desplegado en una URL pública. El adaptador de Node y el uso de SQLite con escrituras impiden usar hosting estático. | Semana 6 |

@@ -281,8 +281,8 @@ El archivo `.github/workflows/ci.yml` ejecuta automáticamente en GitHub Actions
 
 El workflow **no expone `ZAI_API_KEY` ni credenciales reales**. Las pruebas usan
 secretos ficticios, no consumen saldo y cualquier fallo crítico detiene el job.
-La configuración está verificada localmente; su primera ejecución remota queda
-pendiente hasta autorizar el push de la rama `testing`.
+La configuración quedó confirmada en GitHub Actions sobre la rama `testing`:
+[ejecución 30121273529](https://github.com/Saul1hdz/NovaTareas/actions/runs/30121273529).
 
 ---
 
@@ -526,8 +526,8 @@ API Gateway
   recordatorios, proveedores de IA, Google simulado, avatares y vinculación
   temporal de Telegram.
 - ✅ **Pipeline CI/CD configurado** con GitHub Actions: PostgreSQL 16 efímero,
-  migración, comprobación transaccional, cobertura y build. La primera ejecución
-  remota se confirmará después del push autorizado.
+  migración, comprobación transaccional, cobertura y build, confirmado en una
+  ejecución remota verde.
 - ✅ **Esquema SQLite reproducible** mediante `npm run db:init`, sin ejecutar migraciones heredadas.
 - ⬜ **Logging estructurado** de cada llamada a z.ai: modelo usado, tokens consumidos, latencia y si usó fallback.
 - ⬜ **Sistema de feedback** (👍/👎) en las recomendaciones para medir la utilidad real del modelo.
