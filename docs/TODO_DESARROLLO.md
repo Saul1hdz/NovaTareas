@@ -264,7 +264,7 @@ Prioridad: media-alta.
 - [ ] Separar lógica de presentación, llamadas API y estado del calendario.
 - [ ] Retirar módulos muertos de la migración abandonada a Supabase.
 - [ ] Eliminar configuración y nombres heredados de Gemini que ya no apliquen.
-- [ ] Corregir discrepancias del modelo z.ai predeterminado.
+- [x] Corregir discrepancias del modelo z.ai predeterminado.
 - [ ] Definir claramente los procesos web, bot y scheduler.
 - [ ] Persistir o manejar de forma explícita el estado conversacional del bot.
 

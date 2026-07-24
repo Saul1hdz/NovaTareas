@@ -17,9 +17,10 @@ Las pruebas siguen el mismo principio que el `TestClient` de FastAPI visto en cl
 |---|---|---|
 | `tests/aiEngine.test.js` | 14 | Capa de validación de datos de entrada |
 | `tests/api.test.js` | 13 | Endpoints `/health`, `/metadata` y `/recommend` |
+| `tests/aiPrompt.test.js` | 3 | Uso seguro y opcional del historial RAG |
 | Resto de la suite | 53 | Seguridad, flujos, migraciones, integraciones y proveedores simulados |
 
-**Total actual: 80 pruebas.**
+**Total actual: 83 pruebas.**
 
 ### Decisión clave: pruebas sin dependencias externas
 
@@ -165,9 +166,9 @@ console.log("process.env:", process.env.GEMINI_API_KEY);
 
 ```bash
 npm ci          # instala exactamente el lockfile
-npm test        # ejecuta las 80 pruebas
+npm test        # ejecuta las 83 pruebas
 npm run lint          # verificar tipos y sintaxis del proyecto
 ```
 
-Resultado esperado: 80 pruebas superadas, sin necesidad de servicios externos
+Resultado esperado: 83 pruebas superadas, sin necesidad de servicios externos
 ni credenciales reales.

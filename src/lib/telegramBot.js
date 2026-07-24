@@ -15,7 +15,7 @@ const BOT_TOKEN      = process.env.TELEGRAM_BOT_TOKEN;
 const API_BASE       = `https://api.telegram.org/bot${BOT_TOKEN}`;
 const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
 const ZAI_URL       = 'https://api.z.ai/api/paas/v4/chat/completions';
-const ZAI_MODEL     = process.env.ZAI_MODEL || 'glm-5.2';
+const ZAI_MODEL     = process.env.ZAI_MODEL || 'glm-4.5-flash';
 const OLLAMA_URL     = process.env.OLLAMA_URL   || 'http://localhost:11434';
 const OLLAMA_MODEL   = process.env.OLLAMA_MODEL || 'llama3.2:3b';
 

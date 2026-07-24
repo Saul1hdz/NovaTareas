@@ -238,9 +238,10 @@ npm run lint          # verificar tipos y sintaxis del proyecto
 | `tests/tokenEncryption.test.js` | 3 | Cifrado, descifrado y rechazo de tokens alterados |
 | `tests/reminders.test.js` | 3 | Zona horaria, avisos únicos y ausencia de marcación cuando Telegram falla |
 | `tests/aiProviders.test.js` | 3 | z.ai, Ollama y fallback local con red simulada |
+| `tests/aiPrompt.test.js` | 3 | El prompt no inventa antecedentes y trata RAG como evidencia opcional |
 | `tests/googleIntegration.test.js` | 4 | OAuth, eventos, renovación y persistencia cifrada de tokens con Google simulado |
 
-**Total: 80 pruebas.** Las pruebas de base de datos usan un archivo SQLite
+**Total: 83 pruebas.** Las pruebas de base de datos usan un archivo SQLite
 temporal y aislado de la base de desarrollo; el esquema PostgreSQL se prueba con
 PGlite y el workflow usa además un servicio PostgreSQL 16 efímero.
 
@@ -275,7 +276,7 @@ El archivo `.github/workflows/ci.yml` ejecuta automáticamente en GitHub Actions
 3. **Instalación** de dependencias con `npm ci` (reproducible desde `package-lock.json`).
 4. **Verificación** de tipos y sintaxis (`npm run lint`).
 5. **Migración y comprobación** contra un servicio PostgreSQL 16 efímero.
-6. **Ejecución** de las 80 pruebas con cobertura (`npm run test:coverage`).
+6. **Ejecución** de las 83 pruebas con cobertura (`npm run test:coverage`).
 7. **Conservación** del reporte de cobertura como artefacto durante 14 días.
 8. **Compilación** del proyecto (`npm run build`).
 
@@ -487,7 +488,7 @@ API Gateway
 3. **El estado de conversación del bot vive en memoria** — un reinicio del servidor cancela cualquier flujo de creación de tarea a medio completar.
 4. **El webhook requiere URL pública** — en desarrollo local es necesario ngrok; si se cae, el bot deja de responder.
 5. **Cuota de z.ai limitada** — el saldo de la cuenta puede agotarse; al fallar, el sistema cae al fallback local u offline.
-6. **Cobertura de pruebas parcial** — las 80 pruebas ya cubren autenticación,
+6. **Cobertura de pruebas parcial** — las 83 pruebas ya cubren autenticación,
    recuperación, ownership, tareas, migraciones SQLite/PostgreSQL, cifrado de
    tokens, recordatorios, cron, webhook, avatares, códigos de vinculación de
    Telegram, proveedores de IA y rutas principales de Google simuladas; aún
@@ -521,7 +522,7 @@ API Gateway
 
 ### Semana 3 — Calidad y automatización
 
-- ✅ **Pruebas automatizadas** con Vitest: 80 pruebas sobre API, autenticación,
+- ✅ **Pruebas automatizadas** con Vitest: 83 pruebas sobre API, autenticación,
   tareas, seguridad, migraciones SQLite/PostgreSQL, cifrado, cron, webhook,
   recordatorios, proveedores de IA, Google simulado, avatares y vinculación
   temporal de Telegram.
@@ -567,6 +568,8 @@ API Gateway
   QA de navegador, límites y puerta hacia el Bloque 3.
 - [`docs/CIERRE_BLOQUE_3.md`](docs/CIERRE_BLOQUE_3.md) — suite ampliada,
   correcciones descubiertas, diseño de CI y evidencia de QA local.
+- [`docs/QA_IA_LOCAL.md`](docs/QA_IA_LOCAL.md) — prueba real de z.ai, hallazgos
+  de calidad, correcciones de RAG y límites pendientes.
 
 | Documento | Contenido |
 |---|---|

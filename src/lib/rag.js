@@ -226,7 +226,11 @@ export async function findSimilarTasks(userId, queryText, topK = TOP_K) {
     try { storedVector = JSON.parse(row.vector); } catch { return null; }
     const similarity = cosineSimilarity(queryVector, storedVector);
     return { ...row, similarity };
-  }).filter(r => r && r.similarity >= MIN_SIMILARITY);
+  }).filter(r =>
+    r &&
+    r.similarity >= MIN_SIMILARITY &&
+    (r.what_worked || r.what_failed || r.observations)
+  );
 
   // Ordenar por similitud descendente y retornar las mejores
   scored.sort((a, b) => b.similarity - a.similarity);

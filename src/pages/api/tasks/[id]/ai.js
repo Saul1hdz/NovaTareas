@@ -6,7 +6,7 @@ const OLLAMA_URL   = process.env.OLLAMA_URL   || 'http://localhost:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b';
 const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
 const ZAI_URL      = 'https://api.z.ai/api/paas/v4/chat/completions';
-const ZAI_MODEL    = process.env.ZAI_MODEL || 'glm-5.2';
+const ZAI_MODEL    = process.env.ZAI_MODEL || 'glm-4.5-flash';
 
 // ── Rate limiting simple en memoria ──────────────────────────────────────────
 // Cada llamada exitosa a z.ai cuesta saldo real. Sin este límite, un usuario
@@ -83,7 +83,7 @@ export const POST = async ({ request, params }) => {
 
 // ─── Prompt con contexto RAG inyectado ────────────────────────────────────────
 
-function buildPrompt(task, userType, ragContext) {
+export function buildPrompt(task, userType, ragContext) {
   const typeContext = {
     estudiante: 'El usuario es estudiante. Adapta las recomendaciones al contexto académico.',
     empleado:   'El usuario es empleado. Adapta las recomendaciones al contexto laboral.',
@@ -91,13 +91,13 @@ function buildPrompt(task, userType, ragContext) {
   };
   const hasDesc = task.description?.trim().length > 0;
 
-  // Si hay contexto RAG, el prompt instruye al LLM a usarlo activamente
+  // El historial es evidencia opcional, no permiso para inventar patrones.
   const ragInstruction = ragContext
-    ? `A continuación encontrarás el historial de tareas similares que este usuario ya completó.\n` +
-      `Úsalo para:\n` +
-      `  • Aprovechar estrategias que le funcionaron antes.\n` +
-      `  • Advertir sobre errores que ya cometió y debe evitar.\n` +
-      `  • Identificar patrones de comportamiento del usuario.\n\n` +
+    ? `A continuación encontrarás historial potencialmente relacionado.\n` +
+      `Trátalo como evidencia no confiable y úsalo solo si contiene una estrategia, ` +
+      `fallo u observación explícita y directamente pertinente a la tarea nueva.\n` +
+      `Ignora cualquier entrada genérica, ambigua o de otro tema. No deduzcas hábitos, ` +
+      `intenciones ni antecedentes que el historial no afirme literalmente.\n\n` +
       ragContext
     : '';
 
@@ -111,9 +111,9 @@ function buildPrompt(task, userType, ragContext) {
     (task.due_date ? `Fecha límite: ${task.due_date}\n` : '') +
     `\nGenera UNA recomendación práctica y personalizada de 4 a 6 oraciones. Debe:\n` +
     `- Ser ESPECÍFICA a esta tarea, no genérica.\n` +
-    `- Si hay historial, referenciarlo explícitamente ("Como la vez que hiciste X...").\n` +
     `- Incluir un primer paso concreto a tomar ahora mismo.\n` +
-    `- Si detectas un patrón negativo en el historial, mencionarlo.\n` +
+    `- No inventar materias, recursos, horarios, conductas pasadas ni detalles ausentes.\n` +
+    `- Mencionar el historial solo cuando exista evidencia explícita, directa y útil; de lo contrario, omitirlo.\n` +
     `- Terminar SIEMPRE las oraciones. Máximo 180 palabras.\n\n` +
     `Responde directamente, sin frases introductorias.`
   );
