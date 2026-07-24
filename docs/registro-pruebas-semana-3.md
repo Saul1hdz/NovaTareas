@@ -16,9 +16,10 @@ Las pruebas siguen el mismo principio que el `TestClient` de FastAPI visto en cl
 | Archivo | Pruebas | Qué valida |
 |---|---|---|
 | `tests/aiEngine.test.js` | 14 | Capa de validación de datos de entrada |
-| `tests/api.test.js` | 11 | Endpoints `/health`, `/metadata` y `/recommend` |
+| `tests/api.test.js` | 13 | Endpoints `/health`, `/metadata` y `/recommend` |
+| Resto de la suite | 53 | Seguridad, flujos, migraciones, integraciones y proveedores simulados |
 
-**Total: 25 pruebas.**
+**Total actual: 80 pruebas.**
 
 ### Decisión clave: pruebas sin dependencias externas
 
@@ -154,8 +155,8 @@ console.log("process.env:", process.env.GEMINI_API_KEY);
 
 | Bloqueo | Descripción | Plan |
 |---|---|---|
-| Migraciones sin runner | Existen archivos con numeración duplicada (`002_*` y `003_*`) y deben ejecutarse manualmente en un orden específico. Se mitigó con el script `npm run migrate`, pero no hay control de versión de esquema. | Semana 4 |
-| Pruebas sin base de datos | Las pruebas actuales cubren la validación y los endpoints de IA, que no dependen de SQLite. Los endpoints de tareas (`/api/tasks`) sí requieren base de datos y aún no tienen pruebas. | Semana 4 |
+| Ejecución remota de CI pendiente | El workflow ya incluye PostgreSQL 16, migraciones, comprobación transaccional, cobertura y build, pero no se puede declarar verde antes de hacer un push autorizado. | Cierre del Bloque 3 |
+| Runtime aún en SQLite | PostgreSQL tiene esquema y pruebas, pero las rutas de la aplicación siguen usando SQLite hasta el Bloque 4. | Bloque 4 |
 | Rate limiting en memoria | El límite de peticiones se reinicia con el servidor y no funcionaría con varias instancias desplegadas. | Semana 6 |
 | Sin despliegue | GitHub Actions ejecuta las pruebas, pero el proyecto todavía no está desplegado en una URL pública. El adaptador de Node y el uso de SQLite con escrituras impiden usar hosting estático. | Semana 6 |
 
@@ -164,9 +165,10 @@ console.log("process.env:", process.env.GEMINI_API_KEY);
 ## 4. Cómo reproducir las pruebas
 
 ```bash
-npm install     # instala dependencias, incluida Vitest
-npm test        # ejecuta las 25 pruebas
+npm ci          # instala exactamente el lockfile
+npm test        # ejecuta las 80 pruebas
 npm run lint          # verificar tipos y sintaxis del proyecto
 ```
 
-Resultado esperado: 25 pruebas superadas, sin necesidad de conexión a internet ni de credenciales.
+Resultado esperado: 80 pruebas superadas, sin necesidad de servicios externos
+ni credenciales reales.

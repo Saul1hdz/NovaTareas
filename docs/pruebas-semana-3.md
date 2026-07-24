@@ -102,12 +102,23 @@ it('responde 400 cuando falta el título', async () => {
 
 ## Cobertura completa implementada
 
-Aunque el requisito mínimo son dos pruebas, se implementaron **25** para cubrir el contrato de forma más completa.
+El mapa inicial se amplió hasta **80 pruebas** para cubrir el contrato y los
+flujos críticos del producto.
 
 | Archivo | Pruebas | Comportamiento cubierto |
 |---|---|---|
 | `tests/aiEngine.test.js` | 14 | Validación de entrada: títulos vacíos o muy largos, descripciones fuera de límite, prioridades no permitidas, fechas mal formadas, cuerpos que no son objetos |
-| `tests/api.test.js` | 11 | Salud del servicio, contrato de metadatos, respuestas exitosas y errores controlados (400, 405) |
+| `tests/api.test.js` | 13 | Salud del servicio, contrato de metadatos, autenticación, respuestas exitosas y errores controlados |
+| `tests/appFlows.test.js` | 14 | Autenticación, tareas, ownership, subtareas, historial y comentarios |
+| `tests/security.test.js` | 6 | Sesiones, límites, secretos y OAuth `state` |
+| `tests/migrations.test.js` | 2 | Esquema SQLite idempotente y rechazo de bases heredadas |
+| `tests/taskValidation.test.js` | 3 | Validación de tareas y comentarios |
+| `tests/integrationSecurity.test.js` | 8 | Cron, Telegram y avatares |
+| `tests/postgresSchema.test.js` | 7 | Migraciones y restricciones PostgreSQL con PGlite |
+| `tests/tokenEncryption.test.js` | 3 | Protección de tokens persistidos |
+| `tests/reminders.test.js` | 3 | Zona horaria, idempotencia y fallos de entrega |
+| `tests/aiProviders.test.js` | 3 | z.ai, Ollama y reglas locales |
+| `tests/googleIntegration.test.js` | 4 | OAuth, eventos y renovación de tokens |
 
 ### Datos de prueba utilizados
 
@@ -128,7 +139,8 @@ Todos los datos son **simples y ficticios**, sin información personal ni creden
 
 ## Decisión técnica: pruebas sin dependencias externas
 
-Las pruebas **no llaman a la API de IA real**. Esto es intencional y se apoya en el diseño del propio proyecto: si la variable `ZAI_API_KEY` no está definida, el motor cae automáticamente a sus reglas locales y responde igual.
+Las pruebas **no llaman a servicios externos reales**. z.ai, Ollama, Telegram y
+Google se simulan; los casos offline fuerzan las reglas locales.
 
 El workflow de CI aprovecha esto y **no define esa variable** en el paso de pruebas, con tres beneficios:
 
@@ -143,9 +155,10 @@ El workflow de CI aprovecha esto y **no define esa variable** en el paso de prue
 ## Cómo ejecutar
 
 ```bash
-npm install   # instala dependencias, incluida Vitest
-npm test      # ejecuta las 25 pruebas
+npm ci        # instala exactamente el lockfile
+npm test      # ejecuta las 80 pruebas
 npm run lint          # verificar tipos y sintaxis del proyecto
 ```
 
-Resultado esperado: 25 pruebas superadas, sin necesidad de conexión a internet ni credenciales.
+Resultado esperado: 80 pruebas superadas, sin conexión a servicios externos ni
+credenciales reales.

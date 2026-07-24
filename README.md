@@ -229,14 +229,20 @@ npm run lint          # verificar tipos y sintaxis del proyecto
 |---|---|---|
 | `tests/aiEngine.test.js` | 14 | Validación de entrada: títulos vacíos o muy largos, descripciones fuera de límite, prioridades no permitidas, fechas mal formadas, cuerpos que no son objetos |
 | `tests/api.test.js` | 13 | Endpoints `/api/v1/health`, `/api/v1/metadata` y `/api/v1/recommend`, incluida la autenticación de la API externa |
-| `tests/appFlows.test.js` | 10 | Registro con sesión, login, tareas, ownership, validación de inputs, eliminación segura y vinculación de Telegram |
+| `tests/appFlows.test.js` | 14 | Registro, login, logout, cambio de contraseña, ciclo de vida de tareas, ownership, subtareas, historial, comentarios y vinculación de Telegram |
 | `tests/security.test.js` | 6 | Sesiones, cookies, rate limiting, secretos, logs seguros y Google OAuth `state` |
 | `tests/migrations.test.js` | 2 | Creación idempotente del esquema y rechazo seguro de bases heredadas |
 | `tests/taskValidation.test.js` | 3 | Validación de tareas, fechas, estados, etiquetas y comentarios |
-| `tests/integrationSecurity.test.js` | 7 | Cron, webhook y carga de avatares válidos, falsificados o con MIME incorrecto |
+| `tests/integrationSecurity.test.js` | 8 | Cron, webhook de Telegram simulado y carga de avatares válidos, falsificados o con MIME incorrecto |
+| `tests/postgresSchema.test.js` | 7 | Esquema, restricciones y reejecución de migraciones PostgreSQL con PGlite |
+| `tests/tokenEncryption.test.js` | 3 | Cifrado, descifrado y rechazo de tokens alterados |
+| `tests/reminders.test.js` | 3 | Zona horaria, avisos únicos y ausencia de marcación cuando Telegram falla |
+| `tests/aiProviders.test.js` | 3 | z.ai, Ollama y fallback local con red simulada |
+| `tests/googleIntegration.test.js` | 4 | OAuth, eventos, renovación y persistencia cifrada de tokens con Google simulado |
 
-**Total: 65 pruebas.** Las pruebas de base de datos usan un archivo SQLite
-temporal y aislado de la base de desarrollo.
+**Total: 80 pruebas.** Las pruebas de base de datos usan un archivo SQLite
+temporal y aislado de la base de desarrollo; el esquema PostgreSQL se prueba con
+PGlite y el workflow usa además un servicio PostgreSQL 16 efímero.
 
 ### Cómo funcionan
 
@@ -244,7 +250,9 @@ Las pruebas de endpoints siguen el mismo principio que el `TestClient` de FastAP
 
 ### Decisión técnica: pruebas sin dependencias externas
 
-Las pruebas **no llaman a la API de IA real**. El archivo `vitest.config.js` aísla el entorno vaciando `ZAI_API_KEY` y apuntando `OLLAMA_URL` a un puerto cerrado, de modo que el motor cae de inmediato a sus reglas locales.
+Las pruebas **no llaman a servicios externos reales**. z.ai, Ollama, Telegram y
+Google se simulan de forma controlada; los casos offline fuerzan las reglas
+locales. Las credenciales del entorno de pruebas son ficticias.
 
 Esto aporta tres beneficios:
 
@@ -266,10 +274,15 @@ El archivo `.github/workflows/ci.yml` ejecuta automáticamente en GitHub Actions
 2. **Configuración** de Node.js 22.12 con caché de npm.
 3. **Instalación** de dependencias con `npm ci` (reproducible desde `package-lock.json`).
 4. **Verificación** de tipos y sintaxis (`npm run lint`).
-5. **Ejecución** de las 55 pruebas (`npm test`).
-6. **Compilación** del proyecto (`npm run build`).
+5. **Migración y comprobación** contra un servicio PostgreSQL 16 efímero.
+6. **Ejecución** de las 80 pruebas con cobertura (`npm run test:coverage`).
+7. **Conservación** del reporte de cobertura como artefacto durante 14 días.
+8. **Compilación** del proyecto (`npm run build`).
 
-El workflow **no expone `ZAI_API_KEY` ni credenciales reales**. Las pruebas usan secretos ficticios y un `AI_API_KEY` exclusivo del entorno de test, además de forzar el fallback local para no consumir saldo.
+El workflow **no expone `ZAI_API_KEY` ni credenciales reales**. Las pruebas usan
+secretos ficticios, no consumen saldo y cualquier fallo crítico detiene el job.
+La configuración está verificada localmente; su primera ejecución remota queda
+pendiente hasta autorizar el push de la rama `testing`.
 
 ---
 
@@ -474,11 +487,12 @@ API Gateway
 3. **El estado de conversación del bot vive en memoria** — un reinicio del servidor cancela cualquier flujo de creación de tarea a medio completar.
 4. **El webhook requiere URL pública** — en desarrollo local es necesario ngrok; si se cae, el bot deja de responder.
 5. **Cuota de z.ai limitada** — el saldo de la cuenta puede agotarse; al fallar, el sistema cae al fallback local u offline.
-6. **Cobertura de pruebas parcial** — las 65 pruebas ya cubren autenticación,
+6. **Cobertura de pruebas parcial** — las 80 pruebas ya cubren autenticación,
    recuperación, ownership, tareas, migraciones SQLite/PostgreSQL, cifrado de
-   tokens, cron, webhook, avatares, códigos de vinculación de Telegram y la API
-   inteligente; aún faltan pruebas completas de recordatorios, conversación del
-   bot y Google.
+   tokens, recordatorios, cron, webhook, avatares, códigos de vinculación de
+   Telegram, proveedores de IA y rutas principales de Google simuladas; aún
+   faltan pruebas amplias de la conversación del bot, RAG y el flujo visual de
+   Google en el dashboard.
 7. **RAG parcialmente conectado** — los embeddings existen en la base de datos, pero no todas las rutas del código los consumen todavía.
 8. **Sin métrica formal de calidad** — no existe aún un sistema de feedback que mida la utilidad real de las recomendaciones.
 9. **Sin logging estructurado** — las llamadas al modelo no registran modelo usado, tokens consumidos ni latencia.
@@ -507,10 +521,13 @@ API Gateway
 
 ### Semana 3 — Calidad y automatización
 
-- ✅ **Pruebas automatizadas** con Vitest: 65 pruebas sobre API, autenticación,
+- ✅ **Pruebas automatizadas** con Vitest: 80 pruebas sobre API, autenticación,
   tareas, seguridad, migraciones SQLite/PostgreSQL, cifrado, cron, webhook,
-  avatares y vinculación temporal de Telegram.
-- ✅ **Pipeline CI/CD** con GitHub Actions: instala, valida, prueba y compila en cada push.
+  recordatorios, proveedores de IA, Google simulado, avatares y vinculación
+  temporal de Telegram.
+- ✅ **Pipeline CI/CD configurado** con GitHub Actions: PostgreSQL 16 efímero,
+  migración, comprobación transaccional, cobertura y build. La primera ejecución
+  remota se confirmará después del push autorizado.
 - ✅ **Esquema SQLite reproducible** mediante `npm run db:init`, sin ejecutar migraciones heredadas.
 - ⬜ **Logging estructurado** de cada llamada a z.ai: modelo usado, tokens consumidos, latencia y si usó fallback.
 - ⬜ **Sistema de feedback** (👍/👎) en las recomendaciones para medir la utilidad real del modelo.
@@ -548,6 +565,8 @@ API Gateway
   diseño, diccionario, comandos, evidencia y límites de la migración PostgreSQL.
 - [`docs/CIERRE_BLOQUE_2.md`](docs/CIERRE_BLOQUE_2.md) — resultados técnicos,
   QA de navegador, límites y puerta hacia el Bloque 3.
+- [`docs/CIERRE_BLOQUE_3.md`](docs/CIERRE_BLOQUE_3.md) — suite ampliada,
+  correcciones descubiertas, diseño de CI y evidencia de QA local.
 
 | Documento | Contenido |
 |---|---|

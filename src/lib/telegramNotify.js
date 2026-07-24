@@ -1,8 +1,5 @@
 import { safeErrorSummary } from './security.js';
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const API_BASE  = `https://api.telegram.org/bot${BOT_TOKEN}`;
-
 function escapeTelegramHtml(value) {
   return String(value)
     .replace(/&/g, '&amp;')
@@ -13,19 +10,38 @@ function escapeTelegramHtml(value) {
 // ─── Utilidad base ────────────────────────────────────────────────────────────
 
 async function sendMessage(chatId, text) {
-  if (!chatId || !BOT_TOKEN) return;
+  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!chatId || !botToken) return false;
   try {
-    const res = await fetch(`${API_BASE}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
     });
     if (!res.ok) {
       console.error('[telegramNotify] Telegram rechazó sendMessage:', res.status);
+      return false;
     }
+    return true;
   } catch (err) {
     console.error('[telegramNotify] Fallo de red');
+    return false;
   }
+}
+
+export const APP_TIME_ZONE = process.env.APP_TIME_ZONE || 'America/El_Salvador';
+
+export function dateInAppTimeZone(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: APP_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(
+    parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value])
+  );
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 // Formatea "YYYY-MM-DD" o timestamp en texto legible
@@ -133,11 +149,12 @@ export async function notifyTaskUrgent(chatId, task) {
  */
 export async function notifyReminders(getUsersWithDueTasks, markReminderSent, windowMinutes = 30) {
   const dueTasks = getUsersWithDueTasks(windowMinutes);
+  let sent = 0;
 
   for (const row of dueTasks) {
     const formatted = formatDate(row.due_date);
     try {
-      await sendMessage(
+      const delivered = await sendMessage(
         row.telegram_chat_id,
         `⏰ <b>Recordatorio</b>\n\n` +
         `Tu tarea vence pronto:\n\n` +
@@ -145,13 +162,16 @@ export async function notifyReminders(getUsersWithDueTasks, markReminderSent, wi
         `🗓️ Vence: <b>${formatted}</b>\n\n` +
         `¡No olvides completarla a tiempo!`
       );
-      markReminderSent(row.task_id);
+      if (delivered) {
+        markReminderSent(row.task_id);
+        sent += 1;
+      }
     } catch (err) {
       console.error('[telegramNotify] Error recordatorio:', safeErrorSummary(err));
     }
   }
 
-  return dueTasks.length;
+  return sent;
 }
 
 // ─── 5. Alertas de tareas vencidas (para cron job) ───────────────────────────
@@ -163,9 +183,7 @@ export async function notifyReminders(getUsersWithDueTasks, markReminderSent, wi
  * @param {import('better-sqlite3').Database} db - instancia de la DB
  */
 export async function notifyOverdueTasks(db) {
-  const now = new Date();
-  // Calcular "hoy" como string YYYY-MM-DD
-  const todayStr = now.toISOString().slice(0, 10);
+  const todayStr = dateInAppTimeZone();
 
   const overdue = db.prepare(`
     SELECT t.id AS task_id, t.title, t.due_date, t.priority,
@@ -180,10 +198,11 @@ export async function notifyOverdueTasks(db) {
       AND t.due_date < ?
   `).all(todayStr);
 
+  let sent = 0;
   for (const row of overdue) {
     const emoji = PRIORITY_EMOJI[row.priority] || '🟡';
     try {
-      await sendMessage(
+      const delivered = await sendMessage(
         row.telegram_chat_id,
         `🔴 <b>Tarea vencida</b>\n\n` +
         `La siguiente tarea ya pasó su fecha límite:\n\n` +
@@ -192,12 +211,14 @@ export async function notifyOverdueTasks(db) {
         `${emoji} Prioridad: <b>${escapeTelegramHtml(row.priority)}</b>\n\n` +
         `⚠️ Complétala o reagéndala desde el dashboard.`
       );
-      // Marcar para no volver a notificar
-      db.prepare('UPDATE tasks SET overdue_notified = 1 WHERE id = ?').run(row.task_id);
+      if (delivered) {
+        db.prepare('UPDATE tasks SET overdue_notified = 1 WHERE id = ?').run(row.task_id);
+        sent += 1;
+      }
     } catch (err) {
       console.error('[telegramNotify] Error vencida:', safeErrorSummary(err));
     }
   }
 
-  return overdue.length;
+  return sent;
 }

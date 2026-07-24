@@ -2,14 +2,38 @@ name: CI
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main, master, develop, testing]
   pull_request:
     branches: [main, master]
 
 jobs:
   test:
-    name: Pruebas y build
+    name: Pruebas, PostgreSQL y build
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: novatareas
+          POSTGRES_PASSWORD: ci-password-ficticia
+          POSTGRES_DB: novatareas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U novatareas -d novatareas_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://novatareas:ci-password-ficticia@127.0.0.1:5432/novatareas_test
+      SECRET_KEY: clave-solo-para-pruebas-de-ci
+      CRON_SECRET: cron-solo-para-pruebas-de-ci
+      TELEGRAM_WEBHOOK_SECRET: telegram-solo-para-pruebas-de-ci
+      TOKEN_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY
+      ZAI_API_KEY: ''
+      OLLAMA_URL: http://127.0.0.1:1
 
     steps:
       - name: Descargar el código
@@ -19,27 +43,33 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22.12.0'
-          cache: 'npm'
+          cache: npm
 
-      # `npm ci` es más rápido y reproducible que `npm install`:
-      # instala exactamente las versiones del package-lock.json.
       - name: Instalar dependencias
         run: npm ci
 
       - name: Verificar tipos y sintaxis
         run: npm run lint
 
-      # NOTA: no se define ZAI_API_KEY a propósito.
-      # Sin esa variable, el motor de IA usa su fallback de reglas locales,
-      # por lo que las pruebas son deterministas, rápidas y no consumen saldo.
-      - name: Ejecutar pruebas
-        run: npm test
-        env:
-          SECRET_KEY: clave-solo-para-pruebas-de-ci
-          CRON_SECRET: cron-solo-para-pruebas-de-ci
+      - name: Migrar PostgreSQL efímero
+        run: npm run db:pg:migrate
+
+      - name: Comprobar PostgreSQL efímero
+        run: npm run db:pg:check
+
+      # z.ai, Ollama, Telegram y Google se sustituyen por dobles controlados.
+      # No se usan credenciales reales ni se consume saldo.
+      - name: Ejecutar pruebas con cobertura
+        run: npm run test:coverage
+
+      - name: Guardar reporte de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobertura-vitest
+          path: coverage/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Compilar el proyecto
         run: npm run build
-        env:
-          SECRET_KEY: clave-solo-para-pruebas-de-ci
-          CRON_SECRET: cron-solo-para-pruebas-de-ci

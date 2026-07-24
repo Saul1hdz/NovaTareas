@@ -13,6 +13,7 @@ import { GET as getHistory } from '../src/pages/api/tasks/[id]/history.js';
 import { POST as getAiAdvice } from '../src/pages/api/tasks/[id]/ai.js';
 import { PATCH as toggleSubtask } from '../src/pages/api/tasks/[id]/subtasks/[subId].js';
 import { POST as updateTheme } from '../src/pages/api/theme.js';
+import { POST as logout } from '../src/pages/api/logout.js';
 import { PUT as updateProfile } from '../src/pages/api/profile.js';
 import { getDb } from '../src/lib/db.js';
 import { consumeTelegramLinkCode } from '../src/lib/telegramLink.js';
@@ -57,6 +58,7 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
   let firstCookie;
   let secondCookie;
   let taskId;
+  let subtaskId;
 
   it('registra usuarios y guarda respuestas con hash', async () => {
     const firstRegistration = await registerUser(
@@ -183,7 +185,7 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
   });
 
   it('protege comentarios, historial, IA y subtareas por ownership', async () => {
-    const subtaskId = Number(getDb().prepare(
+    subtaskId = Number(getDb().prepare(
       'INSERT INTO subtasks (task_id, text) VALUES (?, ?)'
     ).run(taskId, 'Paso ficticio').lastInsertRowid);
 
@@ -331,5 +333,118 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
 
     const newSession = await loginUser('beto@example.test', 'NuevaClave5678');
     expect(newSession.response.status).toBe(200);
+  });
+
+  it('actualiza subtareas y conserva comentarios e historial propios', async () => {
+    const toggled = await toggleSubtask({
+      request: request(`/api/tasks/${taskId}/subtasks/${subtaskId}`, 'PATCH', undefined, firstCookie),
+      params: { id: String(taskId), subId: String(subtaskId) },
+    });
+    expect(toggled.status).toBe(200);
+    expect(getDb().prepare('SELECT done FROM subtasks WHERE id = ?').get(subtaskId).done)
+      .toBe(1);
+
+    const commentResponse = await addComment({
+      request: request(`/api/tasks/${taskId}/comments`, 'POST', {
+        body: 'Avance ficticio registrado',
+        ask_ai: false,
+      }, firstCookie),
+      params: { id: String(taskId) },
+    });
+    expect(commentResponse.status).toBe(201);
+
+    const edited = await updateTask({
+      request: request(`/api/tasks/${taskId}`, 'PATCH', {
+        title: 'Tarea ficticia editada',
+        priority: 'alta',
+      }, firstCookie),
+      params: { id: String(taskId) },
+    });
+    expect(edited.status).toBe(200);
+
+    const historyResponse = await getHistory({
+      request: request(`/api/tasks/${taskId}/history`, 'GET', undefined, firstCookie),
+      params: { id: String(taskId) },
+    });
+    const data = await historyResponse.json();
+    expect(historyResponse.status).toBe(200);
+    expect(data.comments).toHaveLength(1);
+    expect(data.comments[0].body).toBe('Avance ficticio registrado');
+    expect(data.history).toHaveLength(2);
+  });
+
+  it('completa, reabre, archiva y desarchiva una tarea', async () => {
+    const patchTask = async body => updateTask({
+      request: request(`/api/tasks/${taskId}`, 'PATCH', body, firstCookie),
+      params: { id: String(taskId) },
+    });
+    const row = () => getDb().prepare(
+      'SELECT status, completed, archived, completed_at, archived_at, reopened_at FROM tasks WHERE id = ?'
+    ).get(taskId);
+
+    expect((await patchTask({ status: 'completada' })).status).toBe(200);
+    expect(row()).toMatchObject({ status: 'completada', completed: 1, archived: 0 });
+    expect(row().completed_at).toBeTruthy();
+
+    expect((await patchTask({ status: 'en progreso' })).status).toBe(200);
+    expect(row()).toMatchObject({ status: 'en progreso', completed: 0 });
+    expect(row().completed_at).toBeNull();
+    expect(row().reopened_at).toBeTruthy();
+
+    expect((await patchTask({
+      archived: true,
+      observations: 'Cierre ficticio',
+      what_worked: 'Dividir en pasos',
+      what_failed: 'Posponer',
+    })).status).toBe(200);
+    expect(row()).toMatchObject({ archived: 1, status: 'en progreso' });
+    expect(row().archived_at).toBeTruthy();
+
+    const archived = await listTasks({
+      request: request('/api/tasks?archived=1', 'GET', undefined, firstCookie),
+    });
+    expect((await archived.json()).map(task => task.id)).toContain(taskId);
+
+    expect((await patchTask({ archived: false })).status).toBe(200);
+    expect(row()).toMatchObject({ archived: 0, status: 'pendiente', completed: 0 });
+    expect(row().archived_at).toBeNull();
+  });
+
+  it('elimina la tarea y sus relaciones en cascada', async () => {
+    const response = await deleteTask({
+      request: request(`/api/tasks/${taskId}`, 'DELETE', undefined, firstCookie),
+      params: { id: String(taskId) },
+    });
+    expect(response.status).toBe(200);
+    expect(getDb().prepare('SELECT COUNT(*) AS total FROM tasks WHERE id = ?').get(taskId).total)
+      .toBe(0);
+    expect(getDb().prepare('SELECT COUNT(*) AS total FROM subtasks WHERE id = ?').get(subtaskId).total)
+      .toBe(0);
+    expect(getDb().prepare('SELECT COUNT(*) AS total FROM task_comments WHERE task_id = ?').get(taskId).total)
+      .toBe(0);
+  });
+
+  it('cambia la contraseña, invalida la sesión y limpia la cookie al salir', async () => {
+    const changed = await updateProfile({
+      request: request('/api/profile', 'PUT', {
+        password: 'PerfilNueva1234',
+      }, firstCookie),
+    });
+    expect(changed.status).toBe(200);
+    expect((await changed.json()).reauthenticate).toBe(true);
+
+    const oldSession = await listTasks({
+      request: request('/api/tasks', 'GET', undefined, firstCookie),
+    });
+    expect(oldSession.status).toBe(401);
+    expect((await loginUser('ana@example.test')).response.status).toBe(401);
+    expect((await loginUser('ana@example.test', 'PerfilNueva1234')).response.status).toBe(200);
+
+    const loggedOut = await logout({
+      request: request('/api/logout', 'POST', undefined, firstCookie),
+    });
+    expect(loggedOut.status).toBe(200);
+    expect(loggedOut.headers.get('set-cookie')).toContain('novatareas_token=');
+    expect(loggedOut.headers.get('set-cookie')).toContain('Max-Age=0');
   });
 });

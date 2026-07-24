@@ -16,6 +16,7 @@
     "db:pg:generate": "drizzle-kit generate --config=drizzle.config.mjs",
     "db:pg:migrate": "node scripts/migrate-postgres.mjs",
     "db:pg:verify": "node scripts/verify-postgres-schema.mjs",
+    "db:pg:check": "node scripts/check-postgres-service.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

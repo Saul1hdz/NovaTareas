@@ -32,6 +32,11 @@ export default defineConfig({
       SECRET_KEY: 'clave-solo-para-pruebas',
       CRON_SECRET: 'cron-solo-para-pruebas',
       TELEGRAM_WEBHOOK_SECRET: 'telegram-solo-para-pruebas',
+      TELEGRAM_BOT_TOKEN: '',
+      APP_TIME_ZONE: 'America/El_Salvador',
+      GOOGLE_CLIENT_ID: 'google-client-solo-para-pruebas',
+      GOOGLE_CLIENT_SECRET: 'google-secret-solo-para-pruebas',
+      GOOGLE_REDIRECT_URI: 'http://127.0.0.1:4321/api/google/callback',
       NOVATAREAS_DB_PATH: 'tmp/vitest-novatareas.sqlite',
     },
 

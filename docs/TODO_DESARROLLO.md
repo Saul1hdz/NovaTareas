@@ -194,31 +194,35 @@ Prioridad: alta. Debe crecer junto con cada corrección.
 
 ### Pruebas automáticas
 
-- [ ] Registro, login, logout y cambio de contraseña.
-- [ ] Recuperación de contraseña y rate limiting.
-- [ ] CRUD completo de tareas.
-- [ ] Completar, reabrir, archivar y desarchivar.
-- [ ] Ownership entre dos usuarios ficticios.
-- [ ] Subtareas, historial y comentarios.
-- [ ] Fechas vencidas, próximas y zona `America/El_Salvador`.
-- [ ] Recordatorios enviados una sola vez.
-- [ ] Telegram, cron y Google con servicios simulados.
-- [ ] z.ai disponible, Ollama disponible y fallback sin red.
-- [ ] Creación y reejecución de migraciones.
+- [x] Registro, login, logout y cambio de contraseña.
+- [x] Recuperación de contraseña y rate limiting.
+- [x] CRUD completo de tareas.
+- [x] Completar, reabrir, archivar y desarchivar.
+- [x] Ownership entre dos usuarios ficticios.
+- [x] Subtareas, historial y comentarios.
+- [x] Fechas vencidas, próximas y zona `America/El_Salvador`.
+- [x] Recordatorios enviados una sola vez.
+- [x] Telegram, cron y Google con servicios simulados.
+- [x] z.ai disponible, Ollama disponible y fallback sin red.
+- [x] Creación y reejecución de migraciones.
 
 ### CI
 
-- [ ] Ejecutar `npm ci`, lint, tests y build en GitHub Actions.
-- [ ] Usar una base PostgreSQL efímera para tests de integración.
-- [ ] No utilizar claves reales ni consumir saldo de IA en CI.
-- [ ] Guardar reportes de cobertura sin perseguir un porcentaje artificial.
-- [ ] Bloquear integración cuando falle una verificación crítica.
+- [x] Configurar `npm ci`, lint, tests y build en GitHub Actions.
+- [x] Configurar una base PostgreSQL 16 efímera para tests de integración.
+- [x] No utilizar claves reales ni consumir saldo de IA en CI.
+- [x] Guardar el reporte de cobertura como artefacto durante 14 días, sin
+  perseguir un porcentaje artificial.
+- [x] Bloquear integración cuando falle una verificación crítica.
+- [ ] Confirmar la primera ejecución verde en GitHub Actions después de
+  autorizar el push de `testing`.
 
 ### Puerta de salida
 
-- [ ] Flujos críticos deterministas en local y CI.
-- [ ] Tests no dependen de servicios externos reales.
-- [ ] Fallos muestran información suficiente para reproducirse.
+- [x] Flujos críticos deterministas en local y workflow de CI definido.
+- [x] Tests no dependen de servicios externos reales.
+- [x] Fallos muestran información suficiente para reproducirse.
+- [ ] Ejecución remota del workflow confirmada en verde.
 
 ---
 

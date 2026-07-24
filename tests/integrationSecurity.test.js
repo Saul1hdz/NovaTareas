@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import sharp from 'sharp';
 import { GET as runReminders } from '../src/pages/api/cron/reminders.js';
 import { POST as telegramWebhook } from '../src/pages/api/telegram/webhook.js';
 import { validateAvatarFile } from '../src/lib/avatarValidation.js';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('integraciones protegidas', () => {
   it('rechaza cron sin Bearer secret', async () => {
@@ -47,6 +51,30 @@ describe('integraciones protegidas', () => {
       }),
     });
     expect(response.status).toBe(400);
+  });
+  it('procesa un webhook válido con Telegram completamente simulado', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const response = await telegramWebhook({
+      request: new Request('http://localhost:4321/api/telegram/webhook', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-telegram-bot-api-secret-token': 'telegram-solo-para-pruebas',
+        },
+        body: JSON.stringify({
+          update_id: 1001,
+          message: {
+            message_id: 10,
+            chat: { id: 'chat-webhook-ficticio' },
+            text: '/start',
+          },
+        }),
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][0]).toContain('/sendMessage');
   });
 });
 
