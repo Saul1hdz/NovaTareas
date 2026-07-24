@@ -236,12 +236,12 @@ npm run lint          # verificar tipos y sintaxis del proyecto
 | `tests/integrationSecurity.test.js` | 8 | Cron, webhook de Telegram simulado y carga de avatares válidos, falsificados o con MIME incorrecto |
 | `tests/postgresSchema.test.js` | 7 | Esquema, restricciones y reejecución de migraciones PostgreSQL con PGlite |
 | `tests/tokenEncryption.test.js` | 3 | Cifrado, descifrado y rechazo de tokens alterados |
-| `tests/reminders.test.js` | 3 | Zona horaria, avisos únicos y ausencia de marcación cuando Telegram falla |
+| `tests/reminders.test.js` | 4 | Zona horaria, tiempo verbal de fechas, avisos únicos y ausencia de marcación cuando Telegram falla |
 | `tests/aiProviders.test.js` | 3 | z.ai, Ollama y fallback local con red simulada |
 | `tests/aiPrompt.test.js` | 3 | El prompt no inventa antecedentes y trata RAG como evidencia opcional |
 | `tests/googleIntegration.test.js` | 4 | OAuth, eventos, renovación y persistencia cifrada de tokens con Google simulado |
 
-**Total: 83 pruebas.** Las pruebas de base de datos usan un archivo SQLite
+**Total: 84 pruebas.** Las pruebas de base de datos usan un archivo SQLite
 temporal y aislado de la base de desarrollo; el esquema PostgreSQL se prueba con
 PGlite y el workflow usa además un servicio PostgreSQL 16 efímero.
 
@@ -276,7 +276,7 @@ El archivo `.github/workflows/ci.yml` ejecuta automáticamente en GitHub Actions
 3. **Instalación** de dependencias con `npm ci` (reproducible desde `package-lock.json`).
 4. **Verificación** de tipos y sintaxis (`npm run lint`).
 5. **Migración y comprobación** contra un servicio PostgreSQL 16 efímero.
-6. **Ejecución** de las 83 pruebas con cobertura (`npm run test:coverage`).
+6. **Ejecución** de las 84 pruebas con cobertura (`npm run test:coverage`).
 7. **Conservación** del reporte de cobertura como artefacto durante 14 días.
 8. **Compilación** del proyecto (`npm run build`).
 
@@ -360,39 +360,28 @@ https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://abc123.ngrok.io/api/t
 
 ## 11. Variables de entorno
 
+Para probar ahora la aplicación, z.ai y el bot de Telegram mediante polling
+local, basta con completar este grupo:
+
 ```env
-# ── OBLIGATORIAS ──────────────────────────────────────────────
-ZAI_API_KEY=             # API key de z.ai (sin esto la IA principal no funciona)
-ZAI_MODEL=glm-4.5-flash  # Modelo de chat de z.ai
-AI_API_KEY=              # Autoriza clientes de POST /api/v1/recommend; no reutilizar ZAI_API_KEY
-TELEGRAM_BOT_TOKEN=      # Token del bot de @BotFather (sin esto el bot no responde)
-SECRET_KEY=              # Clave para firmar JWT (el servidor no arranca sin ella)
-CRON_SECRET=             # Protege el endpoint /api/cron/reminders
-TELEGRAM_WEBHOOK_SECRET= # Valida solicitudes recibidas por el webhook
-NOVATAREAS_DB_PATH=novatareas.db # Ruta de la base SQLite local
-DATABASE_URL=postgresql://novatareas:devpassword@127.0.0.1:5434/novatareas
-PG_POOL_MAX=10
-TOKEN_ENCRYPTION_KEY=       # 32 bytes en base64url; cifra tokens de Google
-
-# ── IMPORTANTES ───────────────────────────────────────────────
-REMINDER_WINDOW_MINUTES=30   # Minutos de anticipación para recordatorios
-
-# ── OPCIONALES (fallback local) ────────────────────────────────
-OLLAMA_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.2:3b
-OLLAMA_EMB_MODEL=nomic-embed-text
-
-# ── OPCIONALES (rate limiting de la API de IA) ─────────────────
-AI_RATE_LIMIT_MAX=20         # Máx. peticiones por ventana
-AI_RATE_LIMIT_WINDOW=300000  # Ventana en milisegundos (5 min)
-
-# ── GOOGLE CALENDAR (en desarrollo) ───────────────────────────
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=http://localhost:4321/api/google/callback
+SECRET_KEY=                 # Secreto aleatorio para firmar sesiones
+ZAI_API_KEY=                # Credencial de z.ai
+ZAI_MODEL=glm-4.5-flash
+ZAI_EMB_ENABLED=false       # No probar embeddings de z.ai todavía
+TELEGRAM_BOT_TOKEN=         # Token entregado por @BotFather
 ```
 
-> ⚠️ Los archivos `.env` y `.env.local` **no se versionan** (están en `.gitignore`). El archivo `.env.example` sí, y contiene únicamente placeholders. Las credenciales que estuvieron expuestas en versiones anteriores fueron rotadas.
+`npm run dev` inicia la web y `npm run bot:dev` inicia el bot en otra terminal.
+El modo polling no necesita `TELEGRAM_WEBHOOK_SECRET`, una URL pública ni un
+túnel HTTPS.
+
+Las demás variables admitidas están documentadas como opcionales en
+`.env.example`. Solo deben descomentarse al probar la función correspondiente:
+webhook/cron, API externa de recomendaciones, Ollama, Google Calendar o
+PostgreSQL. `GEMINI_API_KEY` solo aparece en herramientas manuales heredadas de
+embeddings; no se necesita para ejecutar la web, z.ai ni el bot.
+
+> ⚠️ Los archivos `.env` y `.env.local` **no se versionan** (están en `.gitignore`). El archivo `.env.example` sí, y contiene únicamente placeholders. No compartas el archivo real por chat ni reutilices los secretos locales en Netcup.
 
 ---
 
@@ -488,7 +477,7 @@ API Gateway
 3. **El estado de conversación del bot vive en memoria** — un reinicio del servidor cancela cualquier flujo de creación de tarea a medio completar.
 4. **El webhook requiere URL pública** — en desarrollo local es necesario ngrok; si se cae, el bot deja de responder.
 5. **Cuota de z.ai limitada** — el saldo de la cuenta puede agotarse; al fallar, el sistema cae al fallback local u offline.
-6. **Cobertura de pruebas parcial** — las 83 pruebas ya cubren autenticación,
+6. **Cobertura de pruebas parcial** — las 84 pruebas ya cubren autenticación,
    recuperación, ownership, tareas, migraciones SQLite/PostgreSQL, cifrado de
    tokens, recordatorios, cron, webhook, avatares, códigos de vinculación de
    Telegram, proveedores de IA y rutas principales de Google simuladas; aún
@@ -522,7 +511,7 @@ API Gateway
 
 ### Semana 3 — Calidad y automatización
 
-- ✅ **Pruebas automatizadas** con Vitest: 83 pruebas sobre API, autenticación,
+- ✅ **Pruebas automatizadas** con Vitest: 84 pruebas sobre API, autenticación,
   tareas, seguridad, migraciones SQLite/PostgreSQL, cifrado, cron, webhook,
   recordatorios, proveedores de IA, Google simulado, avatares y vinculación
   temporal de Telegram.

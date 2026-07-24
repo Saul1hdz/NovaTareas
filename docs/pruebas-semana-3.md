@@ -102,7 +102,7 @@ it('responde 400 cuando falta el título', async () => {
 
 ## Cobertura completa implementada
 
-El mapa inicial se amplió hasta **83 pruebas** para cubrir el contrato y los
+El mapa inicial se amplió hasta **84 pruebas** para cubrir el contrato y los
 flujos críticos del producto.
 
 | Archivo | Pruebas | Comportamiento cubierto |
@@ -116,7 +116,7 @@ flujos críticos del producto.
 | `tests/integrationSecurity.test.js` | 8 | Cron, Telegram y avatares |
 | `tests/postgresSchema.test.js` | 7 | Migraciones y restricciones PostgreSQL con PGlite |
 | `tests/tokenEncryption.test.js` | 3 | Protección de tokens persistidos |
-| `tests/reminders.test.js` | 3 | Zona horaria, idempotencia y fallos de entrega |
+| `tests/reminders.test.js` | 4 | Zona horaria, tiempo verbal de fechas, idempotencia y fallos de entrega |
 | `tests/aiProviders.test.js` | 3 | z.ai, Ollama y reglas locales |
 | `tests/aiPrompt.test.js` | 3 | Restricciones contra historial inventado y uso opcional de RAG |
 | `tests/googleIntegration.test.js` | 4 | OAuth, eventos y renovación de tokens |
@@ -157,9 +157,9 @@ El workflow de CI aprovecha esto y **no define esa variable** en el paso de prue
 
 ```bash
 npm ci        # instala exactamente el lockfile
-npm test      # ejecuta las 83 pruebas
+npm test      # ejecuta las 84 pruebas
 npm run lint          # verificar tipos y sintaxis del proyecto
 ```
 
-Resultado esperado: 83 pruebas superadas, sin conexión a servicios externos ni
+Resultado esperado: 84 pruebas superadas, sin conexión a servicios externos ni
 credenciales reales.

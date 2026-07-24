@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GET as runReminders } from '../src/pages/api/cron/reminders.js';
 import { getDb } from '../src/lib/db.js';
-import { dateInAppTimeZone } from '../src/lib/telegramNotify.js';
+import {
+  completionDueLabel,
+  dateInAppTimeZone,
+} from '../src/lib/telegramNotify.js';
 
 function cronRequest() {
   return new Request('http://127.0.0.1:4321/api/cron/reminders', {
@@ -47,6 +50,12 @@ afterEach(() => {
 });
 
 describe('recordatorios deterministas', { sequential: true }, () => {
+  it('usa el tiempo verbal correcto al completar una tarea', () => {
+    expect(completionDueLabel('2026-07-25', '2026-07-24')).toContain('vence el');
+    expect(completionDueLabel('2026-07-24', '2026-07-24')).toBe(' (vence hoy)');
+    expect(completionDueLabel('2026-07-23', '2026-07-24')).toContain('vencía el');
+  });
+
   it('calcula el día de la aplicación en America/El_Salvador', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-24T04:30:00.000Z'));

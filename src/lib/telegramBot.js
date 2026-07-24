@@ -253,7 +253,7 @@ async function handleTaskStep(chatId, text, session) {
       session.step     = 'task_due_date';
       return sendMessage(chatId,
         '📅 ¿Cuál es la <b>fecha límite</b>?\n' +
-        'Formato: <code>YYYY-MM-DD</code> o <code>YYYY-MM-DD HH:MM</code>\n' +
+        'Formato: <code>YYYY-MM-DD</code>\n' +
         '<i>(Escribe "no" para omitir)</i>'
       );
     }

@@ -101,7 +101,7 @@ export async function notifyTaskCreated(chatId, task) {
  */
 export async function notifyTaskCompleted(chatId, task) {
   const { title, due_date } = task;
-  const dateLine = due_date ? ` (vencía el ${formatDate(due_date)})` : '';
+  const dateLine = completionDueLabel(due_date);
 
   await sendMessage(
     chatId,
@@ -109,6 +109,20 @@ export async function notifyTaskCompleted(chatId, task) {
     `📌 <b>${escapeTelegramHtml(title)}</b>${dateLine}\n\n` +
     `¡Buen trabajo! Sigue así 💪`
   );
+}
+
+export function completionDueLabel(dueDate, today = dateInAppTimeZone()) {
+  if (!dueDate) return '';
+
+  const numericDate = Number(dueDate);
+  const normalizedDate = Number.isNaN(numericDate)
+    ? String(dueDate).slice(0, 10)
+    : dateInAppTimeZone(new Date(numericDate));
+
+  if (normalizedDate === today) return ' (vence hoy)';
+
+  const verb = normalizedDate < today ? 'vencía el' : 'vence el';
+  return ` (${verb} ${formatDate(dueDate)})`;
 }
 
 // ─── 3. Tarea urgente ─────────────────────────────────────────────────────────
