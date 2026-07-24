@@ -2,6 +2,11 @@ import { google } from 'googleapis';
 import { getUser } from '../../../lib/auth.js';
 import { getDb } from '../../../lib/db.js';
 import { safeErrorSummary } from '../../../lib/security.js';
+import {
+  decryptToken,
+  encryptToken,
+  isTokenEncryptionConfigured,
+} from '../../../lib/tokenEncryption.js';
 
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -34,6 +39,12 @@ export const GET = async ({ request }) => {
   if (!CLIENT_ID || !CLIENT_SECRET || !REDIRECT_URI) {
     return new Response(JSON.stringify({ error: 'Google OAuth no configurado.' }), { status: 500 });
   }
+  if (!isTokenEncryptionConfigured()) {
+    return new Response(JSON.stringify({ error: 'Cifrado de integraciones no configurado.' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 
   const db = getDb();
   const record = db.prepare('SELECT google_access_token, google_refresh_token, google_token_expiry FROM users WHERE id = ?').get(user.userId);
@@ -42,20 +53,36 @@ export const GET = async ({ request }) => {
   }
 
   const oauth2Client = getOAuthClient();
+  let accessToken;
+  let refreshToken;
+  try {
+    accessToken = decryptToken(record.google_access_token) || undefined;
+    refreshToken = decryptToken(record.google_refresh_token);
+  } catch (error) {
+    console.error('Google token decryption failed:', safeErrorSummary(error));
+    return new Response(JSON.stringify({ error: 'La conexión de Google debe configurarse nuevamente.' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
   oauth2Client.setCredentials({
-    access_token: record.google_access_token || undefined,
-    refresh_token: record.google_refresh_token,
+    access_token: accessToken,
+    refresh_token: refreshToken,
     expiry_date: record.google_token_expiry ? Number(record.google_token_expiry) : undefined
   });
 
   let credentials = oauth2Client.credentials;
   if (!credentials.access_token || (credentials.expiry_date && Date.now() > credentials.expiry_date - 60000)) {
-    const refreshed = await refreshAccessToken(oauth2Client, record.google_refresh_token);
+    const refreshed = await refreshAccessToken(oauth2Client, refreshToken);
     if (refreshed) {
       credentials = refreshed;
       oauth2Client.setCredentials(credentials);
       db.prepare('UPDATE users SET google_access_token = ?, google_token_expiry = ? WHERE id = ?')
-        .run(credentials.access_token || null, credentials.expiry_date ? credentials.expiry_date.toString() : null, user.userId);
+        .run(
+          encryptToken(credentials.access_token),
+          credentials.expiry_date ? credentials.expiry_date.toString() : null,
+          user.userId
+        );
     }
   }
 

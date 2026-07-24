@@ -1,15 +1,13 @@
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const {
+import {
   db,
   getUserByTelegramChatId,
   linkTelegram,
-  consumeTelegramLinkCode,
   getTasksByUser,
   getCategoriesByUser,
   getUsersWithDueTasks,
   markReminderSent,
-} = require('./db.bot.cjs');
+} from './db.js';
+import { consumeTelegramLinkCode } from './telegramLink.js';
 import { consumeRateLimit, resetRateLimit, safeErrorSummary } from './security.js';
 import { validateTaskInput } from './taskValidation.js';
 

@@ -27,6 +27,7 @@ export default defineConfig({
     env: {
       ZAI_API_KEY: '',
       AI_API_KEY: 'api-externa-solo-para-pruebas',
+      TOKEN_ENCRYPTION_KEY: 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY',
       OLLAMA_URL: 'http://127.0.0.1:1',
       SECRET_KEY: 'clave-solo-para-pruebas',
       CRON_SECRET: 'cron-solo-para-pruebas',

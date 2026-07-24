@@ -15,10 +15,7 @@ import { PATCH as toggleSubtask } from '../src/pages/api/tasks/[id]/subtasks/[su
 import { POST as updateTheme } from '../src/pages/api/theme.js';
 import { PUT as updateProfile } from '../src/pages/api/profile.js';
 import { getDb } from '../src/lib/db.js';
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
-const { consumeTelegramLinkCode } = require('../src/lib/db.bot.cjs');
+import { consumeTelegramLinkCode } from '../src/lib/telegramLink.js';
 
 function request(path, method, body, cookie) {
   const headers = { 'Content-Type': 'application/json' };

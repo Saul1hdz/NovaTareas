@@ -6,6 +6,7 @@ import {
   createOAuthStateCookie,
   getUser,
 } from '../../../lib/auth.js';
+import { isTokenEncryptionConfigured } from '../../../lib/tokenEncryption.js';
 
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -20,6 +21,9 @@ export const GET = async ({ request }) => {
   if (!user) return json({ error: 'No autorizado' }, 401);
   if (!CLIENT_ID || !CLIENT_SECRET || !REDIRECT_URI) {
     return json({ error: 'Google OAuth no configurado.' }, 503);
+  }
+  if (!isTokenEncryptionConfigured()) {
+    return json({ error: 'Cifrado de integraciones no configurado.' }, 503);
   }
 
   const state = await createOAuthState(user.userId);

@@ -137,7 +137,7 @@ Prioridad: alta. No migrar datos antes de cerrar el diseño.
 
 ### Diseño
 
-- [ ] Adoptar Drizzle ORM y Drizzle Kit, salvo que el equipo documente otra
+- [x] Adoptar Drizzle ORM y Drizzle Kit, salvo que el equipo documente otra
   decisión.
 - [x] Crear una migración inicial SQLite completa para una base vacía.
 - [x] Definir todas las tablas actuales en SQLite:
@@ -149,7 +149,7 @@ Prioridad: alta. No migrar datos antes de cerrar el diseño.
   - [x] `task_history`
   - [x] `task_comments`
   - [x] `task_embeddings`
-- [ ] Crear una tabla separada para recomendaciones de IA.
+- [x] Crear una tabla separada para recomendaciones de IA.
 - [x] Definir columnas actuales de Google Calendar en el esquema SQLite.
 - [x] Crear un registro real de migraciones aplicadas.
 
@@ -157,31 +157,34 @@ Prioridad: alta. No migrar datos antes de cerrar el diseño.
 
 - [x] Correo `NOT NULL`, único y sin distinción de mayúsculas en SQLite.
 - [x] Estados y prioridades con valores permitidos.
-- [ ] `DATE` para fecha límite sin hora.
-- [ ] `TIMESTAMPTZ` para recordatorios con instante específico.
-- [ ] Timestamps de auditoría con zona horaria.
+- [x] `DATE` para fecha límite sin hora.
+- [x] `TIMESTAMPTZ` para recordatorios con instante específico.
+- [x] Timestamps de auditoría con zona horaria.
 - [x] Claves foráneas y políticas `ON DELETE` explícitas en SQLite.
 - [x] Índices por usuario, estado, prioridad, fecha y archivado en SQLite.
-- [ ] Cifrar tokens persistidos de Google.
+- [x] Cifrar tokens persistidos de Google.
 
 ### Acceso a datos
 
-- [ ] Crear repositorios compartidos para usuarios, tareas y comentarios.
-- [ ] Retirar SQL duplicado de páginas, bot y scripts.
-- [ ] Sustituir consultas específicas de SQLite:
-  - [ ] `GROUP_CONCAT`
-  - [ ] `datetime('now')`
-  - [ ] `unixepoch()`
-  - [ ] booleanos `0/1`
-  - [ ] obtención del último ID insertado
-- [ ] Ejecutar operaciones relacionadas dentro de transacciones.
+- [x] Crear repositorios PostgreSQL iniciales para usuarios, tareas y comentarios.
+- [x] Retirar el acceso SQLite duplicado del bot y compartir el módulo actual.
+- [x] Inventariar las transformaciones específicas de SQLite y documentar su
+  equivalente PostgreSQL.
+- [ ] Retirar el SQL restante de páginas y scripts durante el Bloque 4.
+- [ ] Ejecutar escrituras relacionadas dentro de transacciones PostgreSQL
+  durante el Bloque 4.
 
 ### Puerta de salida
 
-- [ ] Una base PostgreSQL vacía se crea con un solo comando.
+- [x] Una base PostgreSQL embebida vacía se crea y verifica con
+  `npm run db:pg:verify`.
 - [x] Repetir las migraciones SQLite actuales no elimina ni duplica datos.
-- [ ] Diagrama y diccionario de datos actualizados.
+- [x] Diagrama y diccionario de datos actualizados.
 - [x] Tests del esquema y las migraciones SQLite actuales aprobados.
+- [x] Tests del esquema y la migración PostgreSQL aprobados con PGlite.
+
+La repetición contra un servicio PostgreSQL 16 persistente es la primera
+precondición del Bloque 4 cuando Docker o WSL estén disponibles.
 
 ---
 
@@ -223,6 +226,10 @@ Prioridad: alta. Debe crecer junto con cada corrección.
 
 Prioridad: alta. Solo aplica si existe información que conservar.
 
+- [ ] Completar repositorios de lectura y escritura para todas las rutas.
+- [ ] Sustituir `GROUP_CONCAT`, `datetime('now')`, `unixepoch()`, booleanos
+  `0/1` y la obtención SQLite del último ID.
+- [ ] Ejecutar escrituras relacionadas dentro de transacciones PostgreSQL.
 - [ ] Crear exportador de SQLite en modo solo lectura.
 - [ ] Conservar identificadores originales cuando sea posible.
 - [ ] Transformar fechas, booleanos, correos y estados.

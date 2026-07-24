@@ -8,6 +8,11 @@ import {
 } from '../../../lib/auth.js';
 import { getDb } from '../../../lib/db.js';
 import { safeEqualStrings, safeErrorSummary } from '../../../lib/security.js';
+import {
+  decryptToken,
+  encryptToken,
+  isTokenEncryptionConfigured,
+} from '../../../lib/tokenEncryption.js';
 
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -22,6 +27,9 @@ export const GET = async ({ request }) => {
   if (!user) return text('No autorizado', 401, request);
   if (!CLIENT_ID || !CLIENT_SECRET || !REDIRECT_URI) {
     return text('Google OAuth no configurado.', 503, request);
+  }
+  if (!isTokenEncryptionConfigured()) {
+    return text('Cifrado de integraciones no configurado.', 503, request);
   }
 
   const url = new URL(request.url);
@@ -44,15 +52,18 @@ export const GET = async ({ request }) => {
 
   try {
     const { tokens } = await getOAuthClient().getToken(code);
-    const refreshToken = tokens.refresh_token || existingUser?.google_refresh_token || null;
+    const existingRefreshToken = existingUser?.google_refresh_token
+      ? decryptToken(existingUser.google_refresh_token)
+      : null;
+    const refreshToken = tokens.refresh_token || existingRefreshToken;
 
     db.prepare(`
       UPDATE users
       SET google_access_token = ?, google_refresh_token = ?, google_token_expiry = ?
       WHERE id = ?
     `).run(
-      tokens.access_token || null,
-      refreshToken,
+      encryptToken(tokens.access_token),
+      encryptToken(refreshToken),
       tokens.expiry_date ? String(tokens.expiry_date) : null,
       user.userId
     );

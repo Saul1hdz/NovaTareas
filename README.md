@@ -235,7 +235,7 @@ npm run lint          # verificar tipos y sintaxis del proyecto
 | `tests/taskValidation.test.js` | 3 | Validación de tareas, fechas, estados, etiquetas y comentarios |
 | `tests/integrationSecurity.test.js` | 7 | Cron, webhook y carga de avatares válidos, falsificados o con MIME incorrecto |
 
-**Total: 55 pruebas.** Las pruebas de base de datos usan un archivo SQLite
+**Total: 65 pruebas.** Las pruebas de base de datos usan un archivo SQLite
 temporal y aislado de la base de desarrollo.
 
 ### Cómo funcionan
@@ -278,6 +278,7 @@ El workflow **no expone `ZAI_API_KEY` ni credenciales reales**. Las pruebas usan
 ### Requisitos previos
 
 - Node.js `>=22.12.0 <23.0.0` (la versión indicada en `.nvmrc`)
+- PostgreSQL 16 o Docker/WSL son opcionales hasta el Bloque 4
 - API key de [z.ai](https://z.ai) para el modelo `glm-4.5-flash`
 - Bot de Telegram creado con [@BotFather](https://t.me/BotFather)
 - (Opcional) [Ollama](https://ollama.com) con `nomic-embed-text` y `llama3.2:3b` para fallback local
@@ -299,6 +300,7 @@ npm run db:init
 
 # 4. Verificar que todo funciona
 npm test
+npm run db:pg:verify
 
 # 5. Iniciar el servidor web
 npm run dev
@@ -354,6 +356,9 @@ SECRET_KEY=              # Clave para firmar JWT (el servidor no arranca sin ell
 CRON_SECRET=             # Protege el endpoint /api/cron/reminders
 TELEGRAM_WEBHOOK_SECRET= # Valida solicitudes recibidas por el webhook
 NOVATAREAS_DB_PATH=novatareas.db # Ruta de la base SQLite local
+DATABASE_URL=postgresql://novatareas:devpassword@127.0.0.1:5434/novatareas
+PG_POOL_MAX=10
+TOKEN_ENCRYPTION_KEY=       # 32 bytes en base64url; cifra tokens de Google
 
 # ── IMPORTANTES ───────────────────────────────────────────────
 REMINDER_WINDOW_MINUTES=30   # Minutos de anticipación para recordatorios
@@ -408,7 +413,9 @@ novatareas-pro/
 │   ├── api.test.js                # 13 pruebas de endpoints
 │   └── integrationSecurity.test.js # cron, webhook y avatares
 ├── telegram/                # bot.js y scheduler.js (procesos aparte)
-├── migrations/              # 5 scripts de esquema de BD
+├── migrations/              # migraciones SQLite y PostgreSQL versionadas
+├── src/db/postgres/         # esquema, cliente y repositorios Drizzle
+├── compose.postgres.yml     # PostgreSQL 16 local, limitado a 127.0.0.1
 ├── tools/                   # utilidades de diagnóstico y reindexado
 ├── data/tareas_ejemplo.csv
 ├── docs/
@@ -460,12 +467,18 @@ API Gateway
 
 ## 14. Limitaciones conocidas
 
-1. **SQLite no soporta escrituras concurrentes** — el sistema está pensado para uso individual o grupos pequeños; múltiples usuarios simultáneos pueden generar errores de bloqueo.
+1. **SQLite sigue siendo el runtime temporal** — PostgreSQL ya tiene esquema y
+   migraciones reproducibles, pero la aplicación no cambia de motor hasta el
+   Bloque 4.
 2. **El bot y el scheduler requieren terminales manuales** — no hay un proceso único que los inicie todos.
 3. **El estado de conversación del bot vive en memoria** — un reinicio del servidor cancela cualquier flujo de creación de tarea a medio completar.
 4. **El webhook requiere URL pública** — en desarrollo local es necesario ngrok; si se cae, el bot deja de responder.
 5. **Cuota de z.ai limitada** — el saldo de la cuenta puede agotarse; al fallar, el sistema cae al fallback local u offline.
-6. **Cobertura de pruebas parcial** — las 55 pruebas ya cubren autenticación, recuperación, ownership, tareas, migraciones, cron, webhook, avatares, códigos de vinculación de Telegram y la API inteligente; aún faltan pruebas completas de recordatorios, conversación del bot y Google.
+6. **Cobertura de pruebas parcial** — las 65 pruebas ya cubren autenticación,
+   recuperación, ownership, tareas, migraciones SQLite/PostgreSQL, cifrado de
+   tokens, cron, webhook, avatares, códigos de vinculación de Telegram y la API
+   inteligente; aún faltan pruebas completas de recordatorios, conversación del
+   bot y Google.
 7. **RAG parcialmente conectado** — los embeddings existen en la base de datos, pero no todas las rutas del código los consumen todavía.
 8. **Sin métrica formal de calidad** — no existe aún un sistema de feedback que mida la utilidad real de las recomendaciones.
 9. **Sin logging estructurado** — las llamadas al modelo no registran modelo usado, tokens consumidos ni latencia.
@@ -494,7 +507,9 @@ API Gateway
 
 ### Semana 3 — Calidad y automatización
 
-- ✅ **Pruebas automatizadas** con Vitest: 55 pruebas sobre API, autenticación, tareas, seguridad, migraciones, cron, webhook, avatares y vinculación temporal de Telegram.
+- ✅ **Pruebas automatizadas** con Vitest: 65 pruebas sobre API, autenticación,
+  tareas, seguridad, migraciones SQLite/PostgreSQL, cifrado, cron, webhook,
+  avatares y vinculación temporal de Telegram.
 - ✅ **Pipeline CI/CD** con GitHub Actions: instala, valida, prueba y compila en cada push.
 - ✅ **Esquema SQLite reproducible** mediante `npm run db:init`, sin ejecutar migraciones heredadas.
 - ⬜ **Logging estructurado** de cada llamada a z.ai: modelo usado, tokens consumidos, latencia y si usó fallback.
@@ -529,9 +544,14 @@ API Gateway
 
 ## 16. Documentación adicional
 
+- [`docs/POSTGRESQL_DISENO_BLOQUE_2.md`](docs/POSTGRESQL_DISENO_BLOQUE_2.md) —
+  diseño, diccionario, comandos, evidencia y límites de la migración PostgreSQL.
+- [`docs/CIERRE_BLOQUE_2.md`](docs/CIERRE_BLOQUE_2.md) — resultados técnicos,
+  QA de navegador, límites y puerta hacia el Bloque 3.
+
 | Documento | Contenido |
 |---|---|
-| [`api.md`](\api.md) | Contratos de la API: payloads, respuestas, validaciones, códigos de error y comandos de prueba |
+| [API inteligente](#7-api-inteligente) | Contratos de entrada, respuestas, validaciones y ejemplos de consumo |
 | [`docs/pruebas-semana-3.md`](docs/pruebas-semana-3.md) | Mapa de pruebas: qué comportamientos se validan, por qué aportan valor y con qué datos |
 | [`docs/registro-pruebas-semana-3.md`](docs/registro-pruebas-semana-3.md) | Registro de errores detectados, correcciones aplicadas y bloqueos técnicos abiertos |
 | [`docs/CIERRE_BLOQUE_1.md`](docs/CIERRE_BLOQUE_1.md) | Evidencia del cierre de seguridad, actualización de dependencias y separación de credenciales de IA |

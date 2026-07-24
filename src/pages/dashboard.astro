@@ -601,6 +601,7 @@ const labels = labelsRows.map((r) => r.label);
   margin-left: 240px;
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 100vh;
   transition: margin-left 0.3s;
 }
@@ -1758,6 +1759,8 @@ button:focus-visible {
 
   .main-content {
     margin-left: 0 !important;
+    width: 100%;
+    max-width: 100%;
   }
 
   .top-bar {
