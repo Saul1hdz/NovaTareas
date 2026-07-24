@@ -63,7 +63,6 @@ jobs:
         run: npm run test:coverage
 
       - name: Guardar reporte de cobertura
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cobertura-vitest
