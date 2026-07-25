@@ -58,9 +58,9 @@ export const POST = async ({ request }) => {
     const emailLimit = consumeRateLimit('recovery-email', normalizedEmail, 15, LOCK_WINDOW_MS);
     if (!emailLimit.allowed) return rateLimitResponse(emailLimit.retryAfterSeconds);
 
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
 
-    const security = user ? db.prepare(
+    const security = user ? await db.prepare(
       'SELECT * FROM security_questions WHERE user_id = ?'
     ).get(user.id) : null;
     if (!user || !security) {
@@ -69,7 +69,7 @@ export const POST = async ({ request }) => {
       return fakeQuestionResponse(normalizedEmail, fake.attempts);
     }
 
-    const lock = refreshOrReadLock(db, security);
+    const lock = await refreshOrReadLock(db, security);
     if (lock.locked) return rateLimitResponse(lock.retryAfterSeconds);
 
     const currentQuestionIndex = questionForAttempt(security, lock.attempts);
@@ -92,9 +92,9 @@ export const POST = async ({ request }) => {
     const emailLimit = consumeRateLimit('recovery-answer', normalizedEmail, 10, LOCK_WINDOW_MS);
     if (!emailLimit.allowed) return rateLimitResponse(emailLimit.retryAfterSeconds);
 
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
 
-    const security = user ? db.prepare(
+    const security = user ? await db.prepare(
       'SELECT * FROM security_questions WHERE user_id = ?'
     ).get(user.id) : null;
     if (!user || !security) {
@@ -102,7 +102,7 @@ export const POST = async ({ request }) => {
       return handleFakeAnswer(normalizedEmail);
     }
 
-    const lock = refreshOrReadLock(db, security);
+    const lock = await refreshOrReadLock(db, security);
     if (lock.locked) return rateLimitResponse(lock.retryAfterSeconds);
 
     const expectedQuestion = questionForAttempt(security, lock.attempts);
@@ -119,7 +119,7 @@ export const POST = async ({ request }) => {
     if (!isCorrect) {
       const nextAttempts = lock.attempts + 1;
       const attemptedAt = Date.now();
-      db.prepare(`
+      await db.prepare(`
         UPDATE security_questions
         SET recovery_attempts = ?, last_attempt_at = ?
         WHERE user_id = ?
@@ -145,7 +145,7 @@ export const POST = async ({ request }) => {
       expires: Date.now() + TOKEN_TTL_MS,
     });
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE security_questions
       SET recovery_attempts = 0, last_attempt_at = NULL
       WHERE user_id = ?
@@ -172,7 +172,7 @@ export const POST = async ({ request }) => {
     }
 
     const hash = await bcrypt.hash(new_password, 10);
-    db.prepare(`
+    await db.prepare(`
       UPDATE users
       SET password_hash = ?, session_version = session_version + 1
       WHERE id = ?
@@ -250,14 +250,14 @@ function handleFakeAnswer(email) {
   }, 200);
 }
 
-function refreshOrReadLock(db, security) {
+async function refreshOrReadLock(db, security) {
   const attempts = Number(security.recovery_attempts || 0);
   if (attempts < MAX_FAILED_ANSWERS) return { locked: false, attempts };
 
   const lastAttempt = Number(security.last_attempt_at || 0);
   const elapsed = Date.now() - lastAttempt;
   if (elapsed >= LOCK_WINDOW_MS) {
-    db.prepare(`
+    await db.prepare(`
       UPDATE security_questions
       SET recovery_attempts = 0, last_attempt_at = NULL
       WHERE user_id = ?

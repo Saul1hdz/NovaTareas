@@ -139,9 +139,9 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
     expect(stored.code_hash).not.toBe(data.code);
     expect(stored.used_at).toBeNull();
 
-    const linked = consumeTelegramLinkCode(data.code, 'chat-ficticio-1');
+    const linked = await consumeTelegramLinkCode(data.code, 'chat-ficticio-1');
     expect(linked.email).toBe('ana@example.test');
-    expect(consumeTelegramLinkCode(data.code, 'otro-chat')).toBeNull();
+    expect(await consumeTelegramLinkCode(data.code, 'otro-chat')).toBeNull();
     expect(getDb().prepare('SELECT telegram_chat_id FROM users WHERE id = 1').get())
       .toEqual({ telegram_chat_id: 'chat-ficticio-1' });
   });

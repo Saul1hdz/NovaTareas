@@ -10,22 +10,22 @@ Astro.response.headers.set('Pragma', 'no-cache');
 const user = rawUser as { username: string; userId: number };
 
 const db = getDb();
-const userRecord = db.prepare('SELECT * FROM users WHERE id=?').get(user.userId) as
+const userRecord = await db.prepare('SELECT * FROM users WHERE id=?').get(user.userId) as
   { theme?: string; full_name?: string; avatar_url?: string } | undefined;
 const theme = userRecord?.theme || 'dark';
 
 // Stats
-const total = (db.prepare('SELECT COUNT(*) as c FROM tasks WHERE user_id=? AND archived=0').get(user.userId) as { c: number }).c;
-const done = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE user_id=? AND archived=0 AND status='completada'").get(user.userId) as { c: number }).c;
+const total = (await db.prepare('SELECT COUNT(*) as c FROM tasks WHERE user_id=? AND archived=0').get(user.userId) as { c: number }).c;
+const done = (await db.prepare("SELECT COUNT(*) as c FROM tasks WHERE user_id=? AND archived=0 AND status='completada'").get(user.userId) as { c: number }).c;
 const active = total - done;
-const urgent = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE user_id=? AND archived=0 AND priority='urgente' AND status!='completada'").get(user.userId) as { c: number }).c;
+const urgent = (await db.prepare("SELECT COUNT(*) as c FROM tasks WHERE user_id=? AND archived=0 AND priority='urgente' AND status!='completada'").get(user.userId) as { c: number }).c;
 
 // Due today or overdue
 const today = new Date().toISOString().split('T')[0];
-const overdue = (db.prepare(`SELECT COUNT(*) as c FROM tasks WHERE user_id=? AND archived=0 AND status!='completada' AND due_date IS NOT NULL AND due_date < ?`).get(user.userId, today) as { c: number }).c;
+const overdue = (await db.prepare(`SELECT COUNT(*) as c FROM tasks WHERE user_id=? AND archived=0 AND status!='completada' AND due_date IS NOT NULL AND due_date < ?`).get(user.userId, today) as { c: number }).c;
 
 // Labels
-const labelsRows = db.prepare(`SELECT DISTINCT label FROM tasks WHERE user_id=? AND label!='' AND archived=0 ORDER BY label`).all(user.userId) as Array<{ label: string }>;
+const labelsRows = await db.prepare(`SELECT DISTINCT label FROM tasks WHERE user_id=? AND label!='' AND archived=0 ORDER BY label`).all(user.userId) as Array<{ label: string }>;
 const labels = labelsRows.map((r) => r.label);
 ---
 <Base title="Dashboard" theme={theme}>

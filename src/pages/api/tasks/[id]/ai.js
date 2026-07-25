@@ -1,4 +1,4 @@
-import { getDb }                         from '../../../../lib/db.js';
+import { getDb, withTransaction }        from '../../../../lib/db.js';
 import { getUser }                       from '../../../../lib/auth.js';
 import { getRagContext }                 from '../../../../lib/rag.js';
 
@@ -35,7 +35,7 @@ export const POST = async ({ request, params }) => {
   if (!user) return json({ error: 'No autenticado' }, 401);
 
   const db   = getDb();
-  const task = db.prepare('SELECT * FROM tasks WHERE id=? AND user_id=?').get(params.id, user.userId);
+  const task = await db.prepare('SELECT * FROM tasks WHERE id=? AND user_id=?').get(params.id, user.userId);
   if (!task) return json({ error: 'No encontrado' }, 404);
 
   if (isRateLimited(user.userId)) {
@@ -45,7 +45,7 @@ export const POST = async ({ request, params }) => {
   }
   registerCall(user.userId);
 
-  const userRecord = db.prepare('SELECT user_type FROM users WHERE id=?').get(user.userId);
+  const userRecord = await db.prepare('SELECT user_type FROM users WHERE id=?').get(user.userId);
   const userType   = userRecord?.user_type || 'comun';
 
   // ── RAG: recuperar contexto del historial del usuario ─────────────────────
@@ -69,7 +69,7 @@ export const POST = async ({ request, params }) => {
   if (ollamaText) return saveAndReturn(db, params.id, ollamaText, hasRag);
 
   // ── 3. Historial de tareas archivadas (sin LLM) ───────────────────────────
-  const archivedRec = getRecommendationFromArchived(db, user.userId, task);
+  const archivedRec = await getRecommendationFromArchived(db, user.userId, task);
   if (archivedRec) return saveAndReturn(db, params.id, archivedRec, false);
 
   // ── 4. Reglas locales (último recurso) ────────────────────────────────────
@@ -200,20 +200,23 @@ function trimToCompleteSentence(text) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function saveAndReturn(db, taskId, text, usedRag = false) {
+async function saveAndReturn(db, taskId, text, usedRag = false) {
   const finalText = usedRag
     ? text  // el LLM ya tiene el contexto RAG integrado
     : text;
 
-  db.prepare('DELETE FROM subtasks WHERE task_id=?').run(taskId);
-  db.prepare('INSERT INTO subtasks (task_id, text) VALUES (?,?)').run(taskId, finalText);
-  const subtasks = db.prepare('SELECT * FROM subtasks WHERE task_id=?').all(taskId);
+  const subtasks = await withTransaction(async (tx) => {
+    await tx.prepare('DELETE FROM subtasks WHERE task_id=?').run(taskId);
+    await tx.prepare('INSERT INTO subtasks (task_id, text) VALUES (?,?)')
+      .run(taskId, finalText);
+    return tx.prepare('SELECT * FROM subtasks WHERE task_id=?').all(taskId);
+  }, db);
   return json({ subtasks, tip: finalText, rag: usedRag }, 200);
 }
 
-function getRecommendationFromArchived(db, userId, currentTask) {
+async function getRecommendationFromArchived(db, userId, currentTask) {
   try {
-    const archived = db.prepare(`
+    const archived = await db.prepare(`
       SELECT title, what_worked, what_failed, observations
       FROM tasks
       WHERE user_id = ? AND archived = 1

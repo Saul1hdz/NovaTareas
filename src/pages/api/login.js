@@ -45,7 +45,7 @@ export const POST = async ({ request }) => {
   }
 
   const db = getDb();
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail);
+  const user = await db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail);
   if (!user || !await verifyPassword(password, user.password_hash)) {
     return json({ error: 'Credenciales inválidas' }, 401);
   }

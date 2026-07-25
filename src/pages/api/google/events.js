@@ -47,7 +47,7 @@ export const GET = async ({ request }) => {
   }
 
   const db = getDb();
-  const record = db.prepare('SELECT google_access_token, google_refresh_token, google_token_expiry FROM users WHERE id = ?').get(user.userId);
+  const record = await db.prepare('SELECT google_access_token, google_refresh_token, google_token_expiry FROM users WHERE id = ?').get(user.userId);
   if (!record?.google_refresh_token) {
     return new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
@@ -77,7 +77,7 @@ export const GET = async ({ request }) => {
     if (refreshed) {
       credentials = refreshed;
       oauth2Client.setCredentials(credentials);
-      db.prepare('UPDATE users SET google_access_token = ?, google_token_expiry = ? WHERE id = ?')
+      await db.prepare('UPDATE users SET google_access_token = ?, google_token_expiry = ? WHERE id = ?')
         .run(
           encryptToken(credentials.access_token),
           credentials.expiry_date ? credentials.expiry_date.toString() : null,

@@ -1,7 +1,7 @@
 export const prerender = false;
 
 import bcrypt from 'bcryptjs';
-import { getDb } from '../../lib/db.js';
+import { getDb, withTransaction } from '../../lib/db.js';
 import { createSessionCookie, createToken } from '../../lib/auth.js';
 import { safeErrorSummary } from '../../lib/security.js';
 
@@ -72,7 +72,7 @@ export async function POST({ request }) {
   }
 
   const db = getDb();
-  if (db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail)) {
+  if (await db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail)) {
     return json({ error: 'Ya existe una cuenta con ese correo electrónico.' }, 409);
   }
 
@@ -82,8 +82,8 @@ export async function POST({ request }) {
     const q2Hash = await bcrypt.hash(q2_answer.toLowerCase().trim(), 10);
     const username = full_name.trim();
 
-    const userId = Number(db.transaction(() => {
-      const result = db.prepare(`
+    const userId = Number(await withTransaction(async (tx) => {
+      const result = await tx.prepare(`
         INSERT INTO users (username, full_name, email, password_hash, telefono, user_type)
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(
@@ -95,12 +95,12 @@ export async function POST({ request }) {
         user_type
       );
 
-      db.prepare(`
+      await tx.prepare(`
         INSERT INTO security_questions (user_id, q1_index, q1_answer, q2_index, q2_answer)
         VALUES (?, ?, ?, ?, ?)
       `).run(result.lastInsertRowid, q1Index, q1Hash, q2Index, q2Hash);
       return result.lastInsertRowid;
-    })());
+    }, db));
 
     const token = await createToken(userId, username, 0);
     return json(

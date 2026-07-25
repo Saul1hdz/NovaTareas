@@ -16,7 +16,7 @@ export const GET = async ({ request }) => {
   if (!user) return json({ error: 'No autenticado' }, 401);
 
   const db = getDb();
-  const u = db.prepare('SELECT id, full_name, email, telefono, user_type, avatar_url, telegram_chat_id, theme FROM users WHERE id = ?').get(user.userId);
+  const u = await db.prepare('SELECT id, full_name, email, telefono, user_type, avatar_url, telegram_chat_id, theme FROM users WHERE id = ?').get(user.userId);
   if (!u) return json({ error: 'Usuario no encontrado' }, 404);
 
   return json(u, 200);
@@ -44,7 +44,7 @@ export const PUT = async ({ request }) => {
 
     const db = getDb();
     const avatarUrl = `/avatars/${filename}`;
-    db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').run(avatarUrl, user.userId);
+    await db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').run(avatarUrl, user.userId);
 
     return json({ ok: true, avatar_url: avatarUrl }, 200);
   }
@@ -96,7 +96,7 @@ export const PUT = async ({ request }) => {
   if (updates.length === 0) return json({ error: 'Nada que actualizar.' }, 400);
 
   params.push(user.userId);
-  db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   return json({ ok: true, reauthenticate: password !== undefined }, 200);
 };

@@ -46,7 +46,7 @@ export const GET = async ({ request }) => {
   }
 
   const db = getDb();
-  const existingUser = db.prepare(
+  const existingUser = await db.prepare(
     'SELECT google_refresh_token FROM users WHERE id = ?'
   ).get(user.userId);
 
@@ -57,7 +57,7 @@ export const GET = async ({ request }) => {
       : null;
     const refreshToken = tokens.refresh_token || existingRefreshToken;
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE users
       SET google_access_token = ?, google_refresh_token = ?, google_token_expiry = ?
       WHERE id = ?

@@ -1,4 +1,4 @@
-import { getDb } from '../../lib/db.js';
+import { getDb, isPostgres } from '../../lib/db.js';
 import { getUser } from '../../lib/auth.js';
 import { notifyTaskCreated, notifyTaskUrgent } from '../../lib/telegramNotify.js';
 import { validateTaskInput } from '../../lib/taskValidation.js';
@@ -31,12 +31,20 @@ export const GET = async ({ request }) => {
   }
 
   const db = getDb();
-  let query = `SELECT t.*, GROUP_CONCAT(s.id || '::' || s.text || '::' || s.done, '||') as subtasks_raw
+  let query = isPostgres
+    ? `SELECT t.*, STRING_AGG(
+         s.id::text || '::' || s.text || '::' ||
+         CASE WHEN s.done THEN '1' ELSE '0' END,
+         '||'
+       ) as subtasks_raw
+    FROM tasks t LEFT JOIN subtasks s ON s.task_id = t.id
+    WHERE t.user_id=? AND t.archived=?`
+    : `SELECT t.*, GROUP_CONCAT(s.id || '::' || s.text || '::' || s.done, '||') as subtasks_raw
     FROM tasks t LEFT JOIN subtasks s ON s.task_id = t.id
     WHERE t.user_id=? AND t.archived=?`;
   const params = [user.userId, archived];
 
-  if (search)   { query += ` AND t.title LIKE ?`;              params.push(`%${search}%`); }
+  if (search)   { query += isPostgres ? ` AND t.title ILIKE ?` : ` AND t.title LIKE ?`; params.push(`%${search}%`); }
   if (label)    { query += ` AND t.label=?`;                   params.push(label); }
   if (priority) { query += ` AND t.priority=?`;                params.push(priority); }
   if (date)     { query += ` AND t.due_date = ?`;              params.push(date); }
@@ -46,7 +54,7 @@ export const GET = async ({ request }) => {
     CASE t.priority WHEN 'urgente' THEN 1 WHEN 'alta' THEN 2 WHEN 'media' THEN 3 WHEN 'baja' THEN 4 ELSE 5 END,
     t.due_date ASC NULLS LAST, t.created_at DESC`;
 
-  const tasks = db.prepare(query).all(...params);
+  const tasks = await db.prepare(query).all(...params);
 
   const result = tasks.map(t => ({
     ...t,
@@ -85,12 +93,12 @@ export const POST = async ({ request }) => {
   const db = getDb();
 
   // ── Insertar tarea ──────────────────────────────────────────────────────────
-  const result = db.prepare(
+  const result = await db.prepare(
     'INSERT INTO tasks (user_id, title, description, priority, label, due_date) VALUES (?,?,?,?,?,?)'
   ).run(user.userId, title, description, priority, label, due_date);
 
   // ── Notificaciones Telegram (solo si el usuario tiene chat vinculado) ───────
-  const dbUser = db.prepare('SELECT telegram_chat_id FROM users WHERE id = ?').get(user.userId);
+  const dbUser = await db.prepare('SELECT telegram_chat_id FROM users WHERE id = ?').get(user.userId);
   const chatId = dbUser?.telegram_chat_id;
 
   if (chatId) {

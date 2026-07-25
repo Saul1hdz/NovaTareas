@@ -17,6 +17,8 @@
     "db:pg:migrate": "node scripts/migrate-postgres.mjs",
     "db:pg:verify": "node scripts/verify-postgres-schema.mjs",
     "db:pg:check": "node scripts/check-postgres-service.mjs",
+    "db:pg:import": "node scripts/import-sqlite-to-postgres.mjs",
+    "db:pg:smoke": "node scripts/smoke-postgres-runtime.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -27,7 +29,7 @@
     "@astrojs/react": "^6.0.1",
     "astro": "^7.1.3",
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^9.0.0",
+    "better-sqlite3": "12.10.0",
     "dotenv": "^16.0.0",
     "drizzle-orm": "^0.45.2",
     "googleapis": "^173.0.0",
@@ -51,6 +53,7 @@
     "vitest": "^4.1.10"
   },
   "overrides": {
+    "brace-expansion": "5.0.8",
     "esbuild": "0.28.1"
   }
 }

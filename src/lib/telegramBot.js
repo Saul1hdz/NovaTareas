@@ -139,7 +139,7 @@ async function answerCallback(callbackId) {
 
 async function handleStart(chatId) {
   clearSession(chatId);
-  const user = getUserByTelegramChatId(chatId);
+  const user = await getUserByTelegramChatId(chatId);
   if (user) {
     await sendMessage(chatId,
       `👋 ¡Hola de nuevo, <b>${escapeTelegramHtml(displayName(user))}</b>!\n\n` +
@@ -190,7 +190,7 @@ async function handleVincular(chatId, args) {
     return sendMessage(chatId, '⏳ Demasiados intentos. Intenta nuevamente más tarde.');
   }
 
-  const user = consumeTelegramLinkCode(code, chatId);
+  const user = await consumeTelegramLinkCode(code, chatId);
   if (!user) {
     return sendMessage(
       chatId,
@@ -206,16 +206,16 @@ async function handleVincular(chatId, args) {
 }
 
 async function handleDesvincular(chatId) {
-  const user = getUserByTelegramChatId(chatId);
+  const user = await getUserByTelegramChatId(chatId);
   if (!user) return sendMessage(chatId, 'No hay ninguna cuenta vinculada a este chat.');
-  linkTelegram(user.id, null);
+  await linkTelegram(user.id, null);
   await sendMessage(chatId, '✅ Tu cuenta ha sido desvinculada de Telegram.');
 }
 
 // ─── Creación de tareas ───────────────────────────────────────────────────────
 
 async function handleNuevaTarea(chatId) {
-  const user = getUserByTelegramChatId(chatId);
+  const user = await getUserByTelegramChatId(chatId);
   if (!user) {
     return sendMessage(chatId,
       '⚠️ Primero vincula tu cuenta.\nGenera un código en tu perfil web y envía <code>/vincular CODIGO</code>'
@@ -314,7 +314,7 @@ async function handleTaskStep(chatId, text, session) {
 }
 
 async function askCategory(chatId, session) {
-  const categories = getCategoriesByUser(session.data.userId);
+  const categories = await getCategoriesByUser(session.data.userId);
 
   if (categories.length === 0) {
     session.data.category_id = null;
@@ -346,7 +346,7 @@ async function saveTask(chatId, session) {
     }
 
     if (category_id) {
-      const ownedCategory = db.prepare(
+      const ownedCategory = await db.prepare(
         'SELECT id FROM categories WHERE id = ? AND user_id = ?'
       ).get(category_id, userId);
       if (!ownedCategory) {
@@ -355,7 +355,7 @@ async function saveTask(chatId, session) {
     }
 
     const task = validation.values;
-    db.prepare(
+    await db.prepare(
       `INSERT INTO tasks (user_id, title, description, due_date, priority, category_id, completed, reminder_sent)
        VALUES (?, ?, ?, ?, ?, ?, 0, 0)`
     ).run(
@@ -385,14 +385,14 @@ async function saveTask(chatId, session) {
 // ─── Recomendaciones con IA ───────────────────────────────────────────────────
 
 async function handleRecomendacion(chatId) {
-  const user = getUserByTelegramChatId(chatId);
+  const user = await getUserByTelegramChatId(chatId);
   if (!user) {
     return sendMessage(chatId,
       '⚠️ Primero vincula tu cuenta.\nGenera un código en tu perfil web y envía <code>/vincular CODIGO</code>'
     );
   }
 
-  const tasks = getTasksByUser(user.id).filter(t => !t.completed && !t.archived);
+  const tasks = (await getTasksByUser(user.id)).filter(t => !t.completed && !t.archived);
 
   if (tasks.length === 0) {
     return sendMessage(chatId, 'No tienes tareas pendientes en este momento.');
@@ -452,7 +452,7 @@ async function getAiRecommendation(taskDescription, userType = 'comun', userId =
 
   // 3. Historial de tareas archivadas
   if (userId) {
-    const archivedRec = getRecommendationFromArchived(userId, taskDescription);
+    const archivedRec = await getRecommendationFromArchived(userId, taskDescription);
     if (archivedRec) return archivedRec;
   }
 
@@ -509,9 +509,9 @@ async function tryOllama(prompt) {
   }
 }
 
-function getRecommendationFromArchived(userId, taskDescription) {
+async function getRecommendationFromArchived(userId, taskDescription) {
   try {
-    const archived = db.prepare(`
+    const archived = await db.prepare(`
       SELECT title, what_worked, what_failed, observations
       FROM tasks
       WHERE user_id = ? AND archived = 1
@@ -629,14 +629,14 @@ async function handleCallback(chatId, data, session) {
     const taskId = parseInt(data.replace('rec_task_', ''), 10);
     let task = session.data?.tasks?.find(t => t.id === taskId);
     if (!task) {
-      const user = getUserByTelegramChatId(chatId);
+      const user = await getUserByTelegramChatId(chatId);
       if (!user) return sendMessage(chatId, '⚠️ Sesión expirada. Usa /recomendacion de nuevo.');
-      task = getTasksByUser(user.id).find(t => t.id === taskId);
+      task = (await getTasksByUser(user.id)).find(t => t.id === taskId);
     }
     if (!task) return sendMessage(chatId, '❌ Tarea no encontrada.');
 
     await sendMessage(chatId, '⏳ Analizando la tarea...');
-    const user = getUserByTelegramChatId(chatId);
+    const user = await getUserByTelegramChatId(chatId);
     const desc = `${task.title}${task.description ? ': ' + task.description : ''}`;
     const rec  = await getAiRecommendation(desc, user?.user_type || session.data?.userType || 'comun', user?.id);
     clearSession(chatId);
@@ -652,7 +652,7 @@ async function handleCallback(chatId, data, session) {
 // ─── Recordatorios automáticos ────────────────────────────────────────────────
 
 export async function sendReminders(windowMinutes = 30) {
-  const dueTasks = getUsersWithDueTasks(windowMinutes);
+  const dueTasks = await getUsersWithDueTasks(windowMinutes);
 
   for (const row of dueTasks) {
     const dueDate   = new Date(Number(row.due_date));
@@ -666,7 +666,7 @@ export async function sendReminders(windowMinutes = 30) {
         `🗓️ Vence: ${formatted}\n\n` +
         `¡No olvides completarla a tiempo!`
       );
-      markReminderSent(row.task_id);
+      await markReminderSent(row.task_id);
     } catch (err) {
       console.error('[bot] Error enviando recordatorio:', safeErrorSummary(err));
     }

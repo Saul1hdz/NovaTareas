@@ -13,7 +13,7 @@ export const POST = async ({ request, params }) => {
   if (!user) return json({ error: 'No autenticado' }, 401);
 
   const db   = getDb();
-  const task = db.prepare(`
+  const task = await db.prepare(`
     SELECT t.*, u.user_type FROM tasks t
     JOIN users u ON t.user_id = u.id
     WHERE t.id=? AND t.user_id=?
@@ -35,13 +35,13 @@ export const POST = async ({ request, params }) => {
 
   if (body.ask_ai) {
     // Historial de cambios
-    const history = db.prepare(`
+    const history = await db.prepare(`
       SELECT field, old_value, new_value, changed_at
       FROM task_history WHERE task_id=? ORDER BY changed_at ASC
     `).all(params.id);
 
     // Comentarios previos (sin respuestas de IA para no sobrecargar el prompt)
-    const prevComments = db.prepare(`
+    const prevComments = await db.prepare(`
       SELECT body, created_at FROM task_comments
       WHERE task_id=? ORDER BY created_at ASC LIMIT 10
     `).all(params.id);
@@ -56,12 +56,12 @@ export const POST = async ({ request, params }) => {
   }
 
   // ── Guardar comentario ───────────────────────────────────────────────────
-  const result = db.prepare(`
+  const result = await db.prepare(`
     INSERT INTO task_comments (task_id, user_id, body, ai_reply)
     VALUES (?, ?, ?, ?)
   `).run(params.id, user.userId, body.body, aiReply || null);
 
-  const comment = db.prepare('SELECT * FROM task_comments WHERE id=?').get(result.lastInsertRowid);
+  const comment = await db.prepare('SELECT * FROM task_comments WHERE id=?').get(result.lastInsertRowid);
 
   return json({
     id:         comment.id,

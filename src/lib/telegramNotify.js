@@ -162,7 +162,7 @@ export async function notifyTaskUrgent(chatId, task) {
  * @param {number}   windowMinutes        - ventana de anticipación (default: 30)
  */
 export async function notifyReminders(getUsersWithDueTasks, markReminderSent, windowMinutes = 30) {
-  const dueTasks = getUsersWithDueTasks(windowMinutes);
+  const dueTasks = await getUsersWithDueTasks(windowMinutes);
   let sent = 0;
 
   for (const row of dueTasks) {
@@ -177,7 +177,7 @@ export async function notifyReminders(getUsersWithDueTasks, markReminderSent, wi
         `¡No olvides completarla a tiempo!`
       );
       if (delivered) {
-        markReminderSent(row.task_id);
+        await markReminderSent(row.task_id);
         sent += 1;
       }
     } catch (err) {
@@ -194,12 +194,12 @@ export async function notifyReminders(getUsersWithDueTasks, markReminderSent, wi
  * Envía alertas de tareas que ya vencieron y no fueron completadas.
  * Llama esto desde el mismo cron job que notifyReminders.
  *
- * @param {import('better-sqlite3').Database} db - instancia de la DB
+ * @param {object} db - adaptador de base de datos SQLite o PostgreSQL
  */
 export async function notifyOverdueTasks(db) {
   const todayStr = dateInAppTimeZone();
 
-  const overdue = db.prepare(`
+  const overdue = await db.prepare(`
     SELECT t.id AS task_id, t.title, t.due_date, t.priority,
            u.telegram_chat_id
     FROM tasks t
@@ -226,7 +226,7 @@ export async function notifyOverdueTasks(db) {
         `⚠️ Complétala o reagéndala desde el dashboard.`
       );
       if (delivered) {
-        db.prepare('UPDATE tasks SET overdue_notified = 1 WHERE id = ?').run(row.task_id);
+        await db.prepare('UPDATE tasks SET overdue_notified = 1 WHERE id = ?').run(row.task_id);
         sent += 1;
       }
     } catch (err) {

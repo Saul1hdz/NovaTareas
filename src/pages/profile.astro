@@ -9,7 +9,7 @@ Astro.response.headers.set('Cache-Control', 'private, no-store, max-age=0');
 Astro.response.headers.set('Pragma', 'no-cache');
 
 const db = getDb();
-const user = db.prepare('SELECT id, full_name, email, telefono, user_type, avatar_url, telegram_chat_id, theme FROM users WHERE id = ?').get(session.userId) as
+const user = await db.prepare('SELECT id, full_name, email, telefono, user_type, avatar_url, telegram_chat_id, theme FROM users WHERE id = ?').get(session.userId) as
   {
     id: number;
     full_name?: string;

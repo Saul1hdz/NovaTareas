@@ -1,4 +1,4 @@
-import { getDb } from "./db";
+import { getDb, isPostgres } from './db.js';
 import { safeErrorSummary } from './security.js';
 
 const ZAI_API_KEY      = process.env.ZAI_API_KEY?.trim();
@@ -134,15 +134,29 @@ function buildTaskText(task) {
  * Persiste un embedding en la base de datos (INSERT OR REPLACE).
  * Si la tarea ya tenía embedding lo actualiza.
  */
-function saveEmbedding(db, taskId, userId, vector, model) {
-  db.prepare(`
-    INSERT INTO task_embeddings (task_id, user_id, vector, model, updated_at)
-    VALUES (?, ?, ?, ?, unixepoch())
+async function saveEmbedding(db, taskId, userId, vector, model) {
+  const dimension = vector.length;
+  const columns = isPostgres
+    ? '(task_id, user_id, vector, model, dimension, updated_at)'
+    : '(task_id, user_id, vector, model, updated_at)';
+  const values = isPostgres
+    ? 'VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)'
+    : 'VALUES (?, ?, ?, ?, unixepoch())';
+  const updateDimension = isPostgres ? ', dimension = excluded.dimension' : '';
+  const updateTimestamp = isPostgres ? 'CURRENT_TIMESTAMP' : 'unixepoch()';
+  const params = isPostgres
+    ? [taskId, userId, vector, model, dimension]
+    : [taskId, userId, JSON.stringify(vector), model];
+
+  await db.prepare(`
+    INSERT INTO task_embeddings ${columns}
+    ${values}
     ON CONFLICT(task_id) DO UPDATE SET
       vector     = excluded.vector,
       model      = excluded.model,
-      updated_at = unixepoch()
-  `).run(taskId, userId, JSON.stringify(vector), model);
+      updated_at = ${updateTimestamp}
+      ${updateDimension}
+  `).run(...params);
 }
 
 /**
@@ -154,7 +168,7 @@ export async function indexArchivedTasks(userId) {
   const db = getDb();
 
   // Tareas archivadas con al menos un campo de aprendizaje
-  const toIndex = db.prepare(`
+  const toIndex = await db.prepare(`
     SELECT t.*
     FROM tasks t
     LEFT JOIN task_embeddings e ON e.task_id = t.id
@@ -180,7 +194,7 @@ export async function indexArchivedTasks(userId) {
     if (!vector) continue; // si no hay embedding disponible, saltar
 
     const model = ZAI_API_KEY ? 'zai-embedding' : OLLAMA_EMB_MODEL;
-    saveEmbedding(db, task.id, userId, vector, model);
+    await saveEmbedding(db, task.id, userId, vector, model);
     indexed++;
   }
 
@@ -205,7 +219,7 @@ export async function findSimilarTasks(userId, queryText, topK = TOP_K) {
   }
 
   // Recuperar todos los embeddings del usuario (solo del usuario)
-  const rows = db.prepare(`
+  const rows = await db.prepare(`
     SELECT e.task_id, e.vector,
            t.title, t.description, t.priority, t.label,
            t.what_worked, t.what_failed, t.observations,
@@ -223,7 +237,11 @@ export async function findSimilarTasks(userId, queryText, topK = TOP_K) {
   // Calcular similitud coseno contra cada embedding almacenado
   const scored = rows.map(row => {
     let storedVector;
-    try { storedVector = JSON.parse(row.vector); } catch { return null; }
+    try {
+      storedVector = Array.isArray(row.vector) ? row.vector : JSON.parse(row.vector);
+    } catch {
+      return null;
+    }
     const similarity = cosineSimilarity(queryVector, storedVector);
     return { ...row, similarity };
   }).filter(r =>
@@ -241,11 +259,11 @@ export async function findSimilarTasks(userId, queryText, topK = TOP_K) {
  * Búsqueda por palabras clave cuando no hay embeddings disponibles.
  * Fallback seguro que sigue el principio de aislamiento por usuario.
  */
-function fallbackKeywordSearch(db, userId, queryText, topK) {
+async function fallbackKeywordSearch(db, userId, queryText, topK) {
   const words = queryText.toLowerCase().split(/\s+/).filter(w => w.length > 3);
   if (!words.length) return [];
 
-  const archived = db.prepare(`
+  const archived = await db.prepare(`
     SELECT title, description, priority, label,
            what_worked, what_failed, observations, due_date, status
     FROM tasks
@@ -322,7 +340,7 @@ export async function getRagContext(userId, task) {
 
 export async function reindexTask(taskId, userId) {
   const db   = getDb();
-  const task = db.prepare('SELECT * FROM tasks WHERE id=? AND user_id=?').get(taskId, userId);
+  const task = await db.prepare('SELECT * FROM tasks WHERE id=? AND user_id=?').get(taskId, userId);
   if (!task || !task.archived) return;
 
   const text   = buildTaskText(task);
@@ -330,5 +348,5 @@ export async function reindexTask(taskId, userId) {
   if (!vector)  return;
 
   const model = ZAI_API_KEY ? 'zai-embedding' : OLLAMA_EMB_MODEL;
-  saveEmbedding(db, taskId, userId, vector, model);
+  await saveEmbedding(db, taskId, userId, vector, model);
 }

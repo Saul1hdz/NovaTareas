@@ -6,7 +6,7 @@ export const PATCH = async ({ request, params }) => {
   if (!user) return new Response(JSON.stringify({ error: 'No autenticado' }), { status: 401 });
 
   const db = getDb();
-  const sub = db.prepare(`
+  const sub = await db.prepare(`
     SELECT s.* FROM subtasks s
     JOIN tasks t ON t.id=s.task_id
     WHERE s.id=? AND s.task_id=? AND t.user_id=?
@@ -14,7 +14,7 @@ export const PATCH = async ({ request, params }) => {
 
   if (!sub) return new Response(JSON.stringify({ error: 'No encontrado' }), { status: 404 });
 
-  db.prepare('UPDATE subtasks SET done=? WHERE id=? AND task_id=?')
+  await db.prepare('UPDATE subtasks SET done=? WHERE id=? AND task_id=?')
     .run(sub.done ? 0 : 1, params.subId, params.id);
   return new Response(JSON.stringify({ ok: true }), {
     status: 200,

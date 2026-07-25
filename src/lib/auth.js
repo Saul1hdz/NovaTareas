@@ -71,7 +71,7 @@ async function isCurrentSession(payload) {
 
   try {
     const { getDb } = await import('./db.js');
-    const user = getDb()
+    const user = await getDb()
       .prepare('SELECT session_version FROM users WHERE id = ?')
       .get(payload.userId);
     return Boolean(user) && Number(user.session_version) === Number(payload.sessionVersion || 0);

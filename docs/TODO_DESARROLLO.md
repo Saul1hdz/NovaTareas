@@ -229,27 +229,28 @@ Prioridad: alta. Debe crecer junto con cada corrección.
 
 Prioridad: alta. Solo aplica si existe información que conservar.
 
-- [ ] Completar repositorios de lectura y escritura para todas las rutas.
-- [ ] Sustituir `GROUP_CONCAT`, `datetime('now')`, `unixepoch()`, booleanos
+- [x] Completar el acceso de lectura y escritura para todas las rutas mediante
+  un adaptador asíncrono compatible con SQLite y PostgreSQL.
+- [x] Sustituir `GROUP_CONCAT`, `datetime('now')`, `unixepoch()`, booleanos
   `0/1` y la obtención SQLite del último ID.
-- [ ] Ejecutar escrituras relacionadas dentro de transacciones PostgreSQL.
-- [ ] Crear exportador de SQLite en modo solo lectura.
-- [ ] Conservar identificadores originales cuando sea posible.
-- [ ] Transformar fechas, booleanos, correos y estados.
-- [ ] Importar tablas en orden de dependencias y dentro de transacciones.
-- [ ] Comparar conteos por tabla antes y después.
-- [ ] Verificar claves foráneas y filas huérfanas.
-- [ ] Verificar hashes de contraseña mediante login, sin exponerlos.
-- [ ] Comparar muestras funcionales por usuario ficticio.
-- [ ] Ensayar la migración al menos dos veces desde una copia limpia.
-- [ ] Mantener SQLite intacto hasta aceptar PostgreSQL.
-- [ ] Documentar rollback.
+- [x] Ejecutar escrituras relacionadas dentro de transacciones PostgreSQL.
+- [x] Crear exportador de SQLite en modo solo lectura.
+- [x] Conservar identificadores originales cuando sea posible.
+- [x] Transformar fechas, booleanos, correos y estados.
+- [x] Importar tablas en orden de dependencias y dentro de transacciones.
+- [x] Comparar conteos por tabla antes y después.
+- [x] Verificar claves foráneas y filas huérfanas.
+- [x] Verificar hashes de contraseña mediante login, sin exponerlos.
+- [x] Comparar muestras funcionales por usuario ficticio.
+- [x] Ensayar la migración al menos dos veces desde una copia limpia.
+- [x] Mantener SQLite intacto hasta aceptar PostgreSQL.
+- [x] Documentar rollback.
 
 ### Puerta de salida
 
-- [ ] Conteos y relaciones equivalentes.
-- [ ] Login y tareas funcionan sobre PostgreSQL.
-- [ ] Migración y rollback reproducibles.
+- [x] Conteos y relaciones equivalentes.
+- [x] Login y tareas funcionan sobre PostgreSQL.
+- [x] Migración y rollback reproducibles.
 
 ---
 

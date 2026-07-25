@@ -1,7 +1,7 @@
 export const prerender = false;
 
 import { getUser } from '../../../lib/auth.js';
-import { getDb } from '../../../lib/db.js';
+import { getDb, withTransaction } from '../../../lib/db.js';
 import {
   createTelegramLinkCode,
   hashTelegramLinkCode,
@@ -31,14 +31,14 @@ export const POST = async ({ request }) => {
   const expiresAt = Date.now() + TELEGRAM_LINK_TTL_MS;
   const db = getDb();
 
-  db.transaction(() => {
-    db.prepare('DELETE FROM telegram_link_codes WHERE user_id = ? OR expires_at < ?')
+  await withTransaction(async (tx) => {
+    await tx.prepare('DELETE FROM telegram_link_codes WHERE user_id = ? OR expires_at < ?')
       .run(user.userId, Date.now());
-    db.prepare(`
+    await tx.prepare(`
       INSERT INTO telegram_link_codes (user_id, code_hash, expires_at)
       VALUES (?, ?, ?)
     `).run(user.userId, hashTelegramLinkCode(code), expiresAt);
-  })();
+  }, db);
 
   return json({
     ok: true,
