@@ -1,12 +1,23 @@
-import { getDb, withTransaction }        from '../../../../lib/db.js';
+import { getDb }                         from '../../../../lib/db.js';
 import { getUser }                       from '../../../../lib/auth.js';
 import { getRagContext }                 from '../../../../lib/rag.js';
+import { parseId }                     from '../../../../lib/routeParams.js';
+
+// Proveedores compartidos: una sola definición de modelo, timeouts y
+// respaldos para toda la aplicación.
+import { callOllama, callZai, trimToCompleteSentence } from '../../../../lib/ai/providers.js';
+
+const tryZai = prompt => callZai(prompt);
+const tryOllama = prompt => callOllama(prompt);
+
 
 const OLLAMA_URL   = process.env.OLLAMA_URL   || 'http://localhost:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b';
 const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
 const ZAI_URL      = 'https://api.z.ai/api/paas/v4/chat/completions';
 const ZAI_MODEL    = process.env.ZAI_MODEL || 'glm-4.5-flash';
+// Identifica el prompt con el que se generó cada recomendación guardada.
+const PROMPT_VERSION = 'task-recommendation-v1';
 
 // ── Rate limiting simple en memoria ──────────────────────────────────────────
 // Cada llamada exitosa a z.ai cuesta saldo real. Sin este límite, un usuario
@@ -35,7 +46,10 @@ export const POST = async ({ request, params }) => {
   if (!user) return json({ error: 'No autenticado' }, 401);
 
   const db   = getDb();
-  const task = await db.prepare('SELECT * FROM tasks WHERE id=? AND user_id=?').get(params.id, user.userId);
+  const taskId = parseId(params.id);
+  if (taskId === null) return json({ error: 'No encontrado' }, 404);
+
+  const task = await db.prepare('SELECT * FROM tasks WHERE id=$1 AND user_id=$2').get(taskId, user.userId);
   if (!task) return json({ error: 'No encontrado' }, 404);
 
   if (isRateLimited(user.userId)) {
@@ -45,7 +59,7 @@ export const POST = async ({ request, params }) => {
   }
   registerCall(user.userId);
 
-  const userRecord = await db.prepare('SELECT user_type FROM users WHERE id=?').get(user.userId);
+  const userRecord = await db.prepare('SELECT user_type FROM users WHERE id=$1').get(user.userId);
   const userType   = userRecord?.user_type || 'comun';
 
   // ── RAG: recuperar contexto del historial del usuario ─────────────────────
@@ -61,16 +75,16 @@ export const POST = async ({ request, params }) => {
   // ── 1. z.ai con contexto RAG ──────────────────────────────────────────────
   if (ZAI_API_KEY) {
     const text = await tryZai(prompt);
-    if (text) return saveAndReturn(db, params.id, text, hasRag);
+    if (text) return saveAndReturn(db, task, user.userId, text, 'zai', hasRag);
   }
 
   // ── 2. Ollama con contexto RAG ────────────────────────────────────────────
   const ollamaText = await tryOllama(prompt);
-  if (ollamaText) return saveAndReturn(db, params.id, ollamaText, hasRag);
+  if (ollamaText) return saveAndReturn(db, task, user.userId, ollamaText, 'ollama', hasRag);
 
   // ── 3. Historial de tareas archivadas (sin LLM) ───────────────────────────
   const archivedRec = await getRecommendationFromArchived(db, user.userId, task);
-  if (archivedRec) return saveAndReturn(db, params.id, archivedRec, false);
+  if (archivedRec) return saveAndReturn(db, task, user.userId, archivedRec, 'history', false);
 
   // ── 4. Reglas locales (último recurso) ────────────────────────────────────
   const rec = getRulesRecommendation(
@@ -78,7 +92,7 @@ export const POST = async ({ request, params }) => {
     userType,
     task.priority
   );
-  return saveAndReturn(db, params.id, rec, false);
+  return saveAndReturn(db, task, user.userId, rec, 'rules', false);
 };
 
 // ─── Prompt con contexto RAG inyectado ────────────────────────────────────────
@@ -121,97 +135,53 @@ export function buildPrompt(task, userType, ragContext) {
 
 // ─── Capas de LLM ─────────────────────────────────────────────────────────────
 
-async function tryZai(prompt) {
-  try {
-    const response = await fetch(ZAI_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${ZAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: ZAI_MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 700,
-        temperature: 0.7
-      }),
-      signal: AbortSignal.timeout(45000)
-    });
 
-    if (!response.ok) {
-      console.error('[Z.AI] Respuesta no exitosa:', response.status);
-      return null;
-    }
 
-    const data = await response.json().catch(() => null);
-    return trimToCompleteSentence(data?.choices?.[0]?.message?.content?.trim() || null);
-  } catch (e) {
-    console.error('[Z.AI] Fallo de red o proveedor');
-    return null;
-  }
-}
-
-async function isOllamaUp() {
-  try {
-    const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(1500) });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function tryOllama(prompt) {
-  // Chequeo rápido: si Ollama no responde en 1.5s, ni lo intentamos.
-  // Evita esperar 20s a un timeout cuando Ollama no está corriendo.
-  if (!(await isOllamaUp())) return null;
-
-  try {
-    const response = await fetch(`${OLLAMA_URL}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model:   OLLAMA_MODEL,
-        prompt,
-        stream:  false,
-        options: { temperature: 0.7, num_predict: 400 }
-      }),
-      signal: AbortSignal.timeout(20000)
-    });
-    if (!response.ok) return null;
-    const data = await response.json().catch(() => null);
-    return trimToCompleteSentence(data?.response?.trim() || null);
-  } catch { return null; }
-}
 
 // ─── Recorte de seguridad: nunca dejar una oración a medias ──────────────────
 // max_tokens puede cortar el texto en cualquier punto. Si el texto ya termina
 // en punto/exclamación/interrogación se deja igual; si no, se recorta hasta el
 // último signo de cierre siempre que no se pierda más del 30% del contenido.
-function trimToCompleteSentence(text) {
-  if (!text) return text;
-  const trimmed = text.trim();
-  if (/[.!?…]["')\]]?$/.test(trimmed)) return trimmed;
-
-  const lastEnd = Math.max(trimmed.lastIndexOf('.'), trimmed.lastIndexOf('!'), trimmed.lastIndexOf('?'));
-  if (lastEnd > trimmed.length * 0.7) return trimmed.slice(0, lastEnd + 1);
-
-  return trimmed; // no hay un corte seguro sin perder demasiado; se deja tal cual
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function saveAndReturn(db, taskId, text, usedRag = false) {
-  const finalText = usedRag
-    ? text  // el LLM ya tiene el contexto RAG integrado
-    : text;
+async function saveAndReturn(db, task, userId, text, source, usedRag = false) {
+  // Antes esto hacía DELETE + INSERT sobre `subtasks`, así que cada consulta a
+  // la IA borraba las subtareas reales que el usuario había escrito. Ahora las
+  // recomendaciones tienen su propia tabla y se registra de dónde salió cada
+  // una: z.ai, Ollama, el historial archivado o las reglas locales.
+  const saved = await db.prepare(`
+    INSERT INTO task_recommendations
+      (task_id, user_id, source, model, prompt_version, input_snapshot, recommendation)
+    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+    RETURNING id, source, model, recommendation, created_at
+  `).get(
+    task.id,
+    userId,
+    source,
+    source === 'zai' ? ZAI_MODEL : source === 'ollama' ? OLLAMA_MODEL : null,
+    PROMPT_VERSION,
+    JSON.stringify({
+      title: task.title,
+      priority: task.priority,
+      due_date: task.due_date,
+      used_rag: usedRag,
+    }),
+    text,
+  );
 
-  const subtasks = await withTransaction(async (tx) => {
-    await tx.prepare('DELETE FROM subtasks WHERE task_id=?').run(taskId);
-    await tx.prepare('INSERT INTO subtasks (task_id, text) VALUES (?,?)')
-      .run(taskId, finalText);
-    return tx.prepare('SELECT * FROM subtasks WHERE task_id=?').all(taskId);
-  }, db);
-  return json({ subtasks, tip: finalText, rag: usedRag }, 200);
+  return json({
+    recommendation: {
+      id: saved.id,
+      text: saved.recommendation,
+      source: saved.source,
+      model: saved.model,
+      created_at: saved.created_at,
+    },
+    tip: text,
+    source,
+    rag: usedRag,
+  }, 200);
 }
 
 async function getRecommendationFromArchived(db, userId, currentTask) {
@@ -219,7 +189,7 @@ async function getRecommendationFromArchived(db, userId, currentTask) {
     const archived = await db.prepare(`
       SELECT title, what_worked, what_failed, observations
       FROM tasks
-      WHERE user_id = ? AND archived = 1
+      WHERE user_id = $1 AND archived
         AND (what_worked IS NOT NULL OR what_failed IS NOT NULL OR observations IS NOT NULL)
       ORDER BY id DESC LIMIT 20
     `).all(userId);

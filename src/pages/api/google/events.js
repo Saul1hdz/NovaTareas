@@ -47,7 +47,7 @@ export const GET = async ({ request }) => {
   }
 
   const db = getDb();
-  const record = await db.prepare('SELECT google_access_token, google_refresh_token, google_token_expiry FROM users WHERE id = ?').get(user.userId);
+  const record = await db.prepare('SELECT google_access_token, google_refresh_token, google_token_expiry FROM users WHERE id = $1').get(user.userId);
   if (!record?.google_refresh_token) {
     return new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
@@ -68,7 +68,10 @@ export const GET = async ({ request }) => {
   oauth2Client.setCredentials({
     access_token: accessToken,
     refresh_token: refreshToken,
-    expiry_date: record.google_token_expiry ? Number(record.google_token_expiry) : undefined
+    // La columna vuelve como Date; la API de Google espera epoch en ms.
+    expiry_date: record.google_token_expiry
+      ? new Date(record.google_token_expiry).getTime()
+      : undefined
   });
 
   let credentials = oauth2Client.credentials;
@@ -77,10 +80,10 @@ export const GET = async ({ request }) => {
     if (refreshed) {
       credentials = refreshed;
       oauth2Client.setCredentials(credentials);
-      await db.prepare('UPDATE users SET google_access_token = ?, google_token_expiry = ? WHERE id = ?')
+      await db.prepare('UPDATE users SET google_access_token = $1, google_token_expiry = $2 WHERE id = $3')
         .run(
           encryptToken(credentials.access_token),
-          credentials.expiry_date ? credentials.expiry_date.toString() : null,
+          credentials.expiry_date ? new Date(credentials.expiry_date) : null,
           user.userId
         );
     }

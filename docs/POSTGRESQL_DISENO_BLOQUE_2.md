@@ -1,5 +1,12 @@
 # Diseño PostgreSQL — Bloque 2
 
+> **Documento histórico.** Describe el estado del proyecto en el momento de
+> cerrar este bloque. Los comandos de SQLite que aparecen abajo —`db:init`,
+> `db:pg:import`, `DATABASE_ENGINE=sqlite`, `compose.postgres.yml`— **ya no
+> existen**: PostgreSQL es el único motor. El procedimiento vigente de
+> recuperación está en [`DESPLIEGUE.md`](DESPLIEGUE.md) y el detalle de la
+> migración en [`CIERRE_MIGRACION_POSTGRESQL.md`](CIERRE_MIGRACION_POSTGRESQL.md).
+
 Estado: diseño implementado y validado localmente. La aplicación todavía usa
 SQLite como motor de ejecución; el cambio de runtime y la transferencia de datos
 pertenecen al Bloque 4.

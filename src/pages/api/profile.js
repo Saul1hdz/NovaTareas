@@ -16,7 +16,7 @@ export const GET = async ({ request }) => {
   if (!user) return json({ error: 'No autenticado' }, 401);
 
   const db = getDb();
-  const u = await db.prepare('SELECT id, full_name, email, telefono, user_type, avatar_url, telegram_chat_id, theme FROM users WHERE id = ?').get(user.userId);
+  const u = await db.prepare('SELECT id, full_name, email, telefono, user_type, avatar_url, telegram_chat_id, theme FROM users WHERE id = $1').get(user.userId);
   if (!u) return json({ error: 'Usuario no encontrado' }, 404);
 
   return json(u, 200);
@@ -35,7 +35,17 @@ export const PUT = async ({ request }) => {
     const validation = await validateAvatarFile(formData.get('avatar'));
     if (validation.error) return json({ error: validation.error }, 400);
 
-    const uploadsDir = path.join(process.cwd(), 'public', 'avatars');
+    // En desarrollo Astro sirve `public/`; en producción sirve `dist/client`.
+    // Escribir siempre en `public/` dejaba los avatares subidos en el servidor
+    // inaccesibles: la URL guardada devolvía 404. AVATAR_UPLOAD_DIR permite
+    // además apuntar a un volumen persistente.
+    const uploadsDir = process.env.AVATAR_UPLOAD_DIR
+      ? path.resolve(process.env.AVATAR_UPLOAD_DIR)
+      : path.join(
+          process.cwd(),
+          process.env.NODE_ENV === 'production' ? 'dist/client' : 'public',
+          'avatars',
+        );
     mkdirSync(uploadsDir, { recursive: true });
 
     const filename = `avatar_${user.userId}_${Date.now()}.${validation.extension}`;
@@ -44,7 +54,7 @@ export const PUT = async ({ request }) => {
 
     const db = getDb();
     const avatarUrl = `/avatars/${filename}`;
-    await db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').run(avatarUrl, user.userId);
+    await db.prepare('UPDATE users SET avatar_url = $1 WHERE id = $2').run(avatarUrl, user.userId);
 
     return json({ ok: true, avatar_url: avatarUrl }, 200);
   }
@@ -63,40 +73,47 @@ export const PUT = async ({ request }) => {
   const updates = [];
   const params = [];
 
+  // Cada valor se numera a partir de su posición real en `params`. No se lleva
+  // un contador aparte: hay asignaciones que no consumen ningún parámetro
+  // (session_version) y otras que consumen dos, y un contador manual las
+  // desalinearía escribiendo en la columna equivocada sin lanzar ningún error.
+  const placeholder = value => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+
   if (full_name !== undefined) {
     if (typeof full_name !== 'string') return json({ error: 'El nombre debe ser texto.' }, 400);
     if (!full_name.trim() || full_name.trim().length < 2) return json({ error: 'El nombre debe tener al menos 2 caracteres.' }, 400);
     if (full_name.trim().length > 120) return json({ error: 'El nombre no debe superar 120 caracteres.' }, 400);
-    updates.push('full_name = ?', 'username = ?');
-    params.push(full_name.trim(), full_name.trim());
+    updates.push(`full_name = ${placeholder(full_name.trim())}`);
+    updates.push(`username = ${placeholder(full_name.trim())}`);
   }
 
   if (telefono !== undefined) {
     if (typeof telefono !== 'string') return json({ error: 'El teléfono debe ser texto.' }, 400);
     if (!PHONE_REGEX.test(telefono.trim())) return json({ error: 'Formato de teléfono inválido.' }, 400);
-    updates.push('telefono = ?');
-    params.push(telefono.trim());
+    updates.push(`telefono = ${placeholder(telefono.trim())}`);
   }
 
   if (user_type !== undefined) {
     if (typeof user_type !== 'string') return json({ error: 'Tipo de usuario inválido.' }, 400);
     if (!['estudiante', 'empleado', 'comun'].includes(user_type)) return json({ error: 'Tipo de usuario inválido.' }, 400);
-    updates.push('user_type = ?');
-    params.push(user_type);
+    updates.push(`user_type = ${placeholder(user_type)}`);
   }
 
   if (password !== undefined) {
     if (typeof password !== 'string') return json({ error: 'La contraseña debe ser texto.' }, 400);
     if (!PASSWORD_REGEX.test(password)) return json({ error: 'La contraseña debe tener mínimo 8 caracteres, incluir letras y números.' }, 400);
     const hash = await bcrypt.hash(password, 10);
-    updates.push('password_hash = ?', 'session_version = session_version + 1');
-    params.push(hash);
+    updates.push(`password_hash = ${placeholder(hash)}`);
+    updates.push('session_version = session_version + 1');
   }
 
   if (updates.length === 0) return json({ error: 'Nada que actualizar.' }, 400);
 
-  params.push(user.userId);
-  await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  const idPlaceholder = placeholder(user.userId);
+  await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ${idPlaceholder}`).run(...params);
 
   return json({ ok: true, reauthenticate: password !== undefined }, 200);
 };

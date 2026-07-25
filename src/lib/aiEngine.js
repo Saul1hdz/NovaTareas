@@ -1,4 +1,12 @@
 // src/lib/aiEngine.js
+
+// Proveedores compartidos: una sola definición de modelo, timeouts y
+// respaldos para toda la aplicación.
+import { callOllama, callZai, trimToCompleteSentence } from './ai/providers.js';
+
+const tryZai = prompt => callZai(prompt);
+const tryOllama = prompt => callOllama(prompt);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Motor de recomendaciones reutilizable, SIN dependencia de base de datos ni
 // de sesión de usuario. Recibe los datos de la tarea directamente y devuelve
@@ -17,7 +25,6 @@ export const AI_META = {
 
 const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
 const ZAI_URL      = 'https://api.z.ai/api/paas/v4/chat/completions';
-const ZAI_MODEL    = process.env.ZAI_MODEL || 'glm-4.5-flash';
 const OLLAMA_URL   = process.env.OLLAMA_URL   || 'http://localhost:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b';
 
@@ -118,69 +125,13 @@ function buildPrompt(task) {
   );
 }
 
-async function tryZai(prompt) {
-  try {
-    const res = await fetch(ZAI_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${ZAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: ZAI_MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 700,
-        temperature: 0.7,
-      }),
-      signal: AbortSignal.timeout(45000),
-    });
-    if (!res.ok) {
-      console.error('[aiEngine/zai] respuesta no exitosa:', res.status);
-      return null;
-    }
-    const data = await res.json().catch(() => null);
-    return trimToCompleteSentence(data?.choices?.[0]?.message?.content?.trim() || null);
-  } catch (e) {
-    console.error('[aiEngine/zai] fallo de red o proveedor');
-    return null;
-  }
-}
 
-async function isOllamaUp() {
-  try {
-    const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(1500) });
-    return res.ok;
-  } catch { return false; }
-}
 
-async function tryOllama(prompt) {
-  if (!(await isOllamaUp())) return null;
-  try {
-    const res = await fetch(`${OLLAMA_URL}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: OLLAMA_MODEL, prompt, stream: false,
-        options: { temperature: 0.7, num_predict: 400 },
-      }),
-      signal: AbortSignal.timeout(20000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json().catch(() => null);
-    return trimToCompleteSentence(data?.response?.trim() || null);
-  } catch { return null; }
-}
 
-function trimToCompleteSentence(text) {
-  if (!text) return text;
-  const trimmed = text.trim();
-  if (/[.!?…]["')\]]?$/.test(trimmed)) return trimmed;
-  const lastEnd = Math.max(trimmed.lastIndexOf('.'), trimmed.lastIndexOf('!'), trimmed.lastIndexOf('?'));
-  if (lastEnd > trimmed.length * 0.7) return trimmed.slice(0, lastEnd + 1);
-  const lastComma = trimmed.lastIndexOf(',');
-  if (lastComma > trimmed.length * 0.5) return trimmed.slice(0, lastComma) + '.';
-  return trimmed;
-}
+
+
+
+
 
 function getRulesRecommendation(task) {
   const lower  = (task.title + ' ' + (task.description || '')).toLowerCase();

@@ -72,7 +72,7 @@ export async function POST({ request }) {
   }
 
   const db = getDb();
-  if (await db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail)) {
+  if (await db.prepare('SELECT id FROM users WHERE email = $1').get(normalizedEmail)) {
     return json({ error: 'Ya existe una cuenta con ese correo electrónico.' }, 409);
   }
 
@@ -82,11 +82,12 @@ export async function POST({ request }) {
     const q2Hash = await bcrypt.hash(q2_answer.toLowerCase().trim(), 10);
     const username = full_name.trim();
 
-    const userId = Number(await withTransaction(async (tx) => {
-      const result = await tx.prepare(`
+    const userId = await withTransaction(async (tx) => {
+      const created = await tx.prepare(`
         INSERT INTO users (username, full_name, email, password_hash, telefono, user_type)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
+      `).get(
         username,
         full_name.trim(),
         normalizedEmail,
@@ -97,10 +98,10 @@ export async function POST({ request }) {
 
       await tx.prepare(`
         INSERT INTO security_questions (user_id, q1_index, q1_answer, q2_index, q2_answer)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(result.lastInsertRowid, q1Index, q1Hash, q2Index, q2Hash);
-      return result.lastInsertRowid;
-    }, db));
+        VALUES ($1, $2, $3, $4, $5)
+      `).run(created.id, q1Index, q1Hash, q2Index, q2Hash);
+      return created.id;
+    }, db);
 
     const token = await createToken(userId, username, 0);
     return json(
@@ -109,6 +110,12 @@ export async function POST({ request }) {
       { 'Set-Cookie': createSessionCookie(token, request) }
     );
   } catch (error) {
+    // La comprobación previa del correo no es atómica. Con el índice único de
+    // PostgreSQL, dos registros simultáneos hacen que uno llegue hasta aquí:
+    // es un conflicto del cliente, no un fallo del servidor.
+    if (error?.code === '23505') {
+      return json({ error: 'Ya existe una cuenta con ese correo electrónico.' }, 409);
+    }
     console.error('[register]', safeErrorSummary(error));
     return json({ error: 'Error interno del servidor.' }, 500);
   }

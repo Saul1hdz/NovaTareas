@@ -2,6 +2,7 @@
 import Base from '../layouts/Base.astro';
 import { getUser } from '../lib/auth.js';
 import { getDb } from '../lib/db.js';
+import { getDashboardStats } from '../lib/dashboardStats.js';
 
 const rawUser = await getUser(Astro.request);
 if (!rawUser) return Astro.redirect('/');
@@ -10,23 +11,12 @@ Astro.response.headers.set('Pragma', 'no-cache');
 const user = rawUser as { username: string; userId: number };
 
 const db = getDb();
-const userRecord = await db.prepare('SELECT * FROM users WHERE id=?').get(user.userId) as
+const userRecord = await db.prepare('SELECT * FROM users WHERE id=$1').get(user.userId) as
   { theme?: string; full_name?: string; avatar_url?: string } | undefined;
 const theme = userRecord?.theme || 'dark';
 
-// Stats
-const total = (await db.prepare('SELECT COUNT(*) as c FROM tasks WHERE user_id=? AND archived=0').get(user.userId) as { c: number }).c;
-const done = (await db.prepare("SELECT COUNT(*) as c FROM tasks WHERE user_id=? AND archived=0 AND status='completada'").get(user.userId) as { c: number }).c;
-const active = total - done;
-const urgent = (await db.prepare("SELECT COUNT(*) as c FROM tasks WHERE user_id=? AND archived=0 AND priority='urgente' AND status!='completada'").get(user.userId) as { c: number }).c;
-
-// Due today or overdue
-const today = new Date().toISOString().split('T')[0];
-const overdue = (await db.prepare(`SELECT COUNT(*) as c FROM tasks WHERE user_id=? AND archived=0 AND status!='completada' AND due_date IS NOT NULL AND due_date < ?`).get(user.userId, today) as { c: number }).c;
-
-// Labels
-const labelsRows = await db.prepare(`SELECT DISTINCT label FROM tasks WHERE user_id=? AND label!='' AND archived=0 ORDER BY label`).all(user.userId) as Array<{ label: string }>;
-const labels = labelsRows.map((r) => r.label);
+const { total, done, active, urgent, overdue, labels } =
+  await getDashboardStats(db, user.userId);
 ---
 <Base title="Dashboard" theme={theme}>
   <div class="app" id="app" data-user={user.username} data-theme={theme}>
@@ -2076,6 +2066,7 @@ function renderTasks(tasks, containerId, isArchive = false) {
       appendTaskText(content, 'Observaciones', t.observations);
       appendTaskText(content, 'Comentarios', t.archive_comments);
       appendSubtasks(content, t.subtasks);
+      appendRecommendation(content, t.recommendation);
 
       const actions = document.createElement('div');
       actions.className = 'task-actions';
@@ -2125,6 +2116,7 @@ function renderTasks(tasks, containerId, isArchive = false) {
     body.className = 'task-body';
     appendTaskText(body, null, t.description);
     appendSubtasks(body, t.subtasks);
+    appendRecommendation(body, t.recommendation);
 
     const actions = document.createElement('div');
     actions.className = 'task-actions';
@@ -2162,11 +2154,14 @@ function appendTaskText(parent, heading, value) {
   parent.appendChild(createTextElement('div', 'task-desc', value));
 }
 
+// Las subtareas son pasos reales que el usuario escribe y marca. Antes esta
+// función pintaba también la recomendación de la IA, porque ambas cosas
+// compartían tabla; ahora cada una tiene su propio bloque.
 function appendSubtasks(parent, subtasks) {
   if (!subtasks?.length) return;
   const box = document.createElement('div');
   box.className = 'ai-result-box';
-  box.appendChild(createTextElement('div', 'ai-recs-header', 'Recomendación Para Iniciar'));
+  box.appendChild(createTextElement('div', 'ai-recs-header', 'Subtareas'));
   subtasks.forEach(subtask => {
     const item = document.createElement('div');
     item.className = 'subtask-item';
@@ -2177,6 +2172,29 @@ function appendSubtasks(parent, subtasks) {
     ));
     box.appendChild(item);
   });
+  parent.appendChild(box);
+}
+
+const RECOMMENDATION_SOURCES = {
+  zai: 'IA (z.ai)',
+  ollama: 'IA local (Ollama)',
+  history: 'Tu historial de tareas archivadas',
+  rules: 'Sugerencia general',
+};
+
+function appendRecommendation(parent, recommendation) {
+  if (!recommendation?.text) return;
+  const box = document.createElement('div');
+  box.className = 'ai-result-box';
+  box.appendChild(createTextElement(
+    'div',
+    'ai-recs-header',
+    `Recomendación Para Iniciar · ${RECOMMENDATION_SOURCES[recommendation.source] || 'Sugerencia'}`
+  ));
+  const item = document.createElement('div');
+  item.className = 'subtask-item';
+  item.appendChild(createTextElement('div', 'subtask-text', recommendation.text));
+  box.appendChild(item);
   parent.appendChild(box);
 }
 

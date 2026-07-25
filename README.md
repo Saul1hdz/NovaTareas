@@ -5,6 +5,15 @@
 Universidad Gerardo Barrios — Módulo 4: Desarrollo de Aplicaciones con IA
 Docente: Ing. Marco Arévalo Zambrano
 
+> **PostgreSQL 16 es el único motor de base de datos.** SQLite se retiró por
+> completo (driver, migraciones, importador y capa de compatibilidad), y las
+> pruebas corren contra PostgreSQL real, así que `npm test` requiere el
+> contenedor de base de datos levantado. El detalle del cambio está en
+> [`docs/CIERRE_MIGRACION_POSTGRESQL.md`](docs/CIERRE_MIGRACION_POSTGRESQL.md);
+> el despliegue, en [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md). Si trabajas en
+> **Windows con Docker Desktop**, empieza por
+> [`docs/ENTORNO_WINDOWS.md`](docs/ENTORNO_WINDOWS.md).
+
 ---
 
 ## Integrantes — Equipo 3
@@ -230,21 +239,25 @@ npm run lint          # verificar tipos y sintaxis del proyecto
 | `tests/aiEngine.test.js` | 14 | Validación de entrada: títulos vacíos o muy largos, descripciones fuera de límite, prioridades no permitidas, fechas mal formadas, cuerpos que no son objetos |
 | `tests/api.test.js` | 13 | Endpoints `/api/v1/health`, `/api/v1/metadata` y `/api/v1/recommend`, incluida la autenticación de la API externa |
 | `tests/appFlows.test.js` | 14 | Registro, login, logout, cambio de contraseña, ciclo de vida de tareas, ownership, subtareas, historial, comentarios y vinculación de Telegram |
-| `tests/security.test.js` | 6 | Sesiones, cookies, rate limiting, secretos, logs seguros y Google OAuth `state` |
-| `tests/migrations.test.js` | 2 | Creación idempotente del esquema y rechazo seguro de bases heredadas |
+| `tests/security.test.js` | 8 | Sesiones, cookies, límites de intentos persistidos, secretos, logs seguros y Google OAuth `state` |
 | `tests/taskValidation.test.js` | 3 | Validación de tareas, fechas, estados, etiquetas y comentarios |
 | `tests/integrationSecurity.test.js` | 8 | Cron, webhook de Telegram simulado y carga de avatares válidos, falsificados o con MIME incorrecto |
 | `tests/postgresSchema.test.js` | 7 | Esquema, restricciones y reejecución de migraciones PostgreSQL con PGlite |
 | `tests/tokenEncryption.test.js` | 3 | Cifrado, descifrado y rechazo de tokens alterados |
-| `tests/reminders.test.js` | 4 | Zona horaria, tiempo verbal de fechas, avisos únicos y ausencia de marcación cuando Telegram falla |
+| `tests/reminders.test.js` | 7 | Zona horaria, avisos únicos, ausencia de marcación cuando Telegram falla y programación de `reminder_at` |
 | `tests/aiProviders.test.js` | 3 | z.ai, Ollama y fallback local con red simulada |
 | `tests/aiPrompt.test.js` | 3 | El prompt no inventa antecedentes y trata RAG como evidencia opcional |
+| `tests/aiRecommendations.test.js` | 4 | Las recomendaciones no borran subtareas, se guardan aparte y registran su origen |
 | `tests/googleIntegration.test.js` | 4 | OAuth, eventos, renovación y persistencia cifrada de tokens con Google simulado |
-| `tests/sqliteToPostgres.test.js` | 4 | Fechas, booleanos, tokens cifrados y embeddings durante la transformación SQLite → PostgreSQL |
+| `tests/telegramSessions.test.js` | 5 | El estado conversacional del bot persiste, caduca y no retiene las tareas del usuario |
+| `tests/dashboardStats.test.js` | 4 | Conteos del panel, tipos numéricos y etiquetas visibles |
+| `tests/noSqliteDialect.test.js` | 3 | Impide que vuelva a introducirse dialecto SQLite en el código |
 
-**Total: 88 pruebas.** Las pruebas de base de datos usan un archivo SQLite
-temporal y aislado de la base de desarrollo; el esquema PostgreSQL se prueba con
-PGlite y el workflow usa además un servicio PostgreSQL 16 efímero.
+**Total: 103 pruebas.** Todas corren contra **PostgreSQL 16 real**, el mismo
+motor que se despliega: el arranque recrea el esquema desde las migraciones en la
+base indicada por `TEST_DATABASE_URL`, cuyo nombre debe terminar en `_test`. Por
+eso `npm test` requiere el contenedor de base de datos levantado. El esquema se
+verifica además con PGlite y el workflow usa un servicio PostgreSQL 16 efímero.
 
 ### Cómo funcionan
 
@@ -277,7 +290,7 @@ El archivo `.github/workflows/ci.yml` ejecuta automáticamente en GitHub Actions
 3. **Instalación** de dependencias con `npm ci` (reproducible desde `package-lock.json`).
 4. **Verificación** de tipos y sintaxis (`npm run lint`).
 5. **Migración y comprobación** contra un servicio PostgreSQL 16 efímero.
-6. **Ejecución** de las 88 pruebas con cobertura (`npm run test:coverage`).
+6. **Ejecución** de las 103 pruebas con cobertura (`npm run test:coverage`).
 7. **Conservación** del reporte de cobertura como artefacto durante 14 días.
 8. **Compilación** del proyecto (`npm run build`).
 
@@ -309,20 +322,19 @@ npm ci
 cp .env.example .env
 # Editar .env con tus claves reales (ver sección de variables de entorno)
 
-# 3. Crear o actualizar de forma segura la base SQLite local
-npm run db:init
-# El migrador puede repetirse y rechaza bases heredadas no inventariadas
+# 3. Levantar PostgreSQL y aplicar migraciones
+docker compose -f compose.dev.yml up -d db
+npm run db:pg:migrate
 
-# 4. Verificar que todo funciona
+# Base de pruebas (una sola vez). El nombre debe terminar en _test.
+docker compose -f compose.dev.yml exec db createdb -U novatareas novatareas_test
+
+# 4. Verificar que todo funciona (requiere PostgreSQL levantado)
 npm test
 npm run db:pg:verify
 
-# Ensayar la importación desde una COPIA SQLite (hace rollback por defecto)
-SQLITE_MIGRATION_SOURCE=tmp/block4-baseline/novatareas-pre-bloque4.db
-npm run db:pg:import
-
-# Confirmar únicamente después de revisar conteos y advertencias
-SQLITE_MIGRATION_MODE=commit npm run db:pg:import
+# Datos ficticios de demostración (opcional)
+npm run db:seed
 
 # 5. Iniciar el servidor web
 npm run dev
@@ -379,7 +391,7 @@ https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://abc123.ngrok.io/api/t
 | Acción | ¿Automático? |
 |---|---|
 | Instalar dependencias (`npm ci`) | ✅ Automático con Node 22.12 o posterior |
-| Crear tablas de BD (`npm run db:init`) | ✅ Migrador transaccional e idempotente |
+| Crear tablas de BD (`npm run db:pg:migrate`) | ✅ Migrador transaccional e idempotente |
 | Ejecutar pruebas (`npm test`) | ✅ Automático |
 | Validación en cada push (GitHub Actions) | ✅ Automático |
 | Iniciar servidor web | ✅ Un comando |
@@ -413,9 +425,10 @@ webhook/cron, API externa de recomendaciones, Ollama, Google Calendar o
 PostgreSQL. `GEMINI_API_KEY` solo aparece en herramientas manuales heredadas de
 embeddings; no se necesita para ejecutar la web, z.ai ni el bot.
 
-`DATABASE_ENGINE=postgres` y `DATABASE_URL` seleccionan PostgreSQL en ejecución
-nativa. `compose.dev.yml` establece ambos valores internamente. Para el rollback
-local se usa `DATABASE_ENGINE=sqlite` y, opcionalmente, `NOVATAREAS_DB_PATH`.
+`DATABASE_URL` es obligatoria: PostgreSQL 16 es el único motor soportado y sin
+ella la aplicación no arranca. `compose.dev.yml` la establece internamente.
+`TEST_DATABASE_URL` apunta la suite de pruebas a una base separada cuyo nombre
+debe terminar en `_test`, porque el setup borra su esquema en cada ejecución.
 
 > ⚠️ Los archivos `.env` y `.env.local` **no se versionan** (están en `.gitignore`). El archivo `.env.example` sí, y contiene únicamente placeholders. No compartas el archivo real por chat ni reutilices los secretos locales en Netcup.
 
@@ -440,30 +453,38 @@ novatareas-pro/
 │   │       ├── google/{auth,callback,events}.js
 │   │       ├── telegram/webhook.js
 │   │       └── cron/reminders.js
+│   │       ├── v1/health/ready.js                  # sonda que consulta la BD
 │   └── lib/
+│       ├── ai/providers.js  # z.ai y Ollama: definición única de la cascada
 │       ├── aiEngine.js      # motor de IA reutilizable (sin BD ni sesión)
 │       ├── rag.js           # embeddings + recuperación semántica
-│       ├── db.js            # acceso compatible con PostgreSQL y SQLite
+│       ├── db.js            # helpers de dominio sobre PostgreSQL
 │       ├── auth.js          # JWT por cookie o Bearer token
+│       ├── appTime.js       # criterio único de fecha y zona horaria
+│       ├── dashboardStats.js # consultas del panel, con pruebas propias
+│       ├── routeParams.js   # normaliza los identificadores de la ruta
+│       ├── security.js      # límites de intentos persistidos en PostgreSQL
 │       ├── telegramBot.js
 │       └── telegramNotify.js
-├── tests/
-│   ├── aiEngine.test.js           # 14 pruebas de validación
-│   ├── api.test.js                # 13 pruebas de endpoints
-│   └── integrationSecurity.test.js # cron, webhook y avatares
+├── src/db/
+│   ├── client.js            # envoltorio fino sobre pg, sin traducir SQL
+│   └── postgres/            # esquema, cliente y repositorios Drizzle
+├── tests/                   # 16 archivos, 103 pruebas contra PostgreSQL real
 ├── telegram/                # bot.js y scheduler.js (procesos aparte)
-├── migrations/              # migraciones SQLite y PostgreSQL versionadas
-├── src/db/postgres/         # esquema, cliente y repositorios Drizzle
-├── compose.postgres.yml     # PostgreSQL 16 local, limitado a 127.0.0.1
+├── migrations/postgresql/   # migraciones versionadas generadas con Drizzle
+├── scripts/                 # migrar, verificar, sembrar y smoke test
 ├── compose.dev.yml          # web, migraciones, PostgreSQL y perfiles del bot
-├── Dockerfile               # desarrollo y runtime Node 22
-├── tools/                   # utilidades de diagnóstico y reindexado
+├── compose.prod.yml         # despliegue: target runtime, sin puertos abiertos
+├── Dockerfile               # targets development y runtime, Node 22
 ├── data/tareas_ejemplo.csv
+├── api.md                   # contratos de la API
 ├── docs/
-│   ├── api.md                       # contratos de la API
-│   ├── pruebas-semana-3.md          # mapa de pruebas
-│   └── registro-pruebas-semana-3.md # errores, correcciones y bloqueos
+│   ├── DESPLIEGUE.md                # runbook del servidor
+│   ├── ENTORNO_WINDOWS.md           # Docker Desktop en Windows
+│   ├── CIERRE_MIGRACION_POSTGRESQL.md
+│   └── pruebas-semana-3.md          # mapa de pruebas
 ├── .env.example
+├── .gitattributes           # finales de línea LF para los contenedores
 ├── vitest.config.js
 ├── astro.config.mjs
 └── package.json
@@ -492,8 +513,9 @@ Cliente autorizado → API externa /api/v1/* (Bearer AI_API_KEY)
                   users · tasks · task_history · task_comments · task_embeddings
 ```
 
-SQLite se conserva como motor de rollback local mediante
-`DATABASE_ENGINE=sqlite`; no se modifica durante la importación.
+PostgreSQL 16 es el único motor: no existe rollback a otro sistema. La
+recuperación ante un fallo se hace restaurando una copia de `pg_dump`, según el
+procedimiento de `docs/DESPLIEGUE.md`.
 
 ### Arquitectura objetivo (microservicios)
 
@@ -518,7 +540,7 @@ API Gateway
 3. **El estado de conversación del bot vive en memoria** — un reinicio del servidor cancela cualquier flujo de creación de tarea a medio completar.
 4. **El webhook requiere URL pública** — en desarrollo local es necesario ngrok; si se cae, el bot deja de responder.
 5. **Cuota de z.ai limitada** — el saldo de la cuenta puede agotarse; al fallar, el sistema cae al fallback local u offline.
-6. **Cobertura de pruebas parcial** — las 88 pruebas ya cubren autenticación,
+6. **Cobertura de pruebas parcial** — las 103 pruebas ya cubren autenticación,
    recuperación, ownership, tareas, migraciones SQLite/PostgreSQL, cifrado de
    tokens, recordatorios, cron, webhook, avatares, códigos de vinculación de
    Telegram, proveedores de IA y rutas principales de Google simuladas; aún
@@ -527,9 +549,9 @@ API Gateway
 7. **RAG parcialmente conectado** — los embeddings existen en la base de datos, pero no todas las rutas del código los consumen todavía.
 8. **Sin métrica formal de calidad** — no existe aún un sistema de feedback que mida la utilidad real de las recomendaciones.
 9. **Sin logging estructurado** — las llamadas al modelo no registran modelo usado, tokens consumidos ni latencia.
-10. **Rate limiting en memoria** — el contador se reinicia con el servidor y no funcionaría con varias instancias desplegadas.
-11. **Migraciones heredadas aisladas** — `npm run db:init` usa únicamente migraciones nuevas, transaccionales y registradas. Si detecta una base heredada sin inventariar, se detiene sin modificarla; los scripts antiguos no forman parte del flujo normal.
-12. **Código muerto pendiente de limpieza** — los módulos de una migración a Supabase abandonada (`src/lib/supabase.ts`, `src/lib/supabase-helpers.ts`, `src/lib/database.types.ts`, `supabase/schema.sql`) siguen en el repositorio sin ser importados por ningún archivo.
+10. **Una sola instancia de web y una de bot** — los límites de intentos, los tokens de recuperación y las sesiones del bot ya se comparten vía PostgreSQL, pero el bot usa polling y no admite réplicas con el mismo token.
+11. **Migraciones versionadas** — `npm run db:pg:migrate` aplica las migraciones de `migrations/postgresql/`, generadas con Drizzle a partir de `src/db/postgres/schema.js`. Son idempotentes y llevan su propio registro.
+12. **Dashboard monolítico** — `src/pages/dashboard.astro` supera las 2.800 líneas. Su acceso a datos ya se extrajo a `src/lib/dashboardStats.js`, pero el CSS y el JavaScript de cliente siguen sin modularizar.
 13. **Google Calendar en desarrollo** — los archivos existen (`/api/google/`) pero la integración no está conectada al dashboard.
 14. **Recuperación limitada a preguntas de seguridad** — la interfaz ya funciona, evita revelar si una cuenta existe, limita intentos y usa tokens de un solo uso; para un servicio público convendría sustituirla por enlaces enviados por un canal verificado.
 15. **Sin despliegue público** — el proyecto se ejecuta localmente; Netcup,
@@ -553,14 +575,14 @@ API Gateway
 
 ### Semana 3 — Calidad y automatización
 
-- ✅ **Pruebas automatizadas** con Vitest: 88 pruebas sobre API, autenticación,
+- ✅ **Pruebas automatizadas** con Vitest: 103 pruebas sobre API, autenticación,
   tareas, seguridad, migraciones SQLite/PostgreSQL, cifrado, cron, webhook,
   recordatorios, proveedores de IA, Google simulado, avatares y vinculación
   temporal de Telegram.
 - ✅ **Pipeline CI/CD configurado** con GitHub Actions: PostgreSQL 16 efímero,
   migración, comprobación transaccional, cobertura y build, confirmado en una
   ejecución remota verde.
-- ✅ **Esquema SQLite reproducible** mediante `npm run db:init`, sin ejecutar migraciones heredadas.
+- ✅ **Esquema PostgreSQL reproducible** mediante `npm run db:pg:migrate`, versionado con Drizzle.
 - ⬜ **Logging estructurado** de cada llamada a z.ai: modelo usado, tokens consumidos, latencia y si usó fallback.
 - ⬜ **Sistema de feedback** (👍/👎) en las recomendaciones para medir la utilidad real del modelo.
 
@@ -574,7 +596,7 @@ API Gateway
 - Conectar Google Calendar al dashboard: importar eventos como tareas con fecha límite.
 - Ampliar la recuperación con un canal verificado antes de considerar un uso público.
 - Caché de recomendaciones: no volver a llamar a z.ai si la tarea no cambió.
-- Pruebas de los endpoints que dependen de base de datos (SQLite en memoria).
+- Pruebas de los endpoints que dependen de base de datos (PostgreSQL real).
 
 ### Semana 5 — Colaboración, limpieza y mejoras visuales
 
@@ -586,7 +608,7 @@ API Gateway
 
 ### Semana 6 — Despliegue y producción
 
-- ✅ Migrar de SQLite a PostgreSQL para soportar concurrencia local.
+- ✅ Migrar de SQLite a PostgreSQL para soportar concurrencia local (completado: motor único).
 - Ampliar el pipeline con despliegue automático.
 - Desplegar en un servicio como Railway, Render o un VPS con dominio HTTPS propio.
 - Versionamiento del prompt del sistema para rastrear cambios de calidad.
@@ -620,7 +642,7 @@ API Gateway
 | Capa | Tecnología |
 |---|---|
 | Framework web | Astro 7.x (SSR con adaptador Node) |
-| Base de datos | PostgreSQL 16; SQLite como rollback y pruebas aisladas |
+| Base de datos | PostgreSQL 16 (único motor, también en pruebas) |
 | IA generativa | z.ai — GLM (`glm-4.5-flash`) |
 | IA local (fallback) | Ollama + Llama 3.2 |
 | Bot | Telegram Bot API |

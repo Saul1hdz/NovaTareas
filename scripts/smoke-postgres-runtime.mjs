@@ -1,5 +1,6 @@
+import 'dotenv/config';
 import { randomBytes } from 'node:crypto';
-import { closeDb, getDb, isPostgres } from '../src/lib/db.js';
+import { closeDb, getDb } from '../src/lib/db.js';
 import { consumeTelegramLinkCode } from '../src/lib/telegramLink.js';
 
 const baseUrl = process.env.SMOKE_BASE_URL || 'http://127.0.0.1:4321';
@@ -7,10 +8,6 @@ const suffix = `${Date.now()}-${randomBytes(3).toString('hex')}`;
 const firstEmail = `qa.pg.a.${suffix}@example.test`;
 const secondEmail = `qa.pg.b.${suffix}@example.test`;
 const password = `Qa${randomBytes(8).toString('hex')}7`;
-
-if (!isPostgres) {
-  throw new Error('El smoke test exige DATABASE_ENGINE=postgres.');
-}
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -139,7 +136,7 @@ try {
     ],
   }, null, 2));
 } finally {
-  await getDb().prepare('DELETE FROM users WHERE email IN (?, ?)').run(
+  await getDb().prepare('DELETE FROM users WHERE email IN ($1, $2)').run(
     firstEmail,
     secondEmail,
   ).catch(() => {});

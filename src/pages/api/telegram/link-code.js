@@ -13,7 +13,7 @@ export const POST = async ({ request }) => {
   const user = await getUser(request);
   if (!user) return json({ error: 'No autenticado' }, 401);
 
-  const limit = consumeRateLimit(
+  const limit = await consumeRateLimit(
     'telegram-link-code',
     `${user.userId}:${getClientIp(request)}`,
     5,
@@ -28,15 +28,15 @@ export const POST = async ({ request }) => {
   }
 
   const code = createTelegramLinkCode();
-  const expiresAt = Date.now() + TELEGRAM_LINK_TTL_MS;
+  const expiresAt = new Date(Date.now() + TELEGRAM_LINK_TTL_MS);
   const db = getDb();
 
   await withTransaction(async (tx) => {
-    await tx.prepare('DELETE FROM telegram_link_codes WHERE user_id = ? OR expires_at < ?')
-      .run(user.userId, Date.now());
+    await tx.prepare('DELETE FROM telegram_link_codes WHERE user_id = $1 OR expires_at < NOW()')
+      .run(user.userId);
     await tx.prepare(`
       INSERT INTO telegram_link_codes (user_id, code_hash, expires_at)
-      VALUES (?, ?, ?)
+      VALUES ($1, $2, $3)
     `).run(user.userId, hashTelegramLinkCode(code), expiresAt);
   }, db);
 

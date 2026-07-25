@@ -1,7 +1,6 @@
 name: novatareas
 
 x-app-environment: &app-environment
-  DATABASE_ENGINE: postgres
   DATABASE_URL: postgresql://novatareas:devpassword@db:5432/novatareas
   PG_POOL_MAX: "10"
 
@@ -62,7 +61,8 @@ services:
         - CMD
         - node
         - -e
-        - fetch('http://127.0.0.1:4321/api/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+        # /health/ready consulta la base; /health responde 200 siempre.
+        - fetch('http://127.0.0.1:4321/api/v1/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
       interval: 10s
       timeout: 5s
       retries: 12

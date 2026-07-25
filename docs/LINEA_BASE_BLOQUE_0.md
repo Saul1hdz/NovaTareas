@@ -1,8 +1,9 @@
 # Línea base del Bloque 0
 
 > Documento histórico. Conserva las versiones y resultados observados al cerrar
-> el Bloque 0. El estado vigente después de la remediación está en
-> [`CIERRE_BLOQUE_1.md`](CIERRE_BLOQUE_1.md).
+> el Bloque 0. Los comandos de SQLite que menciona —`db:init`, `migrate`— **ya no
+> existen**: PostgreSQL es el único motor. El estado vigente está en
+> [`CIERRE_MIGRACION_POSTGRESQL.md`](CIERRE_MIGRACION_POSTGRESQL.md).
 
 Fecha: 2026-07-24
 

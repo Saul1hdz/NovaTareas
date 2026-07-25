@@ -29,20 +29,10 @@ async function sendMessage(chatId, text) {
   }
 }
 
-export const APP_TIME_ZONE = process.env.APP_TIME_ZONE || 'America/El_Salvador';
-
-export function dateInAppTimeZone(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: APP_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-  const values = Object.fromEntries(
-    parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value])
-  );
-  return `${values.year}-${values.month}-${values.day}`;
-}
+// La definición vive en appTime.js para que web, bot y scheduler compartan el
+// mismo criterio de día. Se reexporta para no romper a quien ya la importaba.
+import { APP_TIME_ZONE, dateInAppTimeZone } from './appTime.js';
+export { APP_TIME_ZONE, dateInAppTimeZone };
 
 // Formatea "YYYY-MM-DD" o timestamp en texto legible
 function formatDate(due_date) {
@@ -205,11 +195,11 @@ export async function notifyOverdueTasks(db) {
     FROM tasks t
     JOIN users u ON t.user_id = u.id
     WHERE u.telegram_chat_id IS NOT NULL
-      AND t.completed = 0
-      AND t.archived  = 0
-      AND t.overdue_notified = 0
+      AND NOT t.completed
+      AND NOT t.archived
+      AND NOT t.overdue_notified
       AND t.due_date IS NOT NULL
-      AND t.due_date < ?
+      AND t.due_date < $1
   `).all(todayStr);
 
   let sent = 0;
@@ -226,7 +216,7 @@ export async function notifyOverdueTasks(db) {
         `⚠️ Complétala o reagéndala desde el dashboard.`
       );
       if (delivered) {
-        await db.prepare('UPDATE tasks SET overdue_notified = 1 WHERE id = ?').run(row.task_id);
+        await db.prepare('UPDATE tasks SET overdue_notified = TRUE WHERE id = $1').run(row.task_id);
         sent += 1;
       }
     } catch (err) {

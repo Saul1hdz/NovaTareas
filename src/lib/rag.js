@@ -1,4 +1,4 @@
-import { getDb, isPostgres } from './db.js';
+import { getDb } from './db.js';
 import { safeErrorSummary } from './security.js';
 
 const ZAI_API_KEY      = process.env.ZAI_API_KEY?.trim();
@@ -135,28 +135,15 @@ function buildTaskText(task) {
  * Si la tarea ya tenía embedding lo actualiza.
  */
 async function saveEmbedding(db, taskId, userId, vector, model) {
-  const dimension = vector.length;
-  const columns = isPostgres
-    ? '(task_id, user_id, vector, model, dimension, updated_at)'
-    : '(task_id, user_id, vector, model, updated_at)';
-  const values = isPostgres
-    ? 'VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)'
-    : 'VALUES (?, ?, ?, ?, unixepoch())';
-  const updateDimension = isPostgres ? ', dimension = excluded.dimension' : '';
-  const updateTimestamp = isPostgres ? 'CURRENT_TIMESTAMP' : 'unixepoch()';
-  const params = isPostgres
-    ? [taskId, userId, vector, model, dimension]
-    : [taskId, userId, JSON.stringify(vector), model];
-
   await db.prepare(`
-    INSERT INTO task_embeddings ${columns}
-    ${values}
+    INSERT INTO task_embeddings (task_id, user_id, vector, model, dimension, updated_at)
+    VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
     ON CONFLICT(task_id) DO UPDATE SET
       vector     = excluded.vector,
       model      = excluded.model,
-      updated_at = ${updateTimestamp}
-      ${updateDimension}
-  `).run(...params);
+      dimension  = excluded.dimension,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(taskId, userId, JSON.stringify(vector), model, vector.length);
 }
 
 /**
@@ -172,8 +159,8 @@ export async function indexArchivedTasks(userId) {
     SELECT t.*
     FROM tasks t
     LEFT JOIN task_embeddings e ON e.task_id = t.id
-    WHERE t.user_id   = ?
-      AND t.archived  = 1
+    WHERE t.user_id   = $1
+      AND t.archived
       AND e.task_id   IS NULL
       AND (
         t.what_worked  IS NOT NULL OR
@@ -226,8 +213,8 @@ export async function findSimilarTasks(userId, queryText, topK = TOP_K) {
            t.due_date, t.status
     FROM task_embeddings e
     JOIN tasks t ON t.id = e.task_id
-    WHERE e.user_id = ?
-      AND t.archived = 1
+    WHERE e.user_id = $1
+      AND t.archived
     ORDER BY e.updated_at DESC
     LIMIT 500
   `).all(userId);
@@ -267,7 +254,7 @@ async function fallbackKeywordSearch(db, userId, queryText, topK) {
     SELECT title, description, priority, label,
            what_worked, what_failed, observations, due_date, status
     FROM tasks
-    WHERE user_id = ? AND archived = 1
+    WHERE user_id = $1 AND archived
       AND (what_worked IS NOT NULL OR what_failed IS NOT NULL OR observations IS NOT NULL)
     ORDER BY id DESC
     LIMIT 100
@@ -340,7 +327,7 @@ export async function getRagContext(userId, task) {
 
 export async function reindexTask(taskId, userId) {
   const db   = getDb();
-  const task = await db.prepare('SELECT * FROM tasks WHERE id=? AND user_id=?').get(taskId, userId);
+  const task = await db.prepare('SELECT * FROM tasks WHERE id=$1 AND user_id=$2').get(taskId, userId);
   if (!task || !task.archived) return;
 
   const text   = buildTaskText(task);

@@ -15,8 +15,9 @@ usuarios y datos ficticios. No es un lanzamiento comercial ni público.
 
 ## Reglas de trabajo
 
-- Ejecutar únicamente `npm run db:init` o el `npm run migrate` actual. El
-  migrador seguro no llama a los scripts heredados y rechaza bases no inventariadas.
+- Aplicar el esquema únicamente con `npm run db:pg:migrate`. Las migraciones
+  se generan con `npm run db:pg:generate` tras editar `src/db/postgres/schema.js`,
+  son versionadas e idempotentes y llevan su propio registro.
 - No trabajar directamente en `main`.
 - No hacer commit, push, merge o despliegue sin revisar antes el diff y las
   verificaciones correspondientes.
@@ -258,22 +259,37 @@ Prioridad: alta. Solo aplica si existe información que conservar.
 
 Prioridad: media-alta.
 
-- [ ] Unificar proveedor, modelo, prompts, timeouts y fallbacks de IA.
-- [ ] Registrar fuente de cada recomendación: z.ai, Ollama, historial o reglas.
-- [ ] Separar recomendaciones de IA de las subtareas reales.
+- [x] Unificar proveedor, modelo, prompts, timeouts y fallbacks de IA.
+      `src/lib/ai/providers.js` sustituye las cuatro copias que existían.
+- [x] Registrar fuente de cada recomendación: z.ai, Ollama, historial o reglas.
+      Se guarda en `task_recommendations.source`, junto al modelo y la versión
+      del prompt.
+- [x] Separar recomendaciones de IA de las subtareas reales.
+      El endpoint borraba las subtareas del usuario en cada consulta; ahora usa
+      su propia tabla y el listado devuelve ambos campos por separado.
 - [ ] Dividir gradualmente `dashboard.astro` en módulos y componentes.
+      Parcial: el acceso a datos se extrajo a `src/lib/dashboardStats.js`, con
+      pruebas. El CSS y el JavaScript de cliente siguen en el archivo.
 - [ ] Separar lógica de presentación, llamadas API y estado del calendario.
-- [ ] Retirar módulos muertos de la migración abandonada a Supabase.
-- [ ] Eliminar configuración y nombres heredados de Gemini que ya no apliquen.
+- [x] Retirar módulos muertos de la migración abandonada a Supabase.
+- [x] Eliminar configuración y nombres heredados de Gemini que ya no apliquen.
+      Se borró el directorio `tools/` completo.
 - [x] Corregir discrepancias del modelo z.ai predeterminado.
-- [ ] Definir claramente los procesos web, bot y scheduler.
-- [ ] Persistir o manejar de forma explícita el estado conversacional del bot.
+- [x] Definir claramente los procesos web, bot y scheduler.
+      Documentado en `docs/DESPLIEGUE.md`: bot por polling en réplica única y
+      recordatorios por cron contra `/api/cron/reminders`.
+- [x] Persistir o manejar de forma explícita el estado conversacional del bot.
+      Tabla `telegram_sessions` con caducidad de 15 minutos.
 
 ### Puerta de salida
 
-- [ ] Una regla de negocio se implementa una sola vez.
-- [ ] Web, API y Telegram producen comportamientos coherentes.
+- [x] Una regla de negocio se implementa una sola vez.
+      La cascada de IA, el criterio de fecha y los límites de intentos tienen
+      cada uno una única definición.
+- [x] Web, API y Telegram producen comportamientos coherentes.
+      Comparten motor de IA, zona horaria y programación de recordatorios.
 - [ ] El dashboard puede modificarse sin tocar un archivo monolítico.
+      Pendiente: falta extraer estilos y JavaScript de cliente.
 
 ---
 

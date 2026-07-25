@@ -294,6 +294,52 @@ export const telegramLinkCodes = pgTable('telegram_link_codes', {
   ),
 ]);
 
+// ─── Estado compartido entre procesos ────────────────────────────────────────
+//
+// Las tres tablas siguientes sustituyen a estructuras que vivían en memoria.
+// Mientras la aplicación fue un único proceso local eso no se notaba; en un
+// servidor significa que un reinicio o un segundo contenedor rompían la
+// recuperación de contraseña, reiniciaban los límites de uso y perdían las
+// conversaciones del bot a medias.
+
+export const rateLimitHits = pgTable('rate_limit_hits', {
+  id: identity(),
+  scope: varchar('scope', { length: 60 }).notNull(),
+  subject: varchar('subject', { length: 200 }).notNull(),
+  createdAt: auditTimestamp('created_at'),
+}, (table) => [
+  index('rate_limit_hits_lookup_idx').on(table.scope, table.subject, table.createdAt),
+]);
+
+export const recoveryTokens = pgTable('recovery_tokens', {
+  id: identity(),
+  tokenHash: varchar('token_hash', { length: 64 }).notNull(),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: auditTimestamp('created_at'),
+}, (table) => [
+  uniqueIndex('recovery_tokens_hash_unique').on(table.tokenHash),
+  index('recovery_tokens_expiry_idx').on(table.expiresAt),
+  check(
+    'recovery_tokens_hash_hex',
+    sql`${table.tokenHash} ~ '^[0-9a-f]{64}$'`,
+  ),
+]);
+
+export const telegramSessions = pgTable('telegram_sessions', {
+  chatId: varchar('chat_id', { length: 64 }).primaryKey(),
+  userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  step: varchar('step', { length: 40 }).notNull(),
+  data: jsonb('data').notNull().default(sql`'{}'::jsonb`),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  updatedAt: auditTimestamp('updated_at'),
+}, (table) => [
+  index('telegram_sessions_expiry_idx').on(table.expiresAt),
+]);
+
 export const postgresSchema = {
   users,
   securityQuestions,
@@ -305,4 +351,7 @@ export const postgresSchema = {
   taskEmbeddings,
   taskRecommendations,
   telegramLinkCodes,
+  rateLimitHits,
+  recoveryTokens,
+  telegramSessions,
 };

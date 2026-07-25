@@ -14,9 +14,10 @@ externos autorizados. Es independiente de la sesión del dashboard, pero
 
 | Método | Ruta | Propósito |
 |---|---|---|
-| GET  | `/api/v1/health`    | Verificar que el servicio está activo. |
-| GET  | `/api/v1/metadata`  | Informar versión, modelo, propósito y contrato. |
-| POST | `/api/v1/recommend` | Ejecutar la capacidad inteligente principal. |
+| GET  | `/api/v1/health`       | Verificar que el servicio está activo. |
+| GET  | `/api/v1/health/ready` | Comprobar que la base de datos responde. |
+| GET  | `/api/v1/metadata`     | Informar versión, modelo, propósito y contrato. |
+| POST | `/api/v1/recommend`    | Ejecutar la capacidad inteligente principal. |
 
 ---
 
@@ -40,7 +41,41 @@ Verifica el estado del servicio y de sus dependencias.
 }
 ```
 
-> El estado es `ok` incluso si z.ai y Ollama están caídos, porque el servicio siempre puede responder con reglas locales como último recurso.
+> El estado es `ok` incluso si z.ai y Ollama están caídos, porque el servicio siempre puede responder con reglas locales como último recurso. **Por eso no sirve como sonda de disponibilidad**: para eso está `/api/v1/health/ready`.
+
+---
+
+## 1b. `GET /api/v1/health/ready`
+
+Sonda de disponibilidad para orquestadores, proxies inversos y healthchecks de
+contenedor. A diferencia de `/api/v1/health`, consulta la base de datos, que es
+la dependencia sin la cual la aplicación no puede atender ninguna petición.
+
+No requiere autenticación.
+
+**Respuesta cuando la base responde — HTTP 200**
+
+```json
+{
+  "status": "ok",
+  "checks": { "database": true },
+  "latency_ms": 1,
+  "timestamp": "2026-07-25T20:14:05.089Z"
+}
+```
+
+**Respuesta cuando la base no responde — HTTP 503**
+
+```json
+{
+  "status": "unavailable",
+  "checks": { "database": false },
+  "timestamp": "2026-07-25T20:14:28.907Z"
+}
+```
+
+Es la ruta que usan el `HEALTHCHECK` del Dockerfile, los healthchecks de ambos
+ficheros compose y la comprobación de la imagen en integración continua.
 
 ---
 

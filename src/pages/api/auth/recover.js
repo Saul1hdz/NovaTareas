@@ -27,8 +27,35 @@ const MAX_FAILED_ANSWERS = 5;
 const LOCK_WINDOW_MS = 15 * 60 * 1000;
 const TOKEN_TTL_MS = 15 * 60 * 1000;
 const DUMMY_ANSWER_HASH = '$2a$10$tlsd66MMP/MEMBxqiZ38OuDtrpEKn/muoJxToPm4z1OiCzsWvDkYC';
-const recoveryTokens = new Map();
 const fakeRecoveryAttempts = new Map();
+
+// Los tokens se guardan hasheados en PostgreSQL, no en memoria del proceso.
+// Antes, cualquier reinicio —incluido un despliegue— invalidaba una
+// recuperación en curso, y con más de una instancia fallaba de forma aleatoria.
+// Guardar el hash evita además que un volcado de la base permita usarlos.
+function hashRecoveryToken(token) {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+async function createRecoveryToken(db, userId) {
+  const token = randomBytes(32).toString('base64url');
+  await db.prepare(`
+    INSERT INTO recovery_tokens (token_hash, user_id, expires_at)
+    VALUES ($1, $2, NOW() + ($3::int * INTERVAL '1 millisecond'))
+  `).run(hashRecoveryToken(token), userId, TOKEN_TTL_MS);
+  return token;
+}
+
+/** Consume el token si es válido. Devuelve el usuario o null. Es de un solo uso. */
+async function consumeRecoveryToken(db, token) {
+  const row = await db.prepare(`
+    UPDATE recovery_tokens
+    SET used_at = NOW()
+    WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW()
+    RETURNING user_id
+  `).get(hashRecoveryToken(token));
+  return row?.user_id ?? null;
+}
 
 export const POST = async ({ request }) => {
   let body;
@@ -43,11 +70,11 @@ export const POST = async ({ request }) => {
 
   const { action, email, answer, question_index, token, new_password } = body;
   const ip = getClientIp(request);
-  const ipLimit = consumeRateLimit('recovery-ip', ip, 40, LOCK_WINDOW_MS);
+  const ipLimit = await consumeRateLimit('recovery-ip', ip, 40, LOCK_WINDOW_MS);
   if (!ipLimit.allowed) return rateLimitResponse(ipLimit.retryAfterSeconds);
 
-  removeExpiredTokens();
   const db = getDb();
+  await removeExpiredTokens(db);
 
   if (action === 'get_question') {
     if (typeof email !== 'string' || !email || email.length > 254) {
@@ -55,13 +82,13 @@ export const POST = async ({ request }) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const emailLimit = consumeRateLimit('recovery-email', normalizedEmail, 15, LOCK_WINDOW_MS);
+    const emailLimit = await consumeRateLimit('recovery-email', normalizedEmail, 15, LOCK_WINDOW_MS);
     if (!emailLimit.allowed) return rateLimitResponse(emailLimit.retryAfterSeconds);
 
-    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+    const user = await db.prepare('SELECT id FROM users WHERE email = $1').get(normalizedEmail);
 
     const security = user ? await db.prepare(
-      'SELECT * FROM security_questions WHERE user_id = ?'
+      'SELECT * FROM security_questions WHERE user_id = $1'
     ).get(user.id) : null;
     if (!user || !security) {
       const fake = getFakeRecoveryState(normalizedEmail);
@@ -89,13 +116,13 @@ export const POST = async ({ request }) => {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    const emailLimit = consumeRateLimit('recovery-answer', normalizedEmail, 10, LOCK_WINDOW_MS);
+    const emailLimit = await consumeRateLimit('recovery-answer', normalizedEmail, 10, LOCK_WINDOW_MS);
     if (!emailLimit.allowed) return rateLimitResponse(emailLimit.retryAfterSeconds);
 
-    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+    const user = await db.prepare('SELECT id FROM users WHERE email = $1').get(normalizedEmail);
 
     const security = user ? await db.prepare(
-      'SELECT * FROM security_questions WHERE user_id = ?'
+      'SELECT * FROM security_questions WHERE user_id = $1'
     ).get(user.id) : null;
     if (!user || !security) {
       await bcrypt.compare(answer.toLowerCase().trim(), DUMMY_ANSWER_HASH);
@@ -118,12 +145,11 @@ export const POST = async ({ request }) => {
 
     if (!isCorrect) {
       const nextAttempts = lock.attempts + 1;
-      const attemptedAt = Date.now();
       await db.prepare(`
         UPDATE security_questions
-        SET recovery_attempts = ?, last_attempt_at = ?
-        WHERE user_id = ?
-      `).run(nextAttempts, attemptedAt, user.id);
+        SET recovery_attempts = $1, last_attempt_at = NOW()
+        WHERE user_id = $2
+      `).run(nextAttempts, user.id);
 
       if (nextAttempts >= MAX_FAILED_ANSWERS) {
         return rateLimitResponse(Math.ceil(LOCK_WINDOW_MS / 1000));
@@ -139,18 +165,14 @@ export const POST = async ({ request }) => {
       }, 200);
     }
 
-    const recoveryToken = randomBytes(32).toString('base64url');
-    recoveryTokens.set(recoveryToken, {
-      userId: user.id,
-      expires: Date.now() + TOKEN_TTL_MS,
-    });
+    const recoveryToken = await createRecoveryToken(db, user.id);
 
     await db.prepare(`
       UPDATE security_questions
       SET recovery_attempts = 0, last_attempt_at = NULL
-      WHERE user_id = ?
+      WHERE user_id = $1
     `).run(user.id);
-    resetRateLimit('recovery-answer', normalizedEmail);
+    await resetRateLimit('recovery-answer', normalizedEmail);
 
     return json({ ok: true, recovery_token: recoveryToken }, 200);
   }
@@ -161,9 +183,8 @@ export const POST = async ({ request }) => {
       return json({ error: 'Token y nueva contraseña requeridos.' }, 400);
     }
 
-    const session = recoveryTokens.get(token);
-    recoveryTokens.delete(token);
-    if (!session || session.expires < Date.now()) {
+    const recoveredUserId = await consumeRecoveryToken(db, token);
+    if (!recoveredUserId) {
       return json({ error: 'El enlace de recuperación expiró. Intenta de nuevo.' }, 400);
     }
 
@@ -174,9 +195,9 @@ export const POST = async ({ request }) => {
     const hash = await bcrypt.hash(new_password, 10);
     await db.prepare(`
       UPDATE users
-      SET password_hash = ?, session_version = session_version + 1
-      WHERE id = ?
-    `).run(hash, session.userId);
+      SET password_hash = $1, session_version = session_version + 1
+      WHERE id = $2
+    `).run(hash, recoveredUserId);
 
     return json({ ok: true, message: 'Contraseña restablecida exitosamente.' }, 200);
   }
@@ -260,7 +281,7 @@ async function refreshOrReadLock(db, security) {
     await db.prepare(`
       UPDATE security_questions
       SET recovery_attempts = 0, last_attempt_at = NULL
-      WHERE user_id = ?
+      WHERE user_id = $1
     `).run(security.user_id);
     return { locked: false, attempts: 0 };
   }
@@ -278,11 +299,18 @@ async function verifyStoredAnswer(candidate, stored) {
   return safeEqualStrings(candidate, stored.toLowerCase().trim());
 }
 
-function removeExpiredTokens() {
+/**
+ * Los tokens caducados se descartan por su columna `expires_at`, así que basta
+ * con borrarlos de vez en cuando para que la tabla no crezca. `fakeRecoveryAttempts`
+ * sigue en memoria a propósito: solo sirve para que las cuentas inexistentes
+ * respondan igual que las reales, y perderlo en un reinicio no afecta a nadie.
+ */
+async function removeExpiredTokens(db) {
+  await db.prepare(
+    "DELETE FROM recovery_tokens WHERE expires_at < NOW() - INTERVAL '1 day'"
+  ).run();
+
   const now = Date.now();
-  for (const [token, session] of recoveryTokens) {
-    if (session.expires < now) recoveryTokens.delete(token);
-  }
   for (const [email, state] of fakeRecoveryAttempts) {
     if (now - state.lastAttemptAt >= LOCK_WINDOW_MS) {
       fakeRecoveryAttempts.delete(email);

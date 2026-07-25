@@ -51,16 +51,18 @@ function authenticatedRequest(path) {
 
 beforeAll(async () => {
   const db = getDb();
-  userId = Number(db.prepare(`
+  const user = await db.prepare(`
     INSERT INTO users (username, full_name, email, password_hash, telefono)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING id
+  `).get(
     'google-ficticio',
     'Google Ficticio',
     'google-ficticio@example.test',
     '$2b$10$hash-ficticio',
     '+50370008888',
-  ).lastInsertRowid);
+  );
+  userId = user.id;
   const token = await createToken(userId, 'google-ficticio');
   cookie = `novatareas_token=${token}`;
 });
@@ -85,14 +87,14 @@ describe('Google Calendar simulado', { sequential: true }, () => {
 
   it('descifra credenciales y normaliza eventos de día completo', async () => {
     const db = getDb();
-    db.prepare(`
+    await db.prepare(`
       UPDATE users
-      SET google_access_token = ?, google_refresh_token = ?, google_token_expiry = ?
-      WHERE id = ?
+      SET google_access_token = $1, google_refresh_token = $2, google_token_expiry = $3
+      WHERE id = $4
     `).run(
       encryptToken('access-ficticio'),
       encryptToken('refresh-ficticio'),
-      String(Date.now() + 60 * 60 * 1000),
+      new Date(Date.now() + 60 * 60 * 1000),
       userId,
     );
     googleMocks.listEvents.mockResolvedValue({
@@ -128,11 +130,11 @@ describe('Google Calendar simulado', { sequential: true }, () => {
 
   it('renueva y vuelve a cifrar un access token vencido', async () => {
     const db = getDb();
-    db.prepare(`
+    await db.prepare(`
       UPDATE users
-      SET google_access_token = NULL, google_refresh_token = ?, google_token_expiry = ?
-      WHERE id = ?
-    `).run(encryptToken('refresh-renovable'), String(Date.now() - 1000), userId);
+      SET google_access_token = NULL, google_refresh_token = $1, google_token_expiry = $2
+      WHERE id = $3
+    `).run(encryptToken('refresh-renovable'), new Date(Date.now() - 1000), userId);
     googleMocks.refreshToken.mockResolvedValue({
       credentials: {
         access_token: 'access-renovado',
@@ -146,9 +148,9 @@ describe('Google Calendar simulado', { sequential: true }, () => {
     });
     expect(response.status).toBe(200);
     expect(googleMocks.refreshToken).toHaveBeenCalledWith('refresh-renovable');
-    const stored = db.prepare(
-      'SELECT google_access_token FROM users WHERE id = ?'
-    ).get(userId).google_access_token;
+    const stored = (await db.prepare(
+      'SELECT google_access_token FROM users WHERE id = $1'
+    ).get(userId)).google_access_token;
     expect(isEncryptedToken(stored)).toBe(true);
     expect(stored).not.toContain('access-renovado');
   });

@@ -47,7 +47,7 @@ export const GET = async ({ request }) => {
 
   const db = getDb();
   const existingUser = await db.prepare(
-    'SELECT google_refresh_token FROM users WHERE id = ?'
+    'SELECT google_refresh_token FROM users WHERE id = $1'
   ).get(user.userId);
 
   try {
@@ -57,14 +57,16 @@ export const GET = async ({ request }) => {
       : null;
     const refreshToken = tokens.refresh_token || existingRefreshToken;
 
+    // google_token_expiry es TIMESTAMPTZ: se guarda como instante, no como el
+    // epoch en texto que usaba SQLite.
     await db.prepare(`
       UPDATE users
-      SET google_access_token = ?, google_refresh_token = ?, google_token_expiry = ?
-      WHERE id = ?
+      SET google_access_token = $1, google_refresh_token = $2, google_token_expiry = $3
+      WHERE id = $4
     `).run(
       encryptToken(tokens.access_token),
       encryptToken(refreshToken),
-      tokens.expiry_date ? String(tokens.expiry_date) : null,
+      tokens.expiry_date ? new Date(tokens.expiry_date) : null,
       user.userId
     );
 

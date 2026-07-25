@@ -1,0 +1,23 @@
+# Todo el texto se guarda con finales de línea LF en el repositorio.
+#
+# El equipo trabaja en Windows pero el código se ejecuta dentro de contenedores
+# Linux. Sin esta regla, Git convierte a CRLF al clonar y cualquier script de
+# shell, entrypoint o archivo de configuración que se ejecute en el contenedor
+# falla con errores difíciles de leer ("exec format error", ": not found").
+* text=auto eol=lf
+
+# Archivos que deben conservar LF sin excepción.
+*.sh   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+Dockerfile text eol=lf
+.env.example text eol=lf
+
+# Binarios: Git no debe tocarlos.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.webp binary
+*.ico  binary
+*.pdf  binary
+*.db   binary

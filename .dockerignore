@@ -11,8 +11,14 @@ db
 backups
 tmp
 output
-*.db
-*.db-shm
-*.db-wal
 *.log
 npm-debug.log*
+
+# Nada de esto interviene en el build ni en el runtime: solo engorda el
+# contexto de construcción y la imagen final.
+tests
+docs
+data
+.playwright-cli
+*.md
+!README.md

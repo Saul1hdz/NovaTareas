@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
@@ -81,11 +82,21 @@ describe('esquema PostgreSQL objetivo', () => {
       'task_embeddings',
       'task_recommendations',
       'telegram_link_codes',
+      'rate_limit_hits',
+      'recovery_tokens',
+      'telegram_sessions',
     ]));
+
+    // Lo que se comprueba es que migrar dos veces no duplique el registro, no
+    // que exista un número concreto de migraciones: fijarlo obligaba a editar
+    // esta prueba cada vez que se añadía una.
+    const esperadas = JSON.parse(
+      readFileSync('./migrations/postgresql/meta/_journal.json', 'utf8')
+    ).entries.length;
     const migrations = await client.query(
       'SELECT COUNT(*)::int AS count FROM drizzle.__drizzle_migrations'
     );
-    expect(migrations.rows[0].count).toBe(1);
+    expect(migrations.rows[0].count).toBe(esperadas);
   });
 
   it('usa DATE para vencimiento y TIMESTAMPTZ para recordatorio', async () => {

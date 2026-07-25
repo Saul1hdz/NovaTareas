@@ -1,5 +1,12 @@
 # Cierre del Bloque 2 — Esquema reproducible y PostgreSQL
 
+> **Documento histórico.** Describe el estado del proyecto en el momento de
+> cerrar este bloque. Los comandos de SQLite que aparecen abajo —`db:init`,
+> `db:pg:import`, `DATABASE_ENGINE=sqlite`, `compose.postgres.yml`— **ya no
+> existen**: PostgreSQL es el único motor. El procedimiento vigente de
+> recuperación está en [`DESPLIEGUE.md`](DESPLIEGUE.md) y el detalle de la
+> migración en [`CIERRE_MIGRACION_POSTGRESQL.md`](CIERRE_MIGRACION_POSTGRESQL.md).
+
 Fecha: 2026-07-24
 
 Rama: `testing`

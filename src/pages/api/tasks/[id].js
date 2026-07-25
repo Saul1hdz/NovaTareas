@@ -3,6 +3,8 @@ import { getUser } from '../../../lib/auth.js';
 import { notifyTaskCompleted, notifyTaskUrgent } from '../../../lib/telegramNotify.js';
 import { validateTaskInput } from '../../../lib/taskValidation.js';
 import { safeErrorSummary } from '../../../lib/security.js';
+import { parseId } from '../../../lib/routeParams.js';
+import { defaultReminderFor } from '../../../lib/appTime.js';
 
 // Campos que se rastrean en el historial con etiquetas legibles
 const TRACKED_FIELDS = {
@@ -21,7 +23,7 @@ const TRACKED_FIELDS = {
 async function recordHistory(db, taskId, userId, oldTask, newValues) {
   const stmt = db.prepare(
     `INSERT INTO task_history (task_id, user_id, field, old_value, new_value)
-     VALUES (?, ?, ?, ?, ?)`
+     VALUES ($1, $2, $3, $4, $5)`
   );
 
   for (const [field, label] of Object.entries(TRACKED_FIELDS)) {
@@ -39,8 +41,11 @@ export const PATCH = async ({ request, params }) => {
   const user = await getUser(request);
   if (!user) return json({ error: 'No autenticado' }, 401);
 
+  const taskId = parseId(params.id);
+  if (taskId === null) return json({ error: 'No encontrado' }, 404);
+
   const db   = getDb();
-  const task = await db.prepare('SELECT * FROM tasks WHERE id=? AND user_id=?').get(params.id, user.userId);
+  const task = await db.prepare('SELECT * FROM tasks WHERE id=$1 AND user_id=$2').get(taskId, user.userId);
   if (!task) return json({ error: 'No encontrado' }, 404);
 
   let rawBody;
@@ -54,49 +59,72 @@ export const PATCH = async ({ request, params }) => {
   const body = validation.values;
   const fields = [];
   const vals   = [];
+  // Cada asignación numera su parámetro por la posición real que ocupa. El
+  // UPDATE se arma con hasta catorce campos opcionales y el id al final, así
+  // que un contador manual desalinearía los valores en silencio.
+  const set = (column, value) => {
+    vals.push(value);
+    fields.push(`${column}=$${vals.length}`);
+  };
 
   // ── Campos editables ────────────────────────────────────────────────────────
-  if (body.title       !== undefined) { fields.push('title=?');       vals.push(body.title); }
-  if (body.description !== undefined) { fields.push('description=?'); vals.push(body.description); }
-  if (body.priority    !== undefined) { fields.push('priority=?');    vals.push(body.priority); }
-  if (body.label       !== undefined) { fields.push('label=?');       vals.push(body.label); }
-  if (body.due_date    !== undefined) { fields.push('due_date=?');    vals.push(body.due_date || null); }
+  if (body.title       !== undefined) set('title', body.title);
+  if (body.description !== undefined) set('description', body.description);
+  if (body.priority    !== undefined) set('priority', body.priority);
+  if (body.label       !== undefined) set('label', body.label);
+  if (body.due_date !== undefined) {
+    set('due_date', body.due_date || null);
+    // Al mover la fecha, el aviso se reprograma y vuelven a habilitarse ambas
+    // notificaciones. Antes solo se reiniciaba `reminder_sent`, así que una
+    // tarea vencida y reagendada nunca volvía a avisar de su vencimiento.
+    if (body.reminder_at === undefined) {
+      set('reminder_at', defaultReminderFor(body.due_date));
+    }
+    set('reminder_sent', false);
+    set('overdue_notified', false);
+  }
+
+  if (body.reminder_at !== undefined) {
+    set('reminder_at', body.reminder_at);
+    set('reminder_sent', false);
+  }
 
   // ── Estado ──────────────────────────────────────────────────────────────────
   if (body.status !== undefined) {
-    fields.push('status=?'); vals.push(body.status);
+    set('status', body.status);
     if (body.status === 'completada') {
-      fields.push('completed=?');      vals.push(1);
-      fields.push('completed_at=?');   vals.push(new Date().toISOString());
+      set('completed', true);
+      set('completed_at', new Date());
     }
     // Reabrir tarea: limpiar campos de completado/archivado
     if (body.status === 'pendiente' || body.status === 'en progreso') {
-      fields.push('completed=?');    vals.push(0);
-      fields.push('completed_at=?'); vals.push(null);
-      fields.push('reopened_at=?');  vals.push(new Date().toISOString());
+      set('completed', false);
+      set('completed_at', null);
+      set('reopened_at', new Date());
     }
   }
 
   // ── Archivar / Desarchivar ──────────────────────────────────────────────────
   if (body.archived !== undefined) {
-    fields.push('archived=?'); vals.push(body.archived ? 1 : 0);
+    set('archived', Boolean(body.archived));
     if (body.archived) {
-      fields.push('archived_at=?'); vals.push(new Date().toISOString());
+      set('archived_at', new Date());
     } else {
       // Reabrir: limpiar estado de archivado y restaurar como pendiente
-      fields.push('archived_at=?');  vals.push(null);
-      fields.push('reopened_at=?');  vals.push(new Date().toISOString());
-      fields.push('status=?');       vals.push('pendiente');
-      fields.push('completed=?');    vals.push(0);
-      fields.push('completed_at=?'); vals.push(null);
-      fields.push('reminder_sent=?');vals.push(0);  // permitir nuevos recordatorios
+      set('archived_at', null);
+      set('reopened_at', new Date());
+      set('status', 'pendiente');
+      set('completed', false);
+      set('completed_at', null);
+      set('reminder_sent', false);   // permitir nuevos recordatorios
+      set('overdue_notified', false); // y volver a avisar si vuelve a vencer
     }
   }
 
   // ── Observaciones al archivar ───────────────────────────────────────────────
-  if (body.observations !== undefined) { fields.push('observations=?'); vals.push(body.observations); }
-  if (body.what_worked  !== undefined) { fields.push('what_worked=?');  vals.push(body.what_worked); }
-  if (body.what_failed  !== undefined) { fields.push('what_failed=?');  vals.push(body.what_failed); }
+  if (body.observations !== undefined) set('observations', body.observations);
+  if (body.what_worked  !== undefined) set('what_worked', body.what_worked);
+  if (body.what_failed  !== undefined) set('what_failed', body.what_failed);
 
   // ── Aplicar cambios ─────────────────────────────────────────────────────────
   // ── Registrar historial de cambios ──────────────────────────────────────────
@@ -108,31 +136,35 @@ export const PATCH = async ({ request, params }) => {
   if (body.label       !== undefined) trackedChanges.label       = body.label;
   if (body.due_date    !== undefined) trackedChanges.due_date    = body.due_date || null;
   if (body.status      !== undefined) trackedChanges.status      = body.status;
-  if (body.archived    !== undefined) trackedChanges.archived    = body.archived ? 1 : 0;
+  // Booleano, no 1/0: la columna ya es boolean y `archived` se compara contra
+  // el valor almacenado. Mezclar ambas representaciones registraría un cambio
+  // de historial falso en cada guardado.
+  if (body.archived    !== undefined) trackedChanges.archived    = Boolean(body.archived);
 
   if (fields.length) {
     await withTransaction(async (tx) => {
-      await tx.prepare(`UPDATE tasks SET ${fields.join(',')} WHERE id=?`)
-        .run(...vals, params.id);
+      vals.push(taskId);
+      await tx.prepare(`UPDATE tasks SET ${fields.join(',')} WHERE id=$${vals.length}`)
+        .run(...vals);
       if (Object.keys(trackedChanges).length > 0) {
-        await recordHistory(tx, params.id, user.userId, task, trackedChanges);
+        await recordHistory(tx, taskId, user.userId, task, trackedChanges);
       }
     }, db);
   }
 
   // ── Notificaciones Telegram ─────────────────────────────────────────────────
-  const dbUser = await db.prepare('SELECT telegram_chat_id FROM users WHERE id=?').get(user.userId);
+  const dbUser = await db.prepare('SELECT telegram_chat_id FROM users WHERE id=$1').get(user.userId);
   const chatId = dbUser?.telegram_chat_id;
 
   if (chatId) {
     if (body.status === 'completada' && task.status !== 'completada') {
-      const updatedTask = await db.prepare('SELECT * FROM tasks WHERE id=?').get(params.id);
+      const updatedTask = await db.prepare('SELECT * FROM tasks WHERE id=$1').get(taskId);
       notifyTaskCompleted(chatId, updatedTask).catch(err =>
         console.error('[tasks/[id].js] notifyTaskCompleted:', safeErrorSummary(err))
       );
     }
     if (body.priority === 'urgente' && task.priority !== 'urgente') {
-      const updatedTask = await db.prepare('SELECT * FROM tasks WHERE id=?').get(params.id);
+      const updatedTask = await db.prepare('SELECT * FROM tasks WHERE id=$1').get(taskId);
       notifyTaskUrgent(chatId, updatedTask).catch(err =>
         console.error('[tasks/[id].js] notifyTaskUrgent:', safeErrorSummary(err))
       );
@@ -146,10 +178,13 @@ export const DELETE = async ({ request, params }) => {
   const user = await getUser(request);
   if (!user) return json({ error: 'No autenticado' }, 401);
 
+  const taskId = parseId(params.id);
+  if (taskId === null) return json({ error: 'No encontrado' }, 404);
+
   const db = getDb();
-  const result = await db.prepare('DELETE FROM tasks WHERE id=? AND user_id=?')
-    .run(params.id, user.userId);
-  if (result.changes === 0) return json({ error: 'No encontrado' }, 404);
+  const result = await db.prepare('DELETE FROM tasks WHERE id=$1 AND user_id=$2')
+    .run(taskId, user.userId);
+  if (result.rowCount === 0) return json({ error: 'No encontrado' }, 404);
   return json({ ok: true }, 200);
 };
 

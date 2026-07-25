@@ -4,12 +4,19 @@ import {
   linkTelegram,
   getTasksByUser,
   getCategoriesByUser,
-  getUsersWithDueTasks,
-  markReminderSent,
 } from './db.js';
 import { consumeTelegramLinkCode } from './telegramLink.js';
 import { consumeRateLimit, resetRateLimit, safeErrorSummary } from './security.js';
 import { validateTaskInput } from './taskValidation.js';
+import { defaultReminderFor } from './appTime.js';
+
+// Proveedores compartidos: una sola definición de modelo, timeouts y
+// respaldos para toda la aplicación.
+import { callOllama, callZai, trimToCompleteSentence } from './ai/providers.js';
+
+const tryZai = prompt => callZai(prompt);
+const tryOllama = prompt => callOllama(prompt);
+
 
 const BOT_TOKEN      = process.env.TELEGRAM_BOT_TOKEN;
 const API_BASE       = `https://api.telegram.org/bot${BOT_TOKEN}`;
@@ -19,7 +26,18 @@ const ZAI_MODEL     = process.env.ZAI_MODEL || 'glm-4.5-flash';
 const OLLAMA_URL     = process.env.OLLAMA_URL   || 'http://localhost:11434';
 const OLLAMA_MODEL   = process.env.OLLAMA_MODEL || 'llama3.2:3b';
 
-// ─── Estado de conversación en memoria ───────────────────────────────────────
+// ─── Estado de conversación ──────────────────────────────────────────────────
+//
+// El estado vive en PostgreSQL, no en el proceso. Antes era un Map sin
+// caducidad: un usuario que abandonaba /recomendacion a medias dejaba en
+// memoria la lista completa de sus tareas para siempre, y el bot por polling y
+// el webhook —procesos distintos— no compartían nada, así que una conversación
+// podía empezar en uno y perderse en el otro.
+//
+// `sessions` es solo una caché del turno actual: handleUpdate la carga al
+// empezar y la vuelca al terminar, de modo que el resto del archivo sigue
+// leyendo y mutando la sesión de forma síncrona.
+const SESSION_TTL_MINUTES = 15;
 const sessions = new Map();
 
 function getSession(chatId) {
@@ -28,7 +46,58 @@ function getSession(chatId) {
 }
 
 function clearSession(chatId) {
-  sessions.delete(chatId);
+  sessions.set(chatId, { step: null, data: {} });
+}
+
+async function loadSession(chatId) {
+  await db.prepare('DELETE FROM telegram_sessions WHERE expires_at < NOW()').run();
+
+  const row = await db.prepare(
+    'SELECT step, data FROM telegram_sessions WHERE chat_id = $1'
+  ).get(String(chatId));
+
+  if (!row) return { step: null, data: {} };
+
+  const data = { ...row.data };
+
+  // Solo se guardan identificadores: la lista completa de tareas se vuelve a
+  // leer, para no duplicar datos personales en la tabla de sesiones.
+  if (Array.isArray(data.taskIds) && data.userId) {
+    const all = await getTasksByUser(data.userId);
+    data.tasks = all.filter(task => data.taskIds.includes(task.id));
+    delete data.taskIds;
+  }
+
+  return { step: row.step, data };
+}
+
+async function persistSession(chatId, session) {
+  if (!session?.step) {
+    await db.prepare('DELETE FROM telegram_sessions WHERE chat_id = $1').run(String(chatId));
+    return;
+  }
+
+  const { tasks, ...rest } = session.data || {};
+  const data = Array.isArray(tasks)
+    ? { ...rest, taskIds: tasks.map(task => task.id) }
+    : rest;
+
+  await db.prepare(`
+    INSERT INTO telegram_sessions (chat_id, user_id, step, data, expires_at, updated_at)
+    VALUES ($1, $2, $3, $4::jsonb, NOW() + ($5::int * INTERVAL '1 minute'), NOW())
+    ON CONFLICT (chat_id) DO UPDATE SET
+      user_id    = excluded.user_id,
+      step       = excluded.step,
+      data       = excluded.data,
+      expires_at = excluded.expires_at,
+      updated_at = NOW()
+  `).run(
+    String(chatId),
+    data.userId ?? null,
+    session.step,
+    JSON.stringify(data),
+    SESSION_TTL_MINUTES,
+  );
 }
 
 function displayName(user) {
@@ -99,6 +168,19 @@ export async function handleUpdate(update) {
     await answerCallback(update.callback_query.id);
   }
 
+  // La sesión se lee al empezar el turno y se guarda al terminar. Es el único
+  // punto que toca la base: el resto del archivo la mutá en memoria.
+  sessions.set(chatId, await loadSession(chatId));
+
+  try {
+    await dispatch(chatId, text, callbackData);
+    await persistSession(chatId, sessions.get(chatId));
+  } finally {
+    sessions.delete(chatId);
+  }
+}
+
+async function dispatch(chatId, text, callbackData) {
   if (text.startsWith('/')) {
     const [cmd, ...args] = text.split(' ');
     switch (cmd.toLowerCase()) {
@@ -180,7 +262,7 @@ async function handleVincular(chatId, args) {
     );
   }
 
-  const limit = consumeRateLimit(
+  const limit = await consumeRateLimit(
     'telegram-link-attempt',
     String(chatId),
     8,
@@ -197,7 +279,7 @@ async function handleVincular(chatId, args) {
       '❌ Código inválido o vencido. Genera uno nuevo desde tu perfil.'
     );
   }
-  resetRateLimit('telegram-link-attempt', String(chatId));
+  await resetRateLimit('telegram-link-attempt', String(chatId));
   await sendMessage(chatId,
     `✅ ¡Cuenta vinculada!\n` +
     `Bienvenido, <b>${escapeTelegramHtml(displayName(user))}</b>. Recibirás recordatorios aquí.\n\n` +
@@ -347,7 +429,7 @@ async function saveTask(chatId, session) {
 
     if (category_id) {
       const ownedCategory = await db.prepare(
-        'SELECT id FROM categories WHERE id = ? AND user_id = ?'
+        'SELECT id FROM categories WHERE id = $1 AND user_id = $2'
       ).get(category_id, userId);
       if (!ownedCategory) {
         return sendMessage(chatId, '⚠️ La categoría seleccionada no pertenece a tu cuenta.');
@@ -356,15 +438,20 @@ async function saveTask(chatId, session) {
 
     const task = validation.values;
     await db.prepare(
-      `INSERT INTO tasks (user_id, title, description, due_date, priority, category_id, completed, reminder_sent)
-       VALUES (?, ?, ?, ?, ?, ?, 0, 0)`
+      `INSERT INTO tasks
+         (user_id, title, description, due_date, priority, category_id,
+          completed, reminder_sent, reminder_at)
+       VALUES ($1, $2, $3, $4, $5, $6, FALSE, FALSE, $7)`
     ).run(
       userId,
       task.title,
       task.description || '',
       task.due_date || null,
       task.priority || 'media',
-      category_id || null
+      category_id || null,
+      // Mismo criterio que la web: sin esto, las tareas creadas desde Telegram
+      // nunca generaban aviso previo.
+      defaultReminderFor(task.due_date),
     );
 
     clearSession(chatId);
@@ -460,61 +547,14 @@ async function getAiRecommendation(taskDescription, userType = 'comun', userId =
   return getRulesRecommendation(taskDescription, userType);
 }
 
-async function tryZai(prompt) {
-  try {
-    const res = await fetch(ZAI_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${ZAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: ZAI_MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 800,
-        temperature: 0.75
-      }),
-      signal: AbortSignal.timeout(30000)
-    });
-    if (!res.ok) {
-      console.error('[tryZai] Respuesta no exitosa:', res.status);
-      return null;
-    }
-    const data = await res.json().catch(() => null);
-    return data?.choices?.[0]?.message?.content?.trim() || null;
-  } catch (err) {
-    console.error('[tryZai] Fallo de red o proveedor');
-    return null;
-  }
-}
 
-async function tryOllama(prompt) {
-  try {
-    const res = await fetch(`${OLLAMA_URL}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model:  OLLAMA_MODEL,
-        prompt,
-        stream: false,
-        options: { temperature: 0.75, num_predict: 400 }
-      }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json().catch(() => null);
-    return data?.response?.trim() || null;
-  } catch {
-    return null;
-  }
-}
 
 async function getRecommendationFromArchived(userId, taskDescription) {
   try {
     const archived = await db.prepare(`
       SELECT title, what_worked, what_failed, observations
       FROM tasks
-      WHERE user_id = ? AND archived = 1
+      WHERE user_id = $1 AND archived
         AND (what_worked IS NOT NULL OR what_failed IS NOT NULL OR observations IS NOT NULL)
       ORDER BY archived_at DESC
       LIMIT 20
@@ -646,29 +686,5 @@ async function handleCallback(chatId, data, session) {
   if (data === 'rec_manual') {
     session.step = 'rec_manual';
     return sendMessage(chatId, '✏️ Describe la tarea sobre la que necesitas recomendaciones:');
-  }
-}
-
-// ─── Recordatorios automáticos ────────────────────────────────────────────────
-
-export async function sendReminders(windowMinutes = 30) {
-  const dueTasks = await getUsersWithDueTasks(windowMinutes);
-
-  for (const row of dueTasks) {
-    const dueDate   = new Date(Number(row.due_date));
-    const formatted = dueDate.toLocaleString('es-SV', { dateStyle: 'full', timeStyle: 'short' });
-
-    try {
-      await sendMessage(
-        row.telegram_chat_id,
-        `⏰ <b>Recordatorio de tarea</b>\n\n` +
-        `📌 <b>${escapeTelegramHtml(row.title)}</b>\n` +
-        `🗓️ Vence: ${formatted}\n\n` +
-        `¡No olvides completarla a tiempo!`
-      );
-      await markReminderSent(row.task_id);
-    } catch (err) {
-      console.error('[bot] Error enviando recordatorio:', safeErrorSummary(err));
-    }
   }
 }

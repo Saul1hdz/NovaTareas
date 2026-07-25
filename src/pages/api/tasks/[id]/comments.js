@@ -1,6 +1,15 @@
 import { getDb } from '../../../../lib/db.js';
 import { getUser } from '../../../../lib/auth.js';
 import { validateCommentInput } from '../../../../lib/taskValidation.js';
+import { parseId } from '../../../../lib/routeParams.js';
+
+// Proveedores compartidos: una sola definición de modelo, timeouts y
+// respaldos para toda la aplicación.
+import { callOllama, callZai, trimToCompleteSentence } from '../../../../lib/ai/providers.js';
+
+const tryZai = prompt => callZai(prompt);
+const tryOllama = prompt => callOllama(prompt);
+
 
 const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
 const ZAI_URL       = 'https://api.z.ai/api/paas/v4/chat/completions';
@@ -13,11 +22,14 @@ export const POST = async ({ request, params }) => {
   if (!user) return json({ error: 'No autenticado' }, 401);
 
   const db   = getDb();
+  const taskId = parseId(params.id);
+  if (taskId === null) return json({ error: 'No encontrado' }, 404);
+
   const task = await db.prepare(`
     SELECT t.*, u.user_type FROM tasks t
     JOIN users u ON t.user_id = u.id
-    WHERE t.id=? AND t.user_id=?
-  `).get(params.id, user.userId);
+    WHERE t.id=$1 AND t.user_id=$2
+  `).get(taskId, user.userId);
   if (!task) return json({ error: 'No encontrado' }, 404);
 
   let rawBody;
@@ -37,14 +49,14 @@ export const POST = async ({ request, params }) => {
     // Historial de cambios
     const history = await db.prepare(`
       SELECT field, old_value, new_value, changed_at
-      FROM task_history WHERE task_id=? ORDER BY changed_at ASC
-    `).all(params.id);
+      FROM task_history WHERE task_id=$1 ORDER BY changed_at ASC
+    `).all(taskId);
 
     // Comentarios previos (sin respuestas de IA para no sobrecargar el prompt)
     const prevComments = await db.prepare(`
       SELECT body, created_at FROM task_comments
-      WHERE task_id=? ORDER BY created_at ASC LIMIT 10
-    `).all(params.id);
+      WHERE task_id=$1 ORDER BY created_at ASC LIMIT 10
+    `).all(taskId);
 
     aiReply = await getContextualAiReply({
       task,
@@ -56,12 +68,12 @@ export const POST = async ({ request, params }) => {
   }
 
   // ── Guardar comentario ───────────────────────────────────────────────────
-  const result = await db.prepare(`
+  // RETURNING * evita el SELECT posterior: una sola ida a la base.
+  const comment = await db.prepare(`
     INSERT INTO task_comments (task_id, user_id, body, ai_reply)
-    VALUES (?, ?, ?, ?)
-  `).run(params.id, user.userId, body.body, aiReply || null);
-
-  const comment = await db.prepare('SELECT * FROM task_comments WHERE id=?').get(result.lastInsertRowid);
+    VALUES ($1, $2, $3, $4)
+    RETURNING *
+  `).get(taskId, user.userId, body.body, aiReply || null);
 
   return json({
     id:         comment.id,
@@ -128,63 +140,9 @@ const historyLines = history.length > 0
   );
 }
 
-async function tryZai(prompt) {
-  try {
-    const res = await fetch(ZAI_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${ZAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: ZAI_MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 512,
-        temperature: 0.7
-      }),
-      signal: AbortSignal.timeout(25000)
-    });
 
-    if (!res.ok) {
-      console.error('[Z.AI] Respuesta no exitosa:', res.status);
-      return null;
-    }
 
-    const data = await res.json().catch(() => null);
-    return data?.choices?.[0]?.message?.content?.trim() || null;
-  } catch (e) {
-    console.error('[Z.AI] Fallo de red o proveedor');
-    return null;
-  }
-}
 
-async function tryOllama(prompt) {
-  try {
-    const res = await fetch(`${OLLAMA_URL}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: OLLAMA_MODEL,
-        prompt,
-        stream: false,
-        options: {
-          temperature: 0.7,
-          num_predict: 200,
-        },
-      }),
-      signal: AbortSignal.timeout(15000),
-    });
-
-    if (!res.ok) {
-      return null;
-    }
-
-    const data = await res.json().catch(() => null);
-    return data?.response?.trim() || null;
-  } catch {
-    return null;
-  }
-}
 
 function json(data, status) {
   return new Response(JSON.stringify(data), {

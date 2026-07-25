@@ -1,4 +1,9 @@
+// Debe ir antes del import siguiente: Vitest evalúa este archivo antes de
+// cargar `.env`, así que sin esto un TEST_DATABASE_URL definido en `.env` se
+// ignoraría y las pruebas irían siempre al puerto por defecto.
+import 'dotenv/config';
 import { defineConfig } from 'vitest/config';
+import { TEST_DATABASE_URL } from './tests/databaseUrl.js';
 
 export default defineConfig({
   test: {
@@ -7,7 +12,9 @@ export default defineConfig({
 
     // Solo se ejecutan los archivos dentro de tests/
     include: ['tests/**/*.test.js'],
+
     globalSetup: ['./tests/globalSetup.js'],
+    setupFiles: ['./tests/setupFile.js'],
     fileParallelism: false,
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -37,7 +44,14 @@ export default defineConfig({
       GOOGLE_CLIENT_ID: 'google-client-solo-para-pruebas',
       GOOGLE_CLIENT_SECRET: 'google-secret-solo-para-pruebas',
       GOOGLE_REDIRECT_URI: 'http://127.0.0.1:4321/api/google/callback',
-      NOVATAREAS_DB_PATH: 'tmp/vitest-novatareas.sqlite',
+
+      // Las pruebas corren contra el mismo motor que producción: PostgreSQL 16.
+      DATABASE_URL: TEST_DATABASE_URL,
+
+      // Fija la zona del proceso para que las comparaciones de fecha no dependan
+      // de la máquina: PostgreSQL interpreta los timestamps sin zona según la
+      // configuración del servidor, y sin esto los recordatorios se desplazan.
+      TZ: 'UTC',
     },
 
     // Con el fallback local la respuesta es casi inmediata; 10 s es margen de sobra.

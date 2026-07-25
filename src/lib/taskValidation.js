@@ -74,6 +74,22 @@ export function validateTaskInput(body, { partial = false } = {}) {
   if (dueDate.error) return dueDate;
   if (dueDate.value !== undefined) values.due_date = dueDate.value;
 
+  // `reminder_at` es un instante con hora, a diferencia de `due_date`, que es
+  // solo el día. Se acepta null explícito para desactivar el aviso.
+  if (body.reminder_at !== undefined) {
+    if (body.reminder_at === null || body.reminder_at === '') {
+      values.reminder_at = null;
+    } else if (typeof body.reminder_at !== 'string') {
+      return { error: 'La fecha de recordatorio debe ser texto' };
+    } else {
+      const instant = new Date(body.reminder_at);
+      if (Number.isNaN(instant.getTime())) {
+        return { error: 'Fecha de recordatorio inválida' };
+      }
+      values.reminder_at = instant;
+    }
+  }
+
   return { values };
 }
 

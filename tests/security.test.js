@@ -9,9 +9,11 @@ import {
 } from '../src/lib/auth.js';
 import {
   consumeRateLimit,
+  resetRateLimit,
   safeEqualStrings,
   safeErrorSummary,
 } from '../src/lib/security.js';
+import { getDb } from '../src/lib/db.js';
 
 describe('primitivas de seguridad', () => {
   it('compara secretos sin aceptar longitudes o valores distintos', () => {
@@ -20,13 +22,36 @@ describe('primitivas de seguridad', () => {
     expect(safeEqualStrings('corto', 'mucho-mas-largo')).toBe(false);
   });
 
-  it('bloquea una clave al superar su límite', () => {
+  it('bloquea una clave al superar su límite', async () => {
     const key = `test-${crypto.randomUUID()}`;
-    expect(consumeRateLimit('test', key, 2, 60_000).allowed).toBe(true);
-    expect(consumeRateLimit('test', key, 2, 60_000).allowed).toBe(true);
-    const blocked = consumeRateLimit('test', key, 2, 60_000);
+    expect((await consumeRateLimit('test', key, 2, 60_000)).allowed).toBe(true);
+    expect((await consumeRateLimit('test', key, 2, 60_000)).allowed).toBe(true);
+    const blocked = await consumeRateLimit('test', key, 2, 60_000);
     expect(blocked.allowed).toBe(false);
     expect(blocked.retryAfterSeconds).toBeGreaterThan(0);
+  });
+
+  it('cuenta cada clave por separado y permite reiniciarla', async () => {
+    const key = `test-${crypto.randomUUID()}`;
+    const otra = `test-${crypto.randomUUID()}`;
+    await consumeRateLimit('test', key, 1, 60_000);
+    expect((await consumeRateLimit('test', key, 1, 60_000)).allowed).toBe(false);
+    // Una clave distinta conserva su cupo completo.
+    expect((await consumeRateLimit('test', otra, 1, 60_000)).allowed).toBe(true);
+
+    await resetRateLimit('test', key);
+    expect((await consumeRateLimit('test', key, 1, 60_000)).allowed).toBe(true);
+  });
+
+  it('mantiene el recuento fuera del proceso, en la base de datos', async () => {
+    // Es la razón de existir de este cambio: antes vivía en un Map y cualquier
+    // reinicio devolvía la cuota completa.
+    const key = `test-${crypto.randomUUID()}`;
+    await consumeRateLimit('persistencia', key, 5, 60_000);
+    const row = await getDb().prepare(
+      'SELECT COUNT(*)::int AS total FROM rate_limit_hits WHERE scope = $1 AND subject = $2'
+    ).get('persistencia', key);
+    expect(row.total).toBe(1);
   });
 
   it('firma sesiones con versión y vencimiento', async () => {

@@ -77,7 +77,7 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
     expect(secondRegistration.status).toBe(201);
     expect(firstRegistration.headers.get('set-cookie')).toContain('novatareas_token=');
 
-    const rows = getDb().prepare(
+    const rows = await getDb().prepare(
       'SELECT q1_answer, q2_answer FROM security_questions ORDER BY user_id'
     ).all();
     expect(rows).toHaveLength(2);
@@ -133,7 +133,7 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
     expect(data.command).not.toContain('@');
     expect(data.code).toMatch(/^[A-Z0-9_-]{8}$/);
 
-    const stored = getDb().prepare(
+    const stored = await getDb().prepare(
       'SELECT code_hash, used_at FROM telegram_link_codes WHERE user_id = 1'
     ).get();
     expect(stored.code_hash).not.toBe(data.code);
@@ -142,7 +142,7 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
     const linked = await consumeTelegramLinkCode(data.code, 'chat-ficticio-1');
     expect(linked.email).toBe('ana@example.test');
     expect(await consumeTelegramLinkCode(data.code, 'otro-chat')).toBeNull();
-    expect(getDb().prepare('SELECT telegram_chat_id FROM users WHERE id = 1').get())
+    expect(await getDb().prepare('SELECT telegram_chat_id FROM users WHERE id = 1').get())
       .toEqual({ telegram_chat_id: 'chat-ficticio-1' });
   });
 
@@ -180,14 +180,14 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
       params: { id: String(taskId) },
     });
     expect(deletion.status).toBe(404);
-    expect(getDb().prepare('SELECT title FROM tasks WHERE id = ?').get(taskId)?.title)
+    expect((await getDb().prepare('SELECT title FROM tasks WHERE id = $1').get(taskId))?.title)
       .toBe('Tarea ficticia');
   });
 
   it('protege comentarios, historial, IA y subtareas por ownership', async () => {
-    subtaskId = Number(getDb().prepare(
-      'INSERT INTO subtasks (task_id, text) VALUES (?, ?)'
-    ).run(taskId, 'Paso ficticio').lastInsertRowid);
+    subtaskId = (await getDb().prepare(
+      'INSERT INTO subtasks (task_id, text) VALUES ($1, $2) RETURNING id'
+    ).get(taskId, 'Paso ficticio')).id;
 
     const foreignContext = {
       request: request(`/api/tasks/${taskId}`, 'POST', {
@@ -214,7 +214,8 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
       request: request('/api/tasks/999/subtasks/' + subtaskId, 'PATCH', undefined, firstCookie),
       params: { id: '999', subId: String(subtaskId) },
     })).status).toBe(404);
-    expect(getDb().prepare('SELECT done FROM subtasks WHERE id = ?').get(subtaskId).done).toBe(0);
+    expect((await getDb().prepare('SELECT done FROM subtasks WHERE id = $1').get(subtaskId)).done)
+      .toBe(false);
   });
 
   it('rechaza valores externos inválidos antes de escribir', async () => {
@@ -230,9 +231,9 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
       }, firstCookie),
     });
     expect(invalidTask.status).toBe(400);
-    expect(getDb().prepare(
-      'SELECT COUNT(*) AS total FROM tasks WHERE title = ?'
-    ).get('Entrada inválida').total).toBe(0);
+    expect((await getDb().prepare(
+      'SELECT COUNT(*) AS total FROM tasks WHERE title = $1'
+    ).get('Entrada inválida')).total).toBe(0);
 
     const form = new FormData();
     form.set(
@@ -252,7 +253,7 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
       }),
     });
     expect(invalidAvatar.status).toBe(400);
-    expect(getDb().prepare('SELECT avatar_url FROM users WHERE id = 1').get().avatar_url)
+    expect((await getDb().prepare('SELECT avatar_url FROM users WHERE id = 1').get()).avatar_url)
       .toBeNull();
   });
 
@@ -283,9 +284,9 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
       }
     }
 
-    expect(getDb().prepare(
-      'SELECT COUNT(*) AS total FROM users WHERE email = ?'
-    ).get('ana@example.test').total).toBe(1);
+    expect((await getDb().prepare(
+      'SELECT COUNT(*) AS total FROM users WHERE email = $1'
+    ).get('ana@example.test')).total).toBe(1);
   });
 
   it('usa un token de un solo uso e invalida sesiones anteriores', async () => {
@@ -341,8 +342,8 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
       params: { id: String(taskId), subId: String(subtaskId) },
     });
     expect(toggled.status).toBe(200);
-    expect(getDb().prepare('SELECT done FROM subtasks WHERE id = ?').get(subtaskId).done)
-      .toBe(1);
+    expect((await getDb().prepare('SELECT done FROM subtasks WHERE id = $1').get(subtaskId)).done)
+      .toBe(true);
 
     const commentResponse = await addComment({
       request: request(`/api/tasks/${taskId}/comments`, 'POST', {
@@ -379,17 +380,19 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
       params: { id: String(taskId) },
     });
     const row = () => getDb().prepare(
-      'SELECT status, completed, archived, completed_at, archived_at, reopened_at FROM tasks WHERE id = ?'
+      'SELECT status, completed, archived, completed_at, archived_at, reopened_at FROM tasks WHERE id = $1'
     ).get(taskId);
 
     expect((await patchTask({ status: 'completada' })).status).toBe(200);
-    expect(row()).toMatchObject({ status: 'completada', completed: 1, archived: 0 });
-    expect(row().completed_at).toBeTruthy();
+    expect(await row()).toMatchObject({
+      status: 'completada', completed: true, archived: false,
+    });
+    expect((await row()).completed_at).toBeTruthy();
 
     expect((await patchTask({ status: 'en progreso' })).status).toBe(200);
-    expect(row()).toMatchObject({ status: 'en progreso', completed: 0 });
-    expect(row().completed_at).toBeNull();
-    expect(row().reopened_at).toBeTruthy();
+    expect(await row()).toMatchObject({ status: 'en progreso', completed: false });
+    expect((await row()).completed_at).toBeNull();
+    expect((await row()).reopened_at).toBeTruthy();
 
     expect((await patchTask({
       archived: true,
@@ -397,8 +400,8 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
       what_worked: 'Dividir en pasos',
       what_failed: 'Posponer',
     })).status).toBe(200);
-    expect(row()).toMatchObject({ archived: 1, status: 'en progreso' });
-    expect(row().archived_at).toBeTruthy();
+    expect(await row()).toMatchObject({ archived: true, status: 'en progreso' });
+    expect((await row()).archived_at).toBeTruthy();
 
     const archived = await listTasks({
       request: request('/api/tasks?archived=1', 'GET', undefined, firstCookie),
@@ -406,8 +409,10 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
     expect((await archived.json()).map(task => task.id)).toContain(taskId);
 
     expect((await patchTask({ archived: false })).status).toBe(200);
-    expect(row()).toMatchObject({ archived: 0, status: 'pendiente', completed: 0 });
-    expect(row().archived_at).toBeNull();
+    expect(await row()).toMatchObject({
+      archived: false, status: 'pendiente', completed: false,
+    });
+    expect((await row()).archived_at).toBeNull();
   });
 
   it('elimina la tarea y sus relaciones en cascada', async () => {
@@ -416,11 +421,11 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
       params: { id: String(taskId) },
     });
     expect(response.status).toBe(200);
-    expect(getDb().prepare('SELECT COUNT(*) AS total FROM tasks WHERE id = ?').get(taskId).total)
+    expect((await getDb().prepare('SELECT COUNT(*) AS total FROM tasks WHERE id = $1').get(taskId)).total)
       .toBe(0);
-    expect(getDb().prepare('SELECT COUNT(*) AS total FROM subtasks WHERE id = ?').get(subtaskId).total)
+    expect((await getDb().prepare('SELECT COUNT(*) AS total FROM subtasks WHERE id = $1').get(subtaskId)).total)
       .toBe(0);
-    expect(getDb().prepare('SELECT COUNT(*) AS total FROM task_comments WHERE task_id = ?').get(taskId).total)
+    expect((await getDb().prepare('SELECT COUNT(*) AS total FROM task_comments WHERE task_id = $1').get(taskId)).total)
       .toBe(0);
   });
 

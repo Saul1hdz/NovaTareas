@@ -1,6 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
-
-const rateLimitBuckets = new Map();
+import { getDb } from './db.js';
 
 export function safeEqualStrings(left, right) {
   if (typeof left !== 'string' || typeof right !== 'string') return false;
@@ -18,25 +17,50 @@ export function getClientIp(request) {
   return request.headers.get('x-real-ip')?.trim() || 'local';
 }
 
-export function consumeRateLimit(namespace, key, maxAttempts, windowMs) {
-  const bucketKey = `${namespace}:${key}`;
-  const now = Date.now();
-  const recent = (rateLimitBuckets.get(bucketKey) || [])
-    .filter(timestamp => now - timestamp < windowMs);
+/**
+ * Límite de intentos por ventana deslizante, respaldado por PostgreSQL.
+ *
+ * Antes vivía en un Map del proceso: cada reinicio devolvía la cuota completa y
+ * con dos instancias el límite efectivo se multiplicaba. Al estar en la base, el
+ * recuento es el mismo para todos los procesos y sobrevive a los despliegues.
+ */
+export async function consumeRateLimit(namespace, key, maxAttempts, windowMs) {
+  const db = getDb();
+  const subject = String(key).slice(0, 200);
+  const windowSeconds = Math.ceil(windowMs / 1000);
 
-  if (recent.length >= maxAttempts) {
-    const retryAfterMs = Math.max(1, windowMs - (now - recent[0]));
-    rateLimitBuckets.set(bucketKey, recent);
+  // El registro más antiguo dentro de la ventana marca cuándo se libera cupo.
+  const current = await db.prepare(`
+    SELECT COUNT(*)::int AS hits,
+           MIN(created_at) AS oldest
+    FROM rate_limit_hits
+    WHERE scope = $1 AND subject = $2
+      AND created_at > NOW() - ($3::int * INTERVAL '1 second')
+  `).get(namespace, subject, windowSeconds);
+
+  if (current.hits >= maxAttempts) {
+    const freesAt = new Date(current.oldest).getTime() + windowMs;
+    const retryAfterMs = Math.max(1000, freesAt - Date.now());
     return { allowed: false, retryAfterSeconds: Math.ceil(retryAfterMs / 1000) };
   }
 
-  recent.push(now);
-  rateLimitBuckets.set(bucketKey, recent);
+  await db.prepare(
+    'INSERT INTO rate_limit_hits (scope, subject) VALUES ($1, $2)'
+  ).run(namespace, subject);
+
+  // Barrido perezoso: evita que la tabla crezca sin límite sin necesitar cron.
+  await db.prepare(`
+    DELETE FROM rate_limit_hits
+    WHERE scope = $1 AND created_at < NOW() - ($2::int * INTERVAL '1 second')
+  `).run(namespace, windowSeconds * 4);
+
   return { allowed: true, retryAfterSeconds: 0 };
 }
 
-export function resetRateLimit(namespace, key) {
-  rateLimitBuckets.delete(`${namespace}:${key}`);
+export async function resetRateLimit(namespace, key) {
+  await getDb().prepare(
+    'DELETE FROM rate_limit_hits WHERE scope = $1 AND subject = $2'
+  ).run(namespace, String(key).slice(0, 200));
 }
 
 export function safeErrorSummary(error) {

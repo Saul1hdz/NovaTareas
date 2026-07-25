@@ -31,25 +31,26 @@ export async function consumeTelegramLinkCode(code, chatId, database = getDb()) 
   }
 
   const codeHash = hashTelegramLinkCode(normalized);
-  const now = Date.now();
 
+  // La vigencia y el consumo se resuelven con el reloj de la base, no con el
+  // del proceso: así no dependen de la hora del contenedor que atienda.
   return withTransaction(async (tx) => {
     const row = await tx.prepare(`
       SELECT u.*, c.id AS code_id
       FROM telegram_link_codes c
       JOIN users u ON u.id = c.user_id
-      WHERE c.code_hash = ?
+      WHERE c.code_hash = $1
         AND c.used_at IS NULL
-        AND c.expires_at >= ?
-    `).get(codeHash, now);
+        AND c.expires_at >= NOW()
+    `).get(codeHash);
     if (!row) return null;
 
-    await tx.prepare('UPDATE users SET telegram_chat_id = NULL WHERE telegram_chat_id = ?')
+    await tx.prepare('UPDATE users SET telegram_chat_id = NULL WHERE telegram_chat_id = $1')
       .run(String(chatId));
-    await tx.prepare('UPDATE users SET telegram_chat_id = ? WHERE id = ?')
+    await tx.prepare('UPDATE users SET telegram_chat_id = $1 WHERE id = $2')
       .run(String(chatId), row.id);
-    await tx.prepare('UPDATE telegram_link_codes SET used_at = ? WHERE id = ?')
-      .run(now, row.code_id);
+    await tx.prepare('UPDATE telegram_link_codes SET used_at = NOW() WHERE id = $1')
+      .run(row.code_id);
 
     const { code_id: _codeId, ...user } = row;
     return user;

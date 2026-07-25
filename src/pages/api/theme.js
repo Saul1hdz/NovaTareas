@@ -17,7 +17,7 @@ export const POST = async ({ request }) => {
   }
 
   const db = getDb();
-  await db.prepare('UPDATE users SET theme=? WHERE id=?').run(theme, user.userId);
+  await db.prepare('UPDATE users SET theme=$1 WHERE id=$2').run(theme, user.userId);
   return json({ ok: true }, 200);
 };
 

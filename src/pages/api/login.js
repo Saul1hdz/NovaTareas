@@ -32,8 +32,8 @@ export const POST = async ({ request }) => {
 
   const normalizedEmail = email.toLowerCase().trim();
   const ip = getClientIp(request);
-  const emailLimit = consumeRateLimit('login-email', normalizedEmail, 5, LOGIN_WINDOW_MS);
-  const ipLimit = consumeRateLimit('login-ip', ip, 20, LOGIN_WINDOW_MS);
+  const emailLimit = await consumeRateLimit('login-email', normalizedEmail, 5, LOGIN_WINDOW_MS);
+  const ipLimit = await consumeRateLimit('login-ip', ip, 20, LOGIN_WINDOW_MS);
 
   if (!emailLimit.allowed || !ipLimit.allowed) {
     const retryAfter = Math.max(emailLimit.retryAfterSeconds, ipLimit.retryAfterSeconds);
@@ -45,13 +45,13 @@ export const POST = async ({ request }) => {
   }
 
   const db = getDb();
-  const user = await db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail);
+  const user = await db.prepare('SELECT * FROM users WHERE email = $1').get(normalizedEmail);
   if (!user || !await verifyPassword(password, user.password_hash)) {
     return json({ error: 'Credenciales inválidas' }, 401);
   }
 
-  resetRateLimit('login-email', normalizedEmail);
-  resetRateLimit('login-ip', ip);
+  await resetRateLimit('login-email', normalizedEmail);
+  await resetRateLimit('login-ip', ip);
   const token = await createToken(user.id, user.username, user.session_version);
 
   return new Response(JSON.stringify({ ok: true }), {

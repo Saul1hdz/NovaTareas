@@ -1,0 +1,85 @@
+name: novatareas-prod
+
+# Despliegue de producción. A diferencia de compose.dev.yml:
+#   - construye el target `runtime` (build SSR, sin hot-reload ni node_modules
+#     de desarrollo) y no monta el código como volumen;
+#   - no publica el puerto de PostgreSQL;
+#   - toma todos los secretos del entorno, sin valores por defecto;
+#   - el healthcheck consulta la base de datos, no solo el proceso.
+#
+# Requiere un archivo .env junto a este compose. Ver docs/DESPLIEGUE.md.
+
+x-app-environment: &app-environment
+  NODE_ENV: production
+  DATABASE_URL: postgresql://novatareas:${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD}@db:5432/novatareas
+  PG_POOL_MAX: "${PG_POOL_MAX:-10}"
+  SECRET_KEY: ${SECRET_KEY:?define SECRET_KEY}
+  CRON_SECRET: ${CRON_SECRET:?define CRON_SECRET}
+  APP_TIME_ZONE: ${APP_TIME_ZONE:-America/El_Salvador}
+  AVATAR_UPLOAD_DIR: /app/dist/client/avatars
+
+x-app-build: &app-build
+  context: .
+  target: runtime
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: novatareas
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD}
+      POSTGRES_DB: novatareas
+    # Sin `ports`: la base solo es accesible desde la red interna del compose.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U novatareas -d novatareas"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - novatareas_prod_pgdata:/var/lib/postgresql/data
+
+  migrate:
+    build: *app-build
+    restart: "no"
+    environment:
+      <<: *app-environment
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["node", "scripts/migrate-postgres.mjs"]
+
+  web:
+    build: *app-build
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      <<: *app-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # Solo escucha en loopback: el proxy inverso con TLS publica el servicio.
+    ports:
+      - "127.0.0.1:${WEB_PORT:-4321}:4321"
+    volumes:
+      - novatareas_prod_avatars:/app/dist/client/avatars
+
+  # Polling: exactamente una réplica por token. El estado conversacional y los
+  # límites de uso viven en PostgreSQL, así que sobrevive a los reinicios.
+  bot:
+    build: *app-build
+    profiles: ["telegram"]
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      <<: *app-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["node", "telegram/bot.js"]
+
+volumes:
+  novatareas_prod_pgdata:
+  novatareas_prod_avatars:

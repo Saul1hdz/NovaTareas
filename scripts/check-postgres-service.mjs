@@ -1,5 +1,7 @@
 import 'dotenv/config';
+import { getTableName } from 'drizzle-orm';
 import pg from 'pg';
+import { postgresSchema } from '../src/db/postgres/schema.js';
 
 const connectionString = process.env.DATABASE_URL?.trim();
 if (!connectionString) {
@@ -14,19 +16,22 @@ const pool = new pg.Pool({
 });
 
 try {
-  const tables = await pool.query(`
-    SELECT COUNT(*)::int AS total
-    FROM pg_tables
-    WHERE schemaname = 'public'
-      AND tablename IN (
-        'users', 'security_questions', 'categories', 'tasks', 'subtasks',
-        'task_history', 'task_comments', 'task_embeddings',
-        'task_recommendations', 'telegram_link_codes'
-      )
-  `);
-  if (tables.rows[0].total !== 10) {
-    throw new Error(`Se esperaban 10 tablas y se encontraron ${tables.rows[0].total}.`);
+  // Las tablas esperadas se derivan del esquema, no de una lista escrita a
+  // mano: así añadir una tabla nueva no deja esta comprobación ciega sin que
+  // nadie se entere.
+  const esperadas = Object.values(postgresSchema).map(getTableName).sort();
+  const encontradas = (await pool.query(
+    "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+  )).rows.map(row => row.tablename);
+
+  const faltantes = esperadas.filter(nombre => !encontradas.includes(nombre));
+  if (faltantes.length > 0) {
+    throw new Error(
+      `Faltan ${faltantes.length} tablas en PostgreSQL: ${faltantes.join(', ')}. ` +
+      '¿Se aplicaron todas las migraciones?'
+    );
   }
+  console.log(`Tablas verificadas: ${esperadas.length}.`);
 
   const client = await pool.connect();
   try {
@@ -66,7 +71,7 @@ try {
   console.log(JSON.stringify({
     ok: true,
     engine: 'PostgreSQL service',
-    tables: tables.rows[0].total,
+    tables: esperadas.length,
     transaction_rollback: true,
   }));
 } finally {
