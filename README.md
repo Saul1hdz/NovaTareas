@@ -537,3 +537,5 @@ API Gateway
 | Pruebas | Vitest + @vitest/coverage-v8 |
 | CI/CD | GitHub Actions |
 | Runtime | Node.js 20 |
+
+documentos de entrega se encuentran en la carpeta docs
