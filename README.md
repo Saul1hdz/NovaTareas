@@ -773,6 +773,7 @@ Si necesitas entrar en detalle, cada documento cubre una parte distinta:
 | [`docs/QA_IA_LOCAL.md`](docs/QA_IA_LOCAL.md) | Prueba real de z.ai, hallazgos de calidad y correcciones de RAG |
 | [`docs/QA_TELEGRAM_LOCAL.md`](docs/QA_TELEGRAM_LOCAL.md) | QA del bot con usuarios ficticios |
 | [`docs/QA_ESTABILIZACION_LOCAL.md`](docs/QA_ESTABILIZACION_LOCAL.md) | Estabilización del entorno local |
+| [`docs/Evidencia_Semana3.pdf`](docs/Evidencia_Semana3.pdf) | Evidencia de entrega de la semana 3 |
 | `docs/CIERRE_BLOQUE_1..4.md` | Actas de cierre de cada bloque: resultados, QA y límites |
 
 > Los `docs/CIERRE_BLOQUE_*.md` y las líneas base son **documentos históricos**.
@@ -797,3 +798,7 @@ Si necesitas entrar en detalle, cada documento cubre una parte distinta:
 | CI/CD | GitHub Actions |
 | Runtime | Node.js 22.12 o posterior, dentro de la línea 22 |
 | Contenedores | Docker Compose (web, migraciones, PostgreSQL, bot y planificador) |
+
+---
+
+Los documentos de entrega están en la carpeta [`docs/`](docs/).
