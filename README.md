@@ -9,7 +9,7 @@ Docente: Ing. Marco Arévalo Zambrano
 > datos del proyecto. SQLite se retiró por completo: ya no queda driver,
 > migraciones, importador ni capa de compatibilidad. Como las pruebas corren
 > contra PostgreSQL real, `npm test` no funciona si el contenedor de la base de
-#maizena
+>
 > datos no está levantado.
 >
 > Si trabajas en **Windows con Docker Desktop**, empieza por
