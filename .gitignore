@@ -41,5 +41,3 @@ coverage/
 # ── Uploads y archivos temporales ─────────────────────────────
 uploads/
 tmp/
-# ── Configuracion local de agentes ─────────────────────────────
-CLAUDE.md
