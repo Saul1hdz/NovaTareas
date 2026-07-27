@@ -1,8 +1,17 @@
 # TODO de desarrollo - NovaTareas Pro
 
-Este documento convierte el plan técnico en un backlog ejecutable para la rama
-`testing`. El objetivo final es una demo universitaria cerrada en Netcup, con
-usuarios y datos ficticios. No es un lanzamiento comercial ni público.
+Este documento traduce el plan técnico a un backlog que se puede ir tachando,
+sobre la rama `testing`. La meta es una demo universitaria cerrada en Netcup, con
+usuarios y datos ficticios: no es un lanzamiento comercial ni un servicio
+público.
+
+> **Cómo leerlo.** Las casillas marcadas de los bloques 0 a 4 son un registro de
+> lo que se hizo en su momento, no una descripción del estado actual. Ahí
+> encontrarás tareas sobre SQLite y sus migraciones porque en ese momento SQLite
+> todavía existía; hoy el proyecto corre solo sobre PostgreSQL 16. Para saber
+> cómo están las cosas ahora, mira el `README.md` y
+> `docs/CIERRE_MIGRACION_POSTGRESQL.md`. Lo que sigue vivo es lo que queda sin
+> marcar, sobre todo de los bloques 6 en adelante.
 
 ## Estado inicial
 

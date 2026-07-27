@@ -1,7 +1,7 @@
 # AGENTS.md
 
-Instrucciones operativas para cualquier agente de IA que trabaje en
-NovaTareas, incluidos Codex, Claude y herramientas equivalentes.
+Instrucciones operativas para cualquier agente de IA que trabaje en NovaTareas,
+sea cual sea la herramienta.
 
 ## Objetivo y estado actual
 

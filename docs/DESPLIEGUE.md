@@ -210,11 +210,14 @@ avatares subidos.
 
 Cosas que conviene saber antes de que sorprendan:
 
-- **Una sola réplica de web.** Los límites de uso y los tokens de recuperación de
-  contraseña viven en memoria del proceso. Con dos réplicas, la recuperación de
-  contraseña fallaría de forma intermitente y los límites se multiplicarían.
-  Cualquier reinicio también los reinicia.
-- **Una sola réplica de bot**, por el polling.
+- **Una sola réplica de web**, aunque ya no por el motivo original. Los límites
+  de uso (`rate_limit_hits`), los tokens de recuperación (`recovery_tokens`) y
+  las sesiones del bot (`telegram_sessions`) viven ahora en PostgreSQL, así que
+  el recuento es el mismo para todos los procesos y sobrevive a los reinicios.
+  Lo que falta para escalar de verdad es probarlo: nunca se ha corrido con más de
+  una réplica.
+- **Una sola réplica de bot**, y esta sí es obligatoria: usa polling, y dos
+  procesos con el mismo token se roban los mensajes entre sí.
 - **`reminder_at` no se escribe todavía** desde ninguna pantalla, así que el aviso
   previo al vencimiento no se dispara. El aviso de tarea vencida sí funciona.
 - **Sin logs estructurados ni métricas.** La observabilidad se limita a

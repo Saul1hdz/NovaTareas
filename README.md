@@ -5,14 +5,17 @@
 Universidad Gerardo Barrios — Módulo 4: Desarrollo de Aplicaciones con IA
 Docente: Ing. Marco Arévalo Zambrano
 
-> **PostgreSQL 16 es el único motor de base de datos.** SQLite se retiró por
-> completo (driver, migraciones, importador y capa de compatibilidad), y las
-> pruebas corren contra PostgreSQL real, así que `npm test` requiere el
-> contenedor de base de datos levantado. El detalle del cambio está en
-> [`docs/CIERRE_MIGRACION_POSTGRESQL.md`](docs/CIERRE_MIGRACION_POSTGRESQL.md);
-> el despliegue, en [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md). Si trabajas en
-> **Windows con Docker Desktop**, empieza por
-> [`docs/ENTORNO_WINDOWS.md`](docs/ENTORNO_WINDOWS.md).
+> **Lee esto antes de instalar nada.** PostgreSQL 16 es el único motor de base de
+> datos del proyecto. SQLite se retiró por completo: ya no queda driver,
+> migraciones, importador ni capa de compatibilidad. Como las pruebas corren
+> contra PostgreSQL real, `npm test` no funciona si el contenedor de la base de
+> datos no está levantado.
+>
+> Si trabajas en **Windows con Docker Desktop**, empieza por
+> [`docs/ENTORNO_WINDOWS.md`](docs/ENTORNO_WINDOWS.md): ahí están los tropiezos
+> típicos y cómo evitarlos. El detalle de la migración está en
+> [`docs/CIERRE_MIGRACION_POSTGRESQL.md`](docs/CIERRE_MIGRACION_POSTGRESQL.md) y
+> el runbook del servidor en [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md).
 
 ---
 
@@ -50,68 +53,93 @@ Docente: Ing. Marco Arévalo Zambrano
 
 ## 1. Problema que se desea resolver
 
-Los estudiantes universitarios en El Salvador gestionan simultáneamente múltiples asignaturas, proyectos y responsabilidades personales. Una encuesta aplicada en febrero de 2026 a estudiantes de la UGB reveló que:
+Un estudiante universitario en El Salvador lleva al mismo tiempo varias
+asignaturas, proyectos de grupo y responsabilidades personales. Todo compite por
+la misma cabeza y la misma agenda.
 
-- **80%** califica la organización de tareas como difícil o muy difícil.
-- **80%** olvida entregas al menos 1–3 veces por ciclo académico.
-- **80–90%** reporta que la desorganización afecta negativamente sus calificaciones.
+Aplicamos una encuesta en febrero de 2026 a estudiantes de la UGB y los números
+fueron bastante claros:
 
-Las herramientas existentes (Todoist, Notion, Trello) son de pago, están en inglés y no incorporan IA contextual que aprenda del historial personal del usuario.
+- El **80%** dice que organizar sus tareas le resulta difícil o muy difícil.
+- El **80%** olvida al menos una entrega, y hasta tres, en cada ciclo.
+- Entre el **80% y el 90%** siente que esa desorganización le está bajando las
+  notas.
+
+Ya existen herramientas para esto —Todoist, Notion, Trello— pero cobran, están
+pensadas en inglés y ninguna aprende del historial personal de quien las usa. Ahí
+es donde entra NovaTareas.
 
 ---
 
 ## 2. Usuarios o beneficiarios
 
-- **Estudiantes universitarios** con alta carga académica.
-- **Empleados** que gestionan múltiples proyectos simultáneos.
-- Cualquier persona que necesite organización personal con asistencia de IA, sin pagar por herramientas externas.
+Pensamos el proyecto para tres perfiles:
+
+- **Estudiantes universitarios** con mucha carga académica encima.
+- **Personas que trabajan** llevando varios proyectos a la vez.
+- **Cualquiera** que quiera organizarse con ayuda de IA sin tener que pagar una
+  suscripción.
 
 ---
 
 ## 3. Descripción general de la solución
 
-NovaTareas Pro es una aplicación web full-stack con bot de Telegram integrado. El usuario accede por tres canales que comparten la misma base de datos y lógica:
+NovaTareas Pro es una aplicación web con un bot de Telegram integrado. Se puede
+entrar por tres puertas distintas, pero todas comparten la misma base de datos y
+la misma lógica de negocio:
 
-- **Dashboard web** (Astro SSR): gestión visual de tareas con prioridades, etiquetas, calendario, historial de cambios y comentarios de progreso.
-- **Bot de Telegram**: creación de tareas conversacional, recomendaciones de IA y notificaciones proactivas (tarea creada, completada, urgente, próxima a vencer, vencida).
-- **API externa protegida**: la capacidad inteligente expuesta como servicio REST para clientes autorizados mediante una API key propia.
+- **El dashboard web** (Astro con renderizado en servidor), donde se gestionan
+  las tareas de forma visual: prioridades, etiquetas, calendario, historial de
+  cambios y comentarios de avance.
+- **El bot de Telegram**, que permite crear tareas conversando, pedir
+  recomendaciones de IA y recibir avisos automáticos cuando una tarea se crea, se
+  completa, se vuelve urgente, está por vencer o ya venció.
+- **Una API externa protegida**, que expone la capacidad inteligente como
+  servicio REST para clientes autorizados mediante una API key propia.
 
-El sistema registra automáticamente cada cambio realizado sobre una tarea (historial) y permite al usuario agregar notas de progreso. Toda esa información acumulada se usa como contexto para mejorar las respuestas de la IA con el tiempo.
+Cada vez que alguien modifica una tarea, el sistema lo registra solo; además el
+usuario puede ir dejando notas de progreso. Toda esa información se acumula y
+después se usa como contexto para que las recomendaciones de la IA mejoren con el
+tiempo en lugar de responder siempre lo mismo.
 
 ---
 
 ## 4. Dónde está la inteligencia artificial
 
-La IA vive en estos archivos concretos:
+Si quieres ver el código de la IA, está en estos archivos:
 
 ```
 src/lib/aiEngine.js                 ← motor de recomendaciones reutilizable
 src/lib/rag.js                      ← genera embeddings y recupera tareas similares
+src/lib/ai/providers.js             ← define la cascada z.ai → Ollama → reglas
 src/pages/api/tasks/[id]/ai.js      ← endpoint de recomendaciones (dashboard)
-src/pages/api/v1/recommend.js       ← endpoint de IA consumible por API externa
+src/pages/api/v1/recommend.js       ← endpoint de IA para clientes externos
 src/lib/telegramBot.js              ← función getAiRecommendation (bot)
 ```
 
-**Flujo completo de una recomendación:**
+Así es como viaja una recomendación de principio a fin:
 
 ```
-Usuario solicita consejo
+El usuario pide un consejo
         ↓
-rag.js convierte la tarea en vector numérico (embedding)
+rag.js convierte la tarea en un vector numérico (embedding)
         ↓
-Busca las 5 tareas más similares del historial del usuario
-(similitud coseno, umbral mínimo 0.25)
+Busca las 5 tareas más parecidas del historial de ese usuario
+(similitud coseno, con un umbral mínimo de 0.25)
         ↓
-Construye el prompt con: tarea + tareas similares + historial de cambios
-+ comentarios previos + tipo de usuario
+Arma el prompt juntando: la tarea + esas tareas similares + su historial
+de cambios + los comentarios previos + el tipo de usuario
         ↓
-Envía a z.ai (GLM) → si falla → Ollama local → si falla → historial archivado
-→ si falla → reglas locales
+Lo envía a z.ai (GLM) → si falla → Ollama local → si falla → historial
+archivado → si falla → reglas locales
         ↓
-Devuelve recomendación en español al dashboard, a Telegram o a la API
+Devuelve la recomendación en español al dashboard, a Telegram o a la API
 ```
 
-La **cascada de fallback** es una decisión de diseño central: garantiza que el usuario siempre reciba una respuesta útil, incluso sin conexión a internet, sin saldo en la API o sin Ollama instalado.
+Esa **cascada de respaldos** no es un adorno: es una decisión de diseño
+importante. Garantiza que el usuario reciba siempre algo útil aunque no haya
+internet, aunque se acabe el saldo de la API o aunque nadie tenga Ollama
+instalado.
 
 ---
 
@@ -120,21 +148,25 @@ La **cascada de fallback** es una decisión de diseño central: garantiza que el
 | Componente | Detalle |
 |---|---|
 | **Modelo principal** | z.ai — GLM (`glm-4.5-flash`) |
-| **Modelo de embeddings** | z.ai (`embedding-2` / `embedding-3`) con fallback Ollama `nomic-embed-text` |
-| **Modelo local (fallback)** | Ollama + Llama 3.2:3b |
+| **Modelo de embeddings** | z.ai (`embedding-2` / `embedding-3`), con respaldo en Ollama `nomic-embed-text` |
+| **Modelo local (respaldo)** | Ollama + Llama 3.2:3b |
 | **Técnica RAG** | Retrieval-Augmented Generation con similitud coseno |
-| **Tipo de IA** | IA generativa (LLM) + búsqueda semántica |
-| **NLP** | Implícito vía el modelo GLM (transformers internos) |
-| **Sistema de fallback** | Cascada: z.ai → Ollama → historial → reglas locales |
-| **Evaluación** | Validación manual por el equipo; métrica formal de utilidad pendiente |
+| **Tipo de IA** | IA generativa (LLM) combinada con búsqueda semántica |
+| **NLP** | Implícito, a través del modelo GLM y sus transformers internos |
+| **Sistema de respaldo** | Cascada: z.ai → Ollama → historial → reglas locales |
+| **Evaluación** | Validación manual del equipo; falta una métrica formal de utilidad |
 
-> **Nota sobre la migración:** el proyecto usaba originalmente Google Gemini. Se migró a z.ai (GLM) por disponibilidad y costo. El código llama a la API mediante `fetch` directo al endpoint `https://api.z.ai/api/paas/v4/chat/completions` y ya no depende de ningún SDK de Google. El modelo se configura con la variable de entorno `ZAI_MODEL`.
+> **Sobre el cambio de proveedor:** el proyecto arrancó usando Google Gemini y
+> después migramos a z.ai (GLM) por disponibilidad y costo. El código llama a la
+> API con un `fetch` directo al endpoint
+> `https://api.z.ai/api/paas/v4/chat/completions`, así que ya no depende de
+> ningún SDK de Google. El modelo se elige con la variable `ZAI_MODEL`.
 
 ---
 
 ## 6. Datos de entrada y salida
 
-### Entrada al modelo de IA
+### Qué recibe el modelo
 
 ```
 - Título de la tarea (texto libre)
@@ -143,20 +175,20 @@ La **cascada de fallback** es una decisión de diseño central: garantiza que el
 - Fecha límite (YYYY-MM-DD, opcional)
 - Tipo de usuario: estudiante | empleado | comun
 - Historial de cambios de la tarea (campo, valor anterior, valor nuevo, fecha)
-- Comentarios de progreso previos (máximo 10)
-- TOP 5 tareas similares del historial del usuario (recuperadas por RAG)
+- Comentarios de progreso anteriores (hasta 10)
+- Las 5 tareas más parecidas del historial del usuario (traídas por RAG)
 ```
 
-### Salida del modelo
+### Qué devuelve
 
 ```
-- Texto en español con recomendaciones prácticas
-- Oraciones cortas separadas por punto (máximo ~130 palabras)
-- Formato: texto plano con Markdown (convertido a HTML para Telegram)
-- Sin introducciones genéricas — responde directamente al contexto de la tarea
+- Texto en español con recomendaciones concretas
+- Oraciones cortas separadas por punto, unas 130 palabras como máximo
+- Texto plano con Markdown, que se convierte a HTML para Telegram
+- Sin introducciones genéricas: responde directamente al contexto de la tarea
 ```
 
-### Ejemplo real
+### Un ejemplo real
 
 ```
 Entrada:  "preparar presentacion del proyecto de ventas" (Alta, 20 jun, tipo: empleado)
@@ -170,25 +202,28 @@ Salida:   "Divide la presentación en 3 bloques lógicos antes de redactar.
 
 ## 7. API inteligente
 
-La capacidad de IA se expone como servicio REST consumible desde cualquier cliente externo (curl, Postman, Swagger). Es **independiente del dashboard**: no requiere sesión ni que la tarea exista previamente en la base de datos.
+La capacidad de IA también se expone como servicio REST, para poder consumirla
+desde cualquier cliente externo: curl, Postman, Swagger o lo que sea. Es
+**independiente del dashboard**, o sea que no necesita sesión iniciada ni que la
+tarea exista antes en la base de datos.
 
-| Método | Ruta | Propósito |
+| Método | Ruta | Para qué sirve |
 |---|---|---|
-| GET  | `/api/v1/health`    | Verificar que el servicio está activo. |
-| GET  | `/api/v1/metadata`  | Versión, modelo, propósito y contrato. |
-| POST | `/api/v1/recommend` | Generar una recomendación de productividad. |
+| GET  | `/api/v1/health`    | Comprobar que el servicio responde. |
+| GET  | `/api/v1/metadata`  | Consultar versión, modelo, propósito y contrato. |
+| POST | `/api/v1/recommend` | Pedir una recomendación de productividad. |
 
-### Contrato de entrada (`POST /api/v1/recommend`)
+### Qué acepta `POST /api/v1/recommend`
 
 | Campo | Tipo | Obligatorio | Reglas |
 |---|---|---|---|
-| `titulo` | string | **Sí** | No vacío, máx. 200 caracteres |
-| `descripcion` | string | No | Máx. 1000 caracteres |
-| `prioridad` | string | No | `baja` \| `media` \| `alta` \| `urgente` (default `media`) |
-| `tipo_usuario` | string | No | `comun` \| `estudiante` \| `empleado` (default `comun`) |
+| `titulo` | string | **Sí** | No puede ir vacío, máximo 200 caracteres |
+| `descripcion` | string | No | Máximo 1000 caracteres |
+| `prioridad` | string | No | `baja` \| `media` \| `alta` \| `urgente` (por defecto `media`) |
+| `tipo_usuario` | string | No | `comun` \| `estudiante` \| `empleado` (por defecto `comun`) |
 | `fecha_limite` | string | No | Formato `YYYY-MM-DD` |
 
-### Ejemplo de uso
+### Cómo se usa
 
 ```bash
 curl -X POST http://localhost:4321/api/v1/recommend \
@@ -197,7 +232,7 @@ curl -X POST http://localhost:4321/api/v1/recommend \
   -d '{"titulo":"Estudiar para el examen de cálculo","prioridad":"alta","tipo_usuario":"estudiante"}'
 ```
 
-**Respuesta exitosa (200):**
+Si todo va bien responde **200**:
 
 ```json
 {
@@ -207,230 +242,289 @@ curl -X POST http://localhost:4321/api/v1/recommend \
 }
 ```
 
-**Respuesta con error (400):**
+Y si algo falta o está mal, responde **400**:
 
 ```json
 { "error": "El campo \"titulo\" es obligatorio y no puede estar vacío." }
 ```
 
-El campo `fuente` indica qué motor generó la respuesta: `zai`, `ollama` o `rules`.
+Fíjate en el campo `fuente`: te dice qué motor generó realmente esa respuesta,
+que puede ser `zai`, `ollama` o `rules`. Es la forma de saber si la IA respondió
+o si entró el respaldo.
 
-Contrato completo, validaciones, códigos de error y evidencia de prueba en **[`/api.md`](/api.md)**.
+El contrato completo, con todas las validaciones, códigos de error y evidencia de
+prueba, está en **[`/api.md`](/api.md)**.
 
 ---
 
 ## 8. Pruebas automatizadas
 
-El proyecto usa **Vitest**, elegido sobre Jest por su compatibilidad nativa con módulos ESM y con el ecosistema de Astro.
+Usamos **Vitest** en lugar de Jest porque entiende módulos ESM de forma nativa y
+se lleva bien con el ecosistema de Astro, que es justo lo que necesitábamos.
 
 ### Comandos
 
 ```bash
-npm test              # ejecutar todas las pruebas una vez
-npm run test:watch    # modo observador (se relanzan al guardar cambios)
+npm test              # correr todas las pruebas una vez
+npm run test:watch    # modo observador: se relanzan al guardar
 npm run test:coverage # con reporte de cobertura
-npm run lint          # verificar tipos y sintaxis del proyecto
+npm run lint          # revisar tipos y sintaxis del proyecto
 ```
 
 ### Qué se prueba
 
-| Archivo | Pruebas | Cobertura |
+| Archivo | Pruebas | Qué cubre |
 |---|---|---|
-| `tests/aiEngine.test.js` | 14 | Validación de entrada: títulos vacíos o muy largos, descripciones fuera de límite, prioridades no permitidas, fechas mal formadas, cuerpos que no son objetos |
-| `tests/api.test.js` | 13 | Endpoints `/api/v1/health`, `/api/v1/metadata` y `/api/v1/recommend`, incluida la autenticación de la API externa |
-| `tests/appFlows.test.js` | 14 | Registro, login, logout, cambio de contraseña, ciclo de vida de tareas, ownership, subtareas, historial, comentarios y vinculación de Telegram |
-| `tests/security.test.js` | 8 | Sesiones, cookies, límites de intentos persistidos, secretos, logs seguros y Google OAuth `state` |
+| `tests/aiEngine.test.js` | 14 | Validación de entrada: títulos vacíos o larguísimos, descripciones fuera de límite, prioridades inventadas, fechas mal escritas y cuerpos que ni siquiera son un objeto |
+| `tests/api.test.js` | 13 | Los endpoints `/api/v1/health`, `/api/v1/metadata` y `/api/v1/recommend`, incluida la autenticación de la API externa |
+| `tests/appFlows.test.js` | 14 | Registro, login, logout, cambio de contraseña, ciclo de vida de una tarea, ownership, subtareas, historial, comentarios y vinculación con Telegram |
+| `tests/security.test.js` | 8 | Sesiones, cookies, límites de intentos persistidos, secretos, logs seguros y el `state` de Google OAuth |
 | `tests/taskValidation.test.js` | 3 | Validación de tareas, fechas, estados, etiquetas y comentarios |
-| `tests/integrationSecurity.test.js` | 8 | Cron, webhook de Telegram simulado y carga de avatares válidos, falsificados o con MIME incorrecto |
-| `tests/postgresSchema.test.js` | 7 | Esquema, restricciones y reejecución de migraciones PostgreSQL con PGlite |
+| `tests/integrationSecurity.test.js` | 8 | Cron, webhook de Telegram simulado y subida de avatares válidos, falsificados o con MIME incorrecto |
+| `tests/postgresSchema.test.js` | 7 | Esquema, restricciones y reejecución de las migraciones de PostgreSQL usando PGlite |
 | `tests/tokenEncryption.test.js` | 3 | Cifrado, descifrado y rechazo de tokens alterados |
-| `tests/reminders.test.js` | 7 | Zona horaria, avisos únicos, ausencia de marcación cuando Telegram falla y programación de `reminder_at` |
-| `tests/aiProviders.test.js` | 3 | z.ai, Ollama y fallback local con red simulada |
-| `tests/aiPrompt.test.js` | 3 | El prompt no inventa antecedentes y trata RAG como evidencia opcional |
-| `tests/aiRecommendations.test.js` | 4 | Las recomendaciones no borran subtareas, se guardan aparte y registran su origen |
-| `tests/googleIntegration.test.js` | 4 | OAuth, eventos, renovación y persistencia cifrada de tokens con Google simulado |
-| `tests/telegramSessions.test.js` | 5 | El estado conversacional del bot persiste, caduca y no retiene las tareas del usuario |
+| `tests/reminders.test.js` | 7 | Zona horaria, avisos que no se repiten, ausencia de marcación cuando Telegram falla y programación de `reminder_at` |
+| `tests/aiProviders.test.js` | 3 | z.ai, Ollama y el respaldo local, con la red simulada |
+| `tests/aiPrompt.test.js` | 3 | Que el prompt no invente antecedentes y trate el RAG como evidencia opcional |
+| `tests/aiRecommendations.test.js` | 4 | Que las recomendaciones no borren subtareas, se guarden aparte y dejen registrado su origen |
+| `tests/googleIntegration.test.js` | 4 | OAuth, eventos, renovación y guardado cifrado de tokens, con Google simulado |
+| `tests/telegramSessions.test.js` | 5 | Que el estado de la conversación del bot persista, caduque y no se quede con las tareas del usuario |
 | `tests/dashboardStats.test.js` | 4 | Conteos del panel, tipos numéricos y etiquetas visibles |
-| `tests/noSqliteDialect.test.js` | 3 | Impide que vuelva a introducirse dialecto SQLite en el código |
+| `tests/noSqliteDialect.test.js` | 3 | Que nadie vuelva a introducir dialecto SQLite en el código |
 
-**Total: 103 pruebas.** Todas corren contra **PostgreSQL 16 real**, el mismo
-motor que se despliega: el arranque recrea el esquema desde las migraciones en la
-base indicada por `TEST_DATABASE_URL`, cuyo nombre debe terminar en `_test`. Por
-eso `npm test` requiere el contenedor de base de datos levantado. El esquema se
-verifica además con PGlite y el workflow usa un servicio PostgreSQL 16 efímero.
+**En total son 103 pruebas**, todas contra **PostgreSQL 16 real**, el mismo motor
+que se despliega. Al arrancar, la suite recrea el esquema desde las migraciones
+en la base que indique `TEST_DATABASE_URL`, y ese nombre tiene que terminar en
+`_test`. Por eso `npm test` necesita el contenedor de base de datos encendido. El
+esquema se verifica además con PGlite, y en CI se levanta un PostgreSQL 16
+efímero.
 
-### Cómo funcionan
+### Cómo están hechas
 
-Las pruebas de endpoints siguen el mismo principio que el `TestClient` de FastAPI: en lugar de levantar el servidor y lanzar peticiones manuales, **importan el handler del endpoint y le pasan un objeto `Request`**. No necesitan puerto abierto ni intervención humana.
+Las pruebas de endpoints siguen la misma idea que el `TestClient` de FastAPI: en
+lugar de levantar el servidor y lanzarle peticiones desde fuera, **importan
+directamente el handler y le pasan un objeto `Request`**. No hace falta abrir
+ningún puerto ni que alguien esté ahí haciendo clic.
 
-### Decisión técnica: pruebas sin dependencias externas
+### Por qué no llamamos a servicios reales
 
-Las pruebas **no llaman a servicios externos reales**. z.ai, Ollama, Telegram y
-Google se simulan de forma controlada; los casos offline fuerzan las reglas
-locales. Las credenciales del entorno de pruebas son ficticias.
+Las pruebas **nunca llaman a z.ai, Ollama, Telegram ni Google de verdad**. Todos
+se simulan de forma controlada, y los casos offline fuerzan a propósito las
+reglas locales. Las credenciales del entorno de pruebas son ficticias.
 
-Esto aporta tres beneficios:
+Hacerlo así nos da tres cosas:
 
-1. Las pruebas son **deterministas**: siempre el mismo resultado.
-2. **No consumen saldo** de la API en cada ejecución.
-3. **No fallan** por problemas de red o cuota agotada.
+1. Las pruebas son **deterministas**: el mismo resultado siempre.
+2. **No gastan saldo** de la API cada vez que alguien las corre.
+3. **No fallan** porque se cayó la red o se agotó la cuota.
 
-El mapa completo de pruebas —qué comportamientos se validan y por qué aportan valor— está en **[`docs/pruebas-semana-3.md`](docs/pruebas-semana-3.md)**.
-
-Los errores detectados durante la implementación, las correcciones aplicadas y los bloqueos técnicos que siguen abiertos están documentados en **[`docs/registro-pruebas-semana-3.md`](docs/registro-pruebas-semana-3.md)**.
+El mapa completo de pruebas —qué comportamiento valida cada una y por qué vale la
+pena— está en **[`docs/pruebas-semana-3.md`](docs/pruebas-semana-3.md)**. Los
+errores que fuimos encontrando, cómo los corregimos y qué quedó bloqueado están
+en **[`docs/registro-pruebas-semana-3.md`](docs/registro-pruebas-semana-3.md)**.
 
 ---
 
 ## 9. Integración continua (CI/CD)
 
-El archivo `.github/workflows/ci.yml` ejecuta automáticamente en GitHub Actions con cada `push` o `pull request`:
+Cada `push` y cada `pull request` disparan el workflow de
+`.github/workflows/ci.yml` en GitHub Actions, que hace lo siguiente:
 
-1. **Descarga** del repositorio (`actions/checkout`).
-2. **Configuración** de Node.js 22.12 con caché de npm.
-3. **Instalación** de dependencias con `npm ci` (reproducible desde `package-lock.json`).
-4. **Verificación** de tipos y sintaxis (`npm run lint`).
-5. **Migración y comprobación** contra un servicio PostgreSQL 16 efímero.
-6. **Ejecución** de las 103 pruebas con cobertura (`npm run test:coverage`).
-7. **Conservación** del reporte de cobertura como artefacto durante 14 días.
-8. **Compilación** del proyecto (`npm run build`).
+1. Descarga el repositorio (`actions/checkout`).
+2. Configura Node.js 22.12 con caché de npm.
+3. Instala dependencias con `npm ci`, reproducible desde `package-lock.json`.
+4. Revisa tipos y sintaxis con `npm run lint`.
+5. Levanta un PostgreSQL 16 efímero, migra y comprueba el esquema.
+6. Corre las 103 pruebas con cobertura (`npm run test:coverage`).
+7. Guarda el reporte de cobertura como artefacto durante 14 días.
+8. Compila el proyecto (`npm run build`).
 
-El workflow **no expone `ZAI_API_KEY` ni credenciales reales**. Las pruebas usan
-secretos ficticios, no consumen saldo y cualquier fallo crítico detiene el job.
-La configuración quedó confirmada en GitHub Actions sobre la rama `testing`:
+El workflow **no expone `ZAI_API_KEY` ni ninguna credencial real**: las pruebas
+usan secretos ficticios, no consumen saldo y cualquier fallo importante detiene
+el job. Quedó confirmado funcionando sobre la rama `testing` en la
 [ejecución 30121273529](https://github.com/Saul1hdz/NovaTareas/actions/runs/30121273529).
 
 ---
 
 ## 10. Instalación y ejecución
 
-### Requisitos previos
+Hay dos formas de levantar el proyecto. **Si vas a trabajar en equipo, usa
+Docker**: evita que las diferencias de versión de Node entre computadoras se
+conviertan en errores raros. La ejecución nativa queda para quien ya tenga el
+entorno afinado.
 
-- Node.js `>=22.12.0 <23.0.0` (la versión indicada en `.nvmrc`)
-- Docker con Compose para el entorno recomendado de desarrollo
-- API key de [z.ai](https://z.ai) para el modelo `glm-4.5-flash`
-- Bot de Telegram creado con [@BotFather](https://t.me/BotFather)
-- (Opcional) [Ollama](https://ollama.com) con `nomic-embed-text` y `llama3.2:3b` para fallback local
+### Lo que necesitas antes de empezar
 
-### Pasos
+- Node.js `>=22.12.0 <23.0.0`, que es la versión que fija `.nvmrc`.
+- Docker con Compose, si vas por el camino recomendado.
+- Una API key de [z.ai](https://z.ai) para el modelo `glm-4.5-flash`.
+- Un bot de Telegram creado con [@BotFather](https://t.me/BotFather), solo si vas
+  a probar esa parte.
+- Opcionalmente, [Ollama](https://ollama.com) con `nomic-embed-text` y
+  `llama3.2:3b` si quieres probar el respaldo local.
+
+### Opción A — Con Docker (recomendada)
+
+Este es el camino corto. Un solo comando levanta PostgreSQL, espera a que esté
+sano, aplica las migraciones y recién entonces arranca la web:
 
 ```bash
-# 1. Usar Node 22 e instalar exactamente el lockfile
-nvm use 22
-npm ci
-
-# 2. Configurar entorno
 cp .env.example .env
-# Editar .env con tus claves reales (ver sección de variables de entorno)
+# Abre .env y completa solo lo que vayas a probar.
 
-# 3. Levantar PostgreSQL y aplicar migraciones
-docker compose -f compose.dev.yml up -d db
-npm run db:pg:migrate
-
-# Base de pruebas (una sola vez). El nombre debe terminar en _test.
-docker compose -f compose.dev.yml exec db createdb -U novatareas novatareas_test
-
-# 4. Verificar que todo funciona (requiere PostgreSQL levantado)
-npm test
-npm run db:pg:verify
-
-# Datos ficticios de demostración (opcional)
-npm run db:seed
-
-# 5. Iniciar el servidor web
-npm run dev
-# → http://localhost:4321
-
-# 6. Iniciar el bot de Telegram (terminal separada)
-npm run bot:dev
-
-# 7. Iniciar el scheduler de recordatorios (terminal separada)
-npm run bot:scheduler
+docker compose -f compose.dev.yml up -d --build web
 ```
 
-### Entorno Docker recomendado
-
-Docker evita diferencias de Node y módulos nativos entre las computadoras del
-equipo. PostgreSQL es el motor principal dentro de este entorno:
+La aplicación queda en `http://127.0.0.1:4321` y PostgreSQL en
+`127.0.0.1:5434`. Para ver el estado:
 
 ```bash
-# Web + PostgreSQL; las migraciones se aplican antes de iniciar Astro
-docker compose -f compose.dev.yml up -d --build web
+docker compose -f compose.dev.yml ps
+```
 
-# QA funcional de registro, login, tareas, ownership y Telegram
+Una comprobación funcional de extremo a extremo:
+
+```bash
 docker compose -f compose.dev.yml exec web npm run db:pg:smoke
+```
 
-# Perfiles optativos; no iniciar dos bots de polling a la vez
+El bot y el planificador **no arrancan solos**, están detrás de perfiles. Ojo con
+el bot: solo puede haber una instancia con el mismo token en todo el equipo, así
+que pregunta antes de encenderlo.
+
+```bash
 docker compose -f compose.dev.yml --profile telegram up -d bot
 docker compose -f compose.dev.yml --profile scheduler run --rm scheduler
+```
 
-# Detener los servicios sin borrar datos
+Para apagar todo sin perder datos:
+
+```bash
 docker compose -f compose.dev.yml --profile telegram --profile scheduler down
 ```
 
-La web escucha en `127.0.0.1:4321` y PostgreSQL en `127.0.0.1:5434`. Los
-volúmenes conservan datos, dependencias y avatares. No se usa `down -v` en el
-flujo normal porque elimina esos datos.
+> **No uses `down -v`.** Ese flag borra los volúmenes, y con ellos se va la base
+> de datos, las dependencias del contenedor y los avatares subidos.
+
+### Opción B — Ejecución nativa
+
+```bash
+# 1. Usar Node 22 e instalar exactamente lo que dice el lockfile
+nvm use 22
+npm ci
+
+# 2. Configurar el entorno
+cp .env.example .env
+# Edita .env con tus claves reales (ver la sección de variables)
+
+# 3. Levantar PostgreSQL y aplicar las migraciones
+docker compose -f compose.dev.yml up -d db
+npm run db:pg:migrate
+
+# 4. Iniciar el servidor web → http://localhost:4321
+npm run dev
+
+# 5. En otra terminal, el bot de Telegram
+npm run bot:dev
+
+# 6. En otra más, el planificador de recordatorios
+npm run bot:scheduler
+```
+
+Aun en modo nativo necesitas Docker para la base de datos: PostgreSQL es
+obligatorio y `DATABASE_URL` tiene que apuntar al que publica Compose.
+
+### Antes de correr las pruebas
+
+La suite necesita su propia base de datos. **Créala una sola vez:**
+
+```bash
+docker compose -f compose.dev.yml exec db createdb -U novatareas novatareas_test
+```
+
+Si la ejecutas de nuevo verás `database "novatareas_test" already exists`. Ese
+error es esperado, ignóralo. Después ya puedes correr:
+
+```bash
+npm test
+npm run db:pg:verify
+```
+
+Y si quieres datos ficticios para una demostración:
+
+```bash
+npm run db:seed
+```
 
 ### Registrar el webhook de Telegram
 
-Se necesita una URL pública HTTPS. En desarrollo local se usa ngrok:
+Solo hace falta si vas a usar webhook en lugar de polling, y necesitas una URL
+pública con HTTPS. En local se resuelve con ngrok:
 
 ```bash
 npx ngrok http 4321
-# Copia la URL que te da, ej: https://abc123.ngrok.io
+# Copia la URL que te devuelve, por ejemplo https://abc123.ngrok.io
 ```
 
-Luego se registra el webhook una sola vez:
+Después registras el webhook una sola vez, abriendo esta dirección en el
+navegador:
 
 ```
 https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://abc123.ngrok.io/api/telegram/webhook
 ```
 
-### Qué es automático y qué es manual
+### Qué se hace solo y qué te toca a ti
 
 | Acción | ¿Automático? |
 |---|---|
-| Instalar dependencias (`npm ci`) | ✅ Automático con Node 22.12 o posterior |
-| Crear tablas de BD (`npm run db:pg:migrate`) | ✅ Migrador transaccional e idempotente |
-| Ejecutar pruebas (`npm test`) | ✅ Automático |
-| Validación en cada push (GitHub Actions) | ✅ Automático |
-| Iniciar servidor web | ✅ Un comando |
-| Iniciar bot de Telegram | ⚠️ Manual — terminal separada |
-| Iniciar scheduler | ⚠️ Manual — terminal separada |
-| Registrar webhook de Telegram | ⚠️ Manual — una vez por instalación |
-| Configurar variables de entorno | ⚠️ Manual — copiar y completar `.env` |
+| Instalar dependencias (`npm ci`) | ✅ Sí, con Node 22.12 o posterior |
+| Crear las tablas (`npm run db:pg:migrate`) | ✅ Sí, el migrador es transaccional e idempotente |
+| Correr las pruebas (`npm test`) | ✅ Sí |
+| Validar cada push (GitHub Actions) | ✅ Sí |
+| Levantar el servidor web | ✅ Un solo comando |
+| Levantar el bot de Telegram | ⚠️ Manual, en una terminal aparte |
+| Levantar el planificador | ⚠️ Manual, en una terminal aparte |
+| Registrar el webhook de Telegram | ⚠️ Manual, una vez por instalación |
+| Configurar las variables de entorno | ⚠️ Manual, copiar y completar `.env` |
 
 ---
 
 ## 11. Variables de entorno
 
-Para probar ahora la aplicación, z.ai y el bot de Telegram mediante polling
-local, basta con completar este grupo:
+No necesitas llenar el archivo entero. Para probar la aplicación, z.ai y el bot
+de Telegram por polling, **basta con estas cinco**:
 
 ```env
-SECRET_KEY=                 # Secreto aleatorio para firmar sesiones
-ZAI_API_KEY=                # Credencial de z.ai
+SECRET_KEY=                 # Secreto aleatorio para firmar las sesiones
+ZAI_API_KEY=                # Tu credencial de z.ai
 ZAI_MODEL=glm-4.5-flash
-ZAI_EMB_ENABLED=false       # No probar embeddings de z.ai todavía
-TELEGRAM_BOT_TOKEN=         # Token entregado por @BotFather
+ZAI_EMB_ENABLED=false       # Dejar en false: no probamos embeddings de z.ai aún
+TELEGRAM_BOT_TOKEN=         # El token que te da @BotFather
 ```
 
-`npm run dev` inicia la web y `npm run bot:dev` inicia el bot en otra terminal.
-El modo polling no necesita `TELEGRAM_WEBHOOK_SECRET`, una URL pública ni un
+Con eso, `npm run dev` levanta la web y `npm run bot:dev` levanta el bot en otra
+terminal. El modo polling no pide `TELEGRAM_WEBHOOK_SECRET`, ni URL pública, ni
 túnel HTTPS.
 
-Las demás variables admitidas están documentadas como opcionales en
-`.env.example`. Solo deben descomentarse al probar la función correspondiente:
-webhook/cron, API externa de recomendaciones, Ollama, Google Calendar o
-PostgreSQL. `GEMINI_API_KEY` solo aparece en herramientas manuales heredadas de
-embeddings; no se necesita para ejecutar la web, z.ai ni el bot.
+El resto de variables están marcadas como opcionales en `.env.example` y solo hay
+que descomentarlas cuando vayas a probar esa función concreta: webhook y cron,
+API externa de recomendaciones, Ollama o Google Calendar. `GEMINI_API_KEY` es
+herencia de unas herramientas manuales de embeddings; no la necesitas para nada
+del flujo actual.
 
-`DATABASE_URL` es obligatoria: PostgreSQL 16 es el único motor soportado y sin
-ella la aplicación no arranca. `compose.dev.yml` la establece internamente.
-`TEST_DATABASE_URL` apunta la suite de pruebas a una base separada cuyo nombre
-debe terminar en `_test`, porque el setup borra su esquema en cada ejecución.
+Dos variables merecen atención especial:
 
-> ⚠️ Los archivos `.env` y `.env.local` **no se versionan** (están en `.gitignore`). El archivo `.env.example` sí, y contiene únicamente placeholders. No compartas el archivo real por chat ni reutilices los secretos locales en Netcup.
+- **`DATABASE_URL` es obligatoria.** PostgreSQL es el único motor soportado y sin
+  ella la aplicación ni siquiera arranca. Si usas `compose.dev.yml`, él la define
+  internamente y no tienes que tocarla.
+- **`TEST_DATABASE_URL` debe terminar en `_test`.** El arranque de las pruebas
+  borra el esquema completo de esa base en cada ejecución, así que el código se
+  niega a apuntar a cualquier otra cosa. Es una red de seguridad para que nadie
+  borre sin querer sus datos de desarrollo.
+
+> ⚠️ `.env` y `.env.local` **no se versionan**, están en `.gitignore`. El que sí
+> se versiona es `.env.example`, y solo tiene placeholders. No pases tu `.env`
+> real por chat ni reutilices los secretos locales en el servidor.
 
 ---
 
@@ -446,6 +540,7 @@ novatareas-pro/
 │   │   ├── dashboard.astro
 │   │   └── api/
 │   │       ├── v1/{health,metadata,recommend}.js   # API externa protegida
+│   │       ├── v1/health/ready.js                  # sonda que consulta la BD
 │   │       ├── tasks.js
 │   │       ├── tasks/[id].js
 │   │       ├── tasks/[id]/{history,comments,ai}.js
@@ -453,29 +548,28 @@ novatareas-pro/
 │   │       ├── google/{auth,callback,events}.js
 │   │       ├── telegram/webhook.js
 │   │       └── cron/reminders.js
-│   │       ├── v1/health/ready.js                  # sonda que consulta la BD
 │   └── lib/
-│       ├── ai/providers.js  # z.ai y Ollama: definición única de la cascada
-│       ├── aiEngine.js      # motor de IA reutilizable (sin BD ni sesión)
-│       ├── rag.js           # embeddings + recuperación semántica
-│       ├── db.js            # helpers de dominio sobre PostgreSQL
-│       ├── auth.js          # JWT por cookie o Bearer token
-│       ├── appTime.js       # criterio único de fecha y zona horaria
-│       ├── dashboardStats.js # consultas del panel, con pruebas propias
-│       ├── routeParams.js   # normaliza los identificadores de la ruta
-│       ├── security.js      # límites de intentos persistidos en PostgreSQL
+│       ├── ai/providers.js    # z.ai y Ollama: la cascada definida una sola vez
+│       ├── aiEngine.js        # motor de IA reutilizable, sin BD ni sesión
+│       ├── rag.js             # embeddings y recuperación semántica
+│       ├── db.js              # helpers de dominio sobre PostgreSQL
+│       ├── auth.js            # JWT por cookie o Bearer token
+│       ├── appTime.js         # criterio único de fecha y zona horaria
+│       ├── dashboardStats.js  # consultas del panel, con pruebas propias
+│       ├── routeParams.js     # normaliza los identificadores de la ruta
+│       ├── security.js        # límites de intentos persistidos en PostgreSQL
 │       ├── telegramBot.js
 │       └── telegramNotify.js
 ├── src/db/
-│   ├── client.js            # envoltorio fino sobre pg, sin traducir SQL
-│   └── postgres/            # esquema, cliente y repositorios Drizzle
+│   ├── client.js            # envoltorio fino sobre pg, no traduce el SQL
+│   └── postgres/            # esquema, cliente y repositorios de Drizzle
 ├── tests/                   # 16 archivos, 103 pruebas contra PostgreSQL real
-├── telegram/                # bot.js y scheduler.js (procesos aparte)
+├── telegram/                # bot.js y scheduler.js, procesos aparte
 ├── migrations/postgresql/   # migraciones versionadas generadas con Drizzle
 ├── scripts/                 # migrar, verificar, sembrar y smoke test
 ├── compose.dev.yml          # web, migraciones, PostgreSQL y perfiles del bot
 ├── compose.prod.yml         # despliegue: target runtime, sin puertos abiertos
-├── Dockerfile               # targets development y runtime, Node 22
+├── Dockerfile               # targets development y runtime, sobre Node 22
 ├── data/tareas_ejemplo.csv
 ├── api.md                   # contratos de la API
 ├── docs/
@@ -484,7 +578,7 @@ novatareas-pro/
 │   ├── CIERRE_MIGRACION_POSTGRESQL.md
 │   └── pruebas-semana-3.md          # mapa de pruebas
 ├── .env.example
-├── .gitattributes           # finales de línea LF para los contenedores
+├── .gitattributes           # fuerza finales de línea LF para los contenedores
 ├── vitest.config.js
 ├── astro.config.mjs
 └── package.json
@@ -494,7 +588,7 @@ novatareas-pro/
 
 ## 13. Arquitectura
 
-### Arquitectura actual (monolítica modular)
+### Cómo está hoy (monolito modular)
 
 ```
 Usuario Web ──────→ Dashboard Astro (SSR)
@@ -509,15 +603,15 @@ Cliente autorizado → API externa /api/v1/* (Bearer AI_API_KEY)
                   Capa de inteligencia
                   aiEngine.js · rag.js → z.ai (GLM) / Ollama → respuesta
                           ↓
-                  PostgreSQL 16 (runtime principal en Docker)
+                  PostgreSQL 16 (en Docker)
                   users · tasks · task_history · task_comments · task_embeddings
 ```
 
-PostgreSQL 16 es el único motor: no existe rollback a otro sistema. La
-recuperación ante un fallo se hace restaurando una copia de `pg_dump`, según el
-procedimiento de `docs/DESPLIEGUE.md`.
+PostgreSQL 16 es el único motor y no hay vuelta atrás a otro sistema. Si algo se
+rompe, la recuperación se hace restaurando una copia de `pg_dump` siguiendo el
+procedimiento de [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md).
 
-### Arquitectura objetivo (microservicios)
+### A dónde queremos llegar (microservicios)
 
 ```
 Cliente Web / App Móvil
@@ -533,29 +627,48 @@ API Gateway
 
 ## 14. Limitaciones conocidas
 
-1. **PostgreSQL requiere un servicio local** — Docker Compose es el flujo
-   recomendado; SQLite queda solamente como rollback y para pruebas aisladas.
-2. **Bot y scheduler son procesos separados** — Docker los expone mediante
-   perfiles optativos para evitar iniciar polling duplicado.
-3. **El estado de conversación del bot vive en memoria** — un reinicio del servidor cancela cualquier flujo de creación de tarea a medio completar.
-4. **El webhook requiere URL pública** — en desarrollo local es necesario ngrok; si se cae, el bot deja de responder.
-5. **Cuota de z.ai limitada** — el saldo de la cuenta puede agotarse; al fallar, el sistema cae al fallback local u offline.
-6. **Cobertura de pruebas parcial** — las 103 pruebas ya cubren autenticación,
-   recuperación, ownership, tareas, migraciones SQLite/PostgreSQL, cifrado de
-   tokens, recordatorios, cron, webhook, avatares, códigos de vinculación de
-   Telegram, proveedores de IA y rutas principales de Google simuladas; aún
-   faltan pruebas amplias de la conversación del bot, RAG y el flujo visual de
-   Google en el dashboard.
-7. **RAG parcialmente conectado** — los embeddings existen en la base de datos, pero no todas las rutas del código los consumen todavía.
-8. **Sin métrica formal de calidad** — no existe aún un sistema de feedback que mida la utilidad real de las recomendaciones.
-9. **Sin logging estructurado** — las llamadas al modelo no registran modelo usado, tokens consumidos ni latencia.
-10. **Una sola instancia de web y una de bot** — los límites de intentos, los tokens de recuperación y las sesiones del bot ya se comparten vía PostgreSQL, pero el bot usa polling y no admite réplicas con el mismo token.
-11. **Migraciones versionadas** — `npm run db:pg:migrate` aplica las migraciones de `migrations/postgresql/`, generadas con Drizzle a partir de `src/db/postgres/schema.js`. Son idempotentes y llevan su propio registro.
-12. **Dashboard monolítico** — `src/pages/dashboard.astro` supera las 2.800 líneas. Su acceso a datos ya se extrajo a `src/lib/dashboardStats.js`, pero el CSS y el JavaScript de cliente siguen sin modularizar.
-13. **Google Calendar en desarrollo** — los archivos existen (`/api/google/`) pero la integración no está conectada al dashboard.
-14. **Recuperación limitada a preguntas de seguridad** — la interfaz ya funciona, evita revelar si una cuenta existe, limita intentos y usa tokens de un solo uso; para un servicio público convendría sustituirla por enlaces enviados por un canal verificado.
-15. **Sin despliegue público** — el proyecto se ejecuta localmente; Netcup,
-    dominio, HTTPS y operación persistente se trabajarán al final.
+Preferimos decirlas de frente antes de que sorprendan a alguien:
+
+1. **Hace falta un PostgreSQL levantado para todo**, incluso para correr las
+   pruebas. Docker Compose es la forma recomendada de tenerlo.
+2. **El bot y el planificador son procesos separados.** En Docker están detrás de
+   perfiles opcionales, justamente para no arrancar dos bots por accidente.
+3. **El estado de conversación del bot vive en la tabla `telegram_sessions`** y
+   caduca a los 15 minutos. Sobrevive a un reinicio, pero una conversación
+   abandonada se pierde al caducar.
+4. **El webhook necesita una URL pública.** En local eso significa ngrok, y si el
+   túnel se cae el bot deja de responder. Por eso en desarrollo usamos polling.
+5. **La cuota de z.ai es limitada.** Cuando se agota el saldo, el sistema cae al
+   respaldo local u offline en lugar de fallar.
+6. **La cobertura de pruebas todavía tiene huecos.** Las 103 pruebas ya cubren
+   autenticación, recuperación, ownership, tareas, migraciones de PostgreSQL,
+   cifrado de tokens, recordatorios, cron, webhook, avatares, códigos de
+   vinculación de Telegram, proveedores de IA y las rutas principales de Google
+   simuladas. Falta cubrir a fondo la conversación del bot, el RAG y el flujo
+   visual de Google en el dashboard.
+7. **El RAG está conectado solo a medias.** Los embeddings existen en la base de
+   datos, pero no todas las rutas del código los consumen todavía.
+8. **No hay métrica formal de calidad.** Falta un sistema de feedback que mida si
+   las recomendaciones realmente sirven.
+9. **No hay logging estructurado.** Las llamadas al modelo no registran qué modelo
+   se usó, cuántos tokens consumió ni cuánto tardó.
+10. **Una sola instancia de web y una de bot.** Los límites de intentos, los
+    tokens de recuperación y las sesiones del bot ya se comparten a través de
+    PostgreSQL, así que la web podría escalar; el bot no, porque usa polling y
+    dos procesos con el mismo token se roban los mensajes.
+11. **El dashboard sigue siendo un archivo monolítico.**
+    `src/pages/dashboard.astro` pasa de las 2.800 líneas. Su acceso a datos ya se
+    extrajo a `src/lib/dashboardStats.js`, pero el CSS y el JavaScript de cliente
+    siguen sin separar.
+12. **Google Calendar está a medio camino.** Los archivos existen en
+    `/api/google/`, pero la integración aún no está conectada al dashboard.
+13. **La recuperación de cuenta se basa en preguntas de seguridad.** Ya funciona
+    bien: no revela si una cuenta existe, limita intentos y usa tokens de un solo
+    uso. Aun así, para un servicio público habría que sustituirla por enlaces
+    enviados a un canal verificado.
+14. **Todavía no hay despliegue público.** El proyecto corre en local; Netcup,
+    dominio, HTTPS y operación continua quedan para el final. El runbook ya está
+    escrito en [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md).
 
 ---
 
@@ -564,76 +677,108 @@ API Gateway
 ### Semana 1 — Diagnóstico y arquitectura ✅
 
 - Diagnóstico técnico del estado real del proyecto.
-- Diagramas de arquitectura actual y objetivo.
-- Registro de riesgos técnicos y deuda técnica.
+- Diagramas de la arquitectura actual y de la objetivo.
+- Registro de riesgos y deuda técnica.
 
 ### Semana 2 — API inteligente y contratos ✅
 
-- Capacidad de IA expuesta como API consumible (`/api/v1/health`, `/api/v1/metadata`, `/api/v1/recommend`).
-- Contrato de entrada/salida documentado, validación básica y manejo controlado de errores.
-- Motor de IA (`aiEngine.js`) desacoplado de la base de datos y de la sesión de usuario.
+- Capacidad de IA expuesta como API consumible (`/api/v1/health`,
+  `/api/v1/metadata`, `/api/v1/recommend`).
+- Contrato de entrada y salida documentado, con validación y manejo controlado de
+  errores.
+- Motor de IA (`aiEngine.js`) desacoplado de la base de datos y de la sesión.
 
 ### Semana 3 — Calidad y automatización
 
-- ✅ **Pruebas automatizadas** con Vitest: 103 pruebas sobre API, autenticación,
-  tareas, seguridad, migraciones SQLite/PostgreSQL, cifrado, cron, webhook,
-  recordatorios, proveedores de IA, Google simulado, avatares y vinculación
-  temporal de Telegram.
-- ✅ **Pipeline CI/CD configurado** con GitHub Actions: PostgreSQL 16 efímero,
-  migración, comprobación transaccional, cobertura y build, confirmado en una
-  ejecución remota verde.
-- ✅ **Esquema PostgreSQL reproducible** mediante `npm run db:pg:migrate`, versionado con Drizzle.
-- ⬜ **Logging estructurado** de cada llamada a z.ai: modelo usado, tokens consumidos, latencia y si usó fallback.
-- ⬜ **Sistema de feedback** (👍/👎) en las recomendaciones para medir la utilidad real del modelo.
+- ✅ **Pruebas automatizadas** con Vitest: 103 casos sobre API, autenticación,
+  tareas, seguridad, migraciones, cifrado, cron, webhook, recordatorios,
+  proveedores de IA, Google simulado, avatares y vinculación de Telegram.
+- ✅ **Pipeline de CI/CD** en GitHub Actions con PostgreSQL 16 efímero,
+  migración, comprobación transaccional, cobertura y build. Confirmado en verde
+  en una ejecución remota.
+- ✅ **Esquema de PostgreSQL reproducible** con `npm run db:pg:migrate`,
+  versionado con Drizzle.
+- ⬜ **Logging estructurado** de cada llamada a z.ai: modelo, tokens, latencia y
+  si entró el respaldo.
+- ⬜ **Sistema de feedback** (👍/👎) en las recomendaciones, para medir si de
+  verdad sirven.
 
-> Nota: el plan original mencionaba Jest; se optó por **Vitest** por su compatibilidad nativa con ESM y Astro.
+> El plan original mencionaba Jest. Nos pasamos a **Vitest** porque entiende ESM
+> y Astro de forma nativa.
 
-### Semana 4 — PostgreSQL y contenedor ✅
+### Semana 4 — PostgreSQL y contenedores ✅
 
-- ✅ Contenedor Docker Node 22 para web, PostgreSQL y migraciones.
-- ✅ Perfiles separados para bot de Telegram y scheduler.
-- ✅ Migración SQLite → PostgreSQL con conteos, login, ownership y rollback.
-- Conectar Google Calendar al dashboard: importar eventos como tareas con fecha límite.
-- Ampliar la recuperación con un canal verificado antes de considerar un uso público.
-- Caché de recomendaciones: no volver a llamar a z.ai si la tarea no cambió.
-- Pruebas de los endpoints que dependen de base de datos (PostgreSQL real).
+- ✅ Contenedor Docker con Node 22 para web, PostgreSQL y migraciones.
+- ✅ Perfiles separados para el bot de Telegram y el planificador.
+- ✅ Migración completa a PostgreSQL, verificada con conteos, login y ownership.
+- ⬜ Conectar Google Calendar al dashboard e importar eventos como tareas con
+  fecha límite.
+- ⬜ Reforzar la recuperación de cuenta con un canal verificado antes de pensar
+  en uso público.
+- ⬜ Cachear recomendaciones para no volver a llamar a z.ai si la tarea no
+  cambió.
 
 ### Semana 5 — Colaboración, limpieza y mejoras visuales
 
-- Espacios de equipo: múltiples usuarios comparten un conjunto de tareas.
-- Asignación de tareas a miembros del equipo.
-- Notificaciones de Telegram cuando alguien modifica una tarea asignada.
-- Limpieza de código muerto: módulos de Supabase sin uso y scripts de diagnóstico sueltos.
-- Mejoras visuales del dashboard.
+- ⬜ Espacios de equipo: varios usuarios compartiendo un mismo conjunto de
+  tareas.
+- ⬜ Asignar tareas a miembros del equipo.
+- ⬜ Avisar por Telegram cuando alguien modifica una tarea asignada.
+- ⬜ Limpiar código muerto: los módulos de Supabase sin uso y los scripts de
+  diagnóstico sueltos.
+- ⬜ Mejoras visuales del dashboard.
 
 ### Semana 6 — Despliegue y producción
 
-- ✅ Migrar de SQLite a PostgreSQL para soportar concurrencia local (completado: motor único).
-- Ampliar el pipeline con despliegue automático.
-- Desplegar en un servicio como Railway, Render o un VPS con dominio HTTPS propio.
-- Versionamiento del prompt del sistema para rastrear cambios de calidad.
+- ✅ Migrar a PostgreSQL para soportar concurrencia. **Cerrado:** es el motor
+  único del proyecto.
+- ✅ Preparar el despliegue: `compose.prod.yml` y el runbook de
+  [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md).
+- ⬜ Publicar en Netcup con dominio y HTTPS propios.
+- ⬜ Extender el pipeline con despliegue automático.
+- ⬜ Versionar el prompt del sistema para poder rastrear cambios de calidad.
 
 ---
 
 ## 16. Documentación adicional
 
+Si necesitas entrar en detalle, cada documento cubre una parte distinta:
+
+**Para trabajar en el proyecto**
+
+- [`docs/ENTORNO_WINDOWS.md`](docs/ENTORNO_WINDOWS.md) — Docker Desktop en
+  Windows: dónde clonar, memoria de WSL2, puertos ocupados y los errores que
+  parecen bugs pero no lo son.
+- [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md) — runbook del servidor: variables,
+  proxy inverso, respaldos, actualización y vuelta atrás.
+- [`docs/TODO_DESARROLLO.md`](docs/TODO_DESARROLLO.md) — el backlog por bloques,
+  con lo hecho y lo pendiente.
+- [`AGENTS.md`](AGENTS.md) — reglas de trabajo, verificación mínima y criterios
+  de cierre.
+
+**Para entender decisiones técnicas**
+
+- [`docs/CIERRE_MIGRACION_POSTGRESQL.md`](docs/CIERRE_MIGRACION_POSTGRESQL.md) —
+  cómo se retiró SQLite y qué implicó.
 - [`docs/POSTGRESQL_DISENO_BLOQUE_2.md`](docs/POSTGRESQL_DISENO_BLOQUE_2.md) —
-  diseño, diccionario, comandos, evidencia y límites de la migración PostgreSQL.
-- [`docs/CIERRE_BLOQUE_2.md`](docs/CIERRE_BLOQUE_2.md) — resultados técnicos,
-  QA de navegador, límites y puerta hacia el Bloque 3.
-- [`docs/CIERRE_BLOQUE_3.md`](docs/CIERRE_BLOQUE_3.md) — suite ampliada,
-  correcciones descubiertas, diseño de CI y evidencia de QA local.
-- [`docs/QA_IA_LOCAL.md`](docs/QA_IA_LOCAL.md) — prueba real de z.ai, hallazgos
-  de calidad, correcciones de RAG y límites pendientes.
-- [`docs/CIERRE_BLOQUE_4.md`](docs/CIERRE_BLOQUE_4.md) — Docker, migración,
-  evidencia de QA y rollback local.
+  diseño, diccionario de datos, comandos y límites del esquema.
+- [`api.md`](api.md) — contratos completos de la API inteligente.
+
+**Registros y evidencia**
 
 | Documento | Contenido |
 |---|---|
-| [API inteligente](#7-api-inteligente) | Contratos de entrada, respuestas, validaciones y ejemplos de consumo |
-| [`docs/pruebas-semana-3.md`](docs/pruebas-semana-3.md) | Mapa de pruebas: qué comportamientos se validan, por qué aportan valor y con qué datos |
-| [`docs/registro-pruebas-semana-3.md`](docs/registro-pruebas-semana-3.md) | Registro de errores detectados, correcciones aplicadas y bloqueos técnicos abiertos |
-| [`docs/CIERRE_BLOQUE_1.md`](docs/CIERRE_BLOQUE_1.md) | Evidencia del cierre de seguridad, actualización de dependencias y separación de credenciales de IA |
+| [`docs/pruebas-semana-3.md`](docs/pruebas-semana-3.md) | Mapa de pruebas: qué valida cada una, por qué aporta y con qué datos |
+| [`docs/registro-pruebas-semana-3.md`](docs/registro-pruebas-semana-3.md) | Errores detectados, correcciones aplicadas y bloqueos abiertos |
+| [`docs/QA_IA_LOCAL.md`](docs/QA_IA_LOCAL.md) | Prueba real de z.ai, hallazgos de calidad y correcciones de RAG |
+| [`docs/QA_TELEGRAM_LOCAL.md`](docs/QA_TELEGRAM_LOCAL.md) | QA del bot con usuarios ficticios |
+| [`docs/QA_ESTABILIZACION_LOCAL.md`](docs/QA_ESTABILIZACION_LOCAL.md) | Estabilización del entorno local |
+| `docs/CIERRE_BLOQUE_1..4.md` | Actas de cierre de cada bloque: resultados, QA y límites |
+
+> Los `docs/CIERRE_BLOQUE_*.md` y las líneas base son **documentos históricos**.
+> Describen cómo estaba el proyecto al cerrar cada bloque y contienen comandos
+> que ya no existen. Cuando haya discrepancia, mandan el código, las migraciones
+> y este README.
 
 ---
 
@@ -643,11 +788,12 @@ API Gateway
 |---|---|
 | Framework web | Astro 7.x (SSR con adaptador Node) |
 | Base de datos | PostgreSQL 16 (único motor, también en pruebas) |
+| ORM y migraciones | Drizzle ORM + drizzle-kit |
 | IA generativa | z.ai — GLM (`glm-4.5-flash`) |
-| IA local (fallback) | Ollama + Llama 3.2 |
+| IA local (respaldo) | Ollama + Llama 3.2 |
 | Bot | Telegram Bot API |
 | Autenticación | bcryptjs + JWT (jose) |
 | Pruebas | Vitest 4 + @vitest/coverage-v8 |
 | CI/CD | GitHub Actions |
-| Runtime | Node.js 22.12 o posterior dentro de la línea 22 |
-| Contenedores | Docker Compose (web, migraciones, PostgreSQL, bot y scheduler) |
+| Runtime | Node.js 22.12 o posterior, dentro de la línea 22 |
+| Contenedores | Docker Compose (web, migraciones, PostgreSQL, bot y planificador) |
