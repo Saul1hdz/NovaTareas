@@ -2299,17 +2299,38 @@ async function genAI(taskId) {
   );
   subtaskDiv.replaceChildren(loading);
 
-  const res = await fetch(`/api/tasks/${taskId}/ai`, { method: 'POST' });
-  const data = await res.json();
-  if (btn) { btn.disabled = false; btn.textContent = ' Consejos'; }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 50000);
 
-  if (data.error) {
-    const errorBox = createTextElement('div', '', `⚠️ ${data.error}`);
+  try {
+    const res = await fetch(`/api/tasks/${taskId}/ai`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+      signal: controller.signal
+    });
+    const contentType = res.headers.get('content-type') || '';
+    const data = contentType.includes('application/json')
+      ? await res.json()
+      : null;
+
+    if (!res.ok) {
+      const message = data?.error || `Error del servidor (HTTP ${res.status}).`;
+      throw new Error(message);
+    }
+
+    await loadTasks();
+  } catch (error) {
+    const message = error?.name === 'AbortError'
+      ? 'El asistente tardó demasiado. Intenta nuevamente.'
+      : error?.message || 'No se pudo obtener la recomendación.';
+    const errorBox = createTextElement('div', '', `⚠️ ${message}`);
     errorBox.style.cssText = 'color:var(--red);font-size:.82rem;padding:.5rem 0';
     subtaskDiv.replaceChildren(errorBox);
-    return;
+  } finally {
+    clearTimeout(timeoutId);
+    if (btn) { btn.disabled = false; btn.textContent = ' Consejos'; }
   }
-  loadTasks();
 }
 
 // ── CREATE TASK ──
