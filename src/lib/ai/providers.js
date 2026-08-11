@@ -59,6 +59,7 @@ export async function callZai(prompt, { maxTokens = 700, temperature = 0.7 } = {
         messages: [{ role: 'user', content: prompt }],
         max_tokens: maxTokens,
         temperature,
+        thinking: { type: 'disabled' },
       }),
       signal: AbortSignal.timeout(ZAI_TIMEOUT_MS),
     });
