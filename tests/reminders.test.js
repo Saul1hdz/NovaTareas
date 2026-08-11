@@ -36,11 +36,12 @@ async function createReminderFixture(suffix) {
   // 'YYYY-MM-DD HH:mm:ss' según la zona del servidor y la ventana de
   // recordatorios se desplazaría sin que ninguna prueba fallara.
   const reminderAt = new Date(Date.now() + 5 * 60 * 1000);
+  const futureDueDate = dateInAppTimeZone(new Date(Date.now() + 24 * 60 * 60 * 1000));
   const reminder = await db.prepare(`
     INSERT INTO tasks (user_id, title, due_date, reminder_at)
     VALUES ($1, $2, $3, $4)
     RETURNING id
-  `).get(userId, `Recordatorio ${suffix}`, '2026-08-01', reminderAt);
+  `).get(userId, `Recordatorio ${suffix}`, futureDueDate, reminderAt);
   const overdue = await db.prepare(`
     INSERT INTO tasks (user_id, title, due_date)
     VALUES ($1, $2, $3)

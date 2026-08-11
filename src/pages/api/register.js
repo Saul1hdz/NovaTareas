@@ -3,13 +3,37 @@ export const prerender = false;
 import bcrypt from 'bcryptjs';
 import { getDb, withTransaction } from '../../lib/db.js';
 import { createSessionCookie, createToken } from '../../lib/auth.js';
-import { safeErrorSummary } from '../../lib/security.js';
+import {
+  consumeRateLimit,
+  getClientIp,
+  safeErrorSummary,
+} from '../../lib/security.js';
 
 const PHONE_REGEX = /^\+?[1-9]\d{6,14}$/;
 const PASSWORD_REGEX = /^(?=.*[a-zA-Z])(?=.*\d).{8,}$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const REGISTRATION_WINDOW_MS = 60 * 60 * 1000;
+const REGISTRATION_ATTEMPTS_PER_IP = 10;
 
 export async function POST({ request }) {
+  if (process.env.REGISTRATION_ENABLED !== 'true') {
+    return json({ error: 'El registro público está deshabilitado.' }, 403);
+  }
+
+  const registrationLimit = await consumeRateLimit(
+    'register-ip',
+    getClientIp(request),
+    REGISTRATION_ATTEMPTS_PER_IP,
+    REGISTRATION_WINDOW_MS
+  );
+  if (!registrationLimit.allowed) {
+    return json(
+      { error: 'Demasiados intentos de registro. Intenta nuevamente más tarde.' },
+      429,
+      { 'Retry-After': String(registrationLimit.retryAfterSeconds) }
+    );
+  }
+
   let body;
   try {
     body = await request.json();

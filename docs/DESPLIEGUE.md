@@ -40,6 +40,11 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 | `DATABASE_URL` | La define `compose.prod.yml` a partir de `POSTGRES_PASSWORD`. |
 | `CRON_SECRET` | El endpoint de recordatorios responde 503 y no se envía ningún aviso. |
 
+El registro público está cerrado por defecto. Define
+`REGISTRATION_ENABLED=true` solo si deseas aceptar cuentas nuevas; el endpoint
+aplica un máximo de 10 solicitudes por IP cada hora en PostgreSQL. Déjalo en
+`false` para demos cerradas o cuando ya hayas creado las cuentas necesarias.
+
 ### Necesarias según la función que se active
 
 | Variable | Para qué |
@@ -233,7 +238,8 @@ Recorre esta lista tras cada publicación:
 
 1. `/api/v1/health/ready` responde 200.
 2. La página de inicio carga por HTTPS con certificado válido.
-3. Se puede iniciar sesión con una cuenta de demostración.
+3. Se puede iniciar sesión con una cuenta de demostración y el registro responde
+   según `REGISTRATION_ENABLED` (`403` si está cerrado).
 4. Se crea una tarea y aparece en el listado.
 5. Se sube un avatar y **sigue visible tras reiniciar el contenedor**.
 6. El cron de recordatorios responde 200 con el `CRON_SECRET` y 401 sin él.

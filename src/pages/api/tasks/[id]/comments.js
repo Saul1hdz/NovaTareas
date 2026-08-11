@@ -5,17 +5,13 @@ import { parseId } from '../../../../lib/routeParams.js';
 
 // Proveedores compartidos: una sola definición de modelo, timeouts y
 // respaldos para toda la aplicación.
-import { callOllama, callZai, trimToCompleteSentence } from '../../../../lib/ai/providers.js';
+import { callOllama, callZai } from '../../../../lib/ai/providers.js';
 
 const tryZai = prompt => callZai(prompt);
 const tryOllama = prompt => callOllama(prompt);
 
 
 const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
-const ZAI_URL       = 'https://api.z.ai/api/paas/v4/chat/completions';
-const ZAI_MODEL     = process.env.ZAI_MODEL || 'glm-4.5-flash';
-const OLLAMA_URL     = process.env.OLLAMA_URL   || 'http://localhost:11434';
-const OLLAMA_MODEL   = process.env.OLLAMA_MODEL || 'llama3.2:3b';
 
 export const POST = async ({ request, params }) => {
   const user = await getUser(request);

@@ -15,6 +15,7 @@ x-app-environment: &app-environment
   PG_POOL_MAX: "${PG_POOL_MAX:-10}"
   SECRET_KEY: ${SECRET_KEY:?define SECRET_KEY}
   CRON_SECRET: ${CRON_SECRET:?define CRON_SECRET}
+  REGISTRATION_ENABLED: "${REGISTRATION_ENABLED:-false}"
   APP_TIME_ZONE: ${APP_TIME_ZONE:-America/El_Salvador}
   AVATAR_UPLOAD_DIR: /app/dist/client/avatars
 
@@ -78,6 +79,10 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    # El healthcheck de la imagen consulta la web; no representa la salud de un
+    # proceso de polling y marcaría este contenedor como unhealthy aunque opere.
+    healthcheck:
+      disable: true
     command: ["node", "telegram/bot.js"]
 
 volumes:

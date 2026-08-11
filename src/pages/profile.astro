@@ -41,7 +41,7 @@ const USER_TYPE_LABELS: Record<string, string> = { estudiante: '🎓 Estudiante'
           : <div class="avatar-placeholder" id="avatar-preview">{user?.full_name?.[0]?.toUpperCase() || '?'}</div>
         }
         <label class="avatar-edit-btn" for="avatar-input" title="Cambiar foto">✎</label>
-        <input type="file" id="avatar-input" accept="image/*" style="display:none" onchange="uploadAvatar(event)" />
+        <input type="file" id="avatar-input" accept="image/*" style="display:none" />
       </div>
       <div class="avatar-info">
         <div class="avatar-name">{user?.full_name}</div>
@@ -54,7 +54,7 @@ const USER_TYPE_LABELS: Record<string, string> = { estudiante: '🎓 Estudiante'
     <!-- Datos personales -->
     <section class="profile-card">
       <h2>Información personal</h2>
-      <form id="form-profile" onsubmit="saveProfile(event)">
+      <form id="form-profile">
         <div class="field">
           <label>Nombre completo</label>
           <input type="text" name="full_name" value={user?.full_name || ''} placeholder="Tu nombre" required />
@@ -84,7 +84,7 @@ const USER_TYPE_LABELS: Record<string, string> = { estudiante: '🎓 Estudiante'
     <!-- Cambiar contraseña -->
     <section class="profile-card">
       <h2>Cambiar contraseña</h2>
-      <form id="form-password" onsubmit="savePassword(event)">
+      <form id="form-password">
         <div class="field">
           <label>Nueva contraseña</label>
           <input type="password" name="password" placeholder="Mín. 8 caracteres con letras y números" />
@@ -186,8 +186,9 @@ code { background: var(--bg3); padding: 0.2rem 0.4rem; border-radius: 4px; font-
 </style>
 
 <script>
-async function uploadAvatar(event) {
-  const file = event.target.files[0];
+async function uploadAvatar(event: Event) {
+  const input = event.currentTarget as HTMLInputElement;
+  const file = input.files?.[0];
   if (!file) return;
 
   const formData = new FormData();
@@ -216,9 +217,13 @@ async function uploadAvatar(event) {
   }
 }
 
-async function saveProfile(e) {
+async function saveProfile(e: SubmitEvent) {
   e.preventDefault();
-  const form = e.target;
+  const form = e.currentTarget as HTMLFormElement & {
+    full_name: HTMLInputElement;
+    telefono: HTMLInputElement;
+    user_type: HTMLSelectElement;
+  };
   const msg = document.getElementById('profile-msg');
   msg.textContent = '';
 
@@ -236,9 +241,9 @@ async function saveProfile(e) {
   else { msg.textContent = '❌ ' + (data.error || 'Error'); msg.className = 'msg err'; }
 }
 
-async function savePassword(e) {
+async function savePassword(e: SubmitEvent) {
   e.preventDefault();
-  const form = e.target;
+  const form = e.currentTarget as HTMLFormElement & { password: HTMLInputElement };
   const msg = document.getElementById('password-msg');
   msg.textContent = '';
 
@@ -270,12 +275,21 @@ async function generateTelegramLinkCode() {
     const response = await fetch('/api/telegram/link-code', {
       method: 'POST',
       credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
     });
-    const data = await response.json();
+    const contentType = response.headers.get('content-type') || '';
+    const data = contentType.includes('application/json')
+      ? await response.json()
+      : null;
     result.replaceChildren();
 
     if (!response.ok) {
-      result.textContent = data.error || 'No se pudo generar el código.';
+      result.textContent = data?.error || `Error del servidor (HTTP ${response.status}).`;
+      return;
+    }
+    if (typeof data?.command !== 'string') {
+      result.textContent = 'El servidor devolvió una respuesta inválida.';
       return;
     }
 
@@ -297,15 +311,12 @@ window.addEventListener('pageshow', (event) => {
 
 declare global {
   interface Window {
-    uploadAvatar: (event: Event) => void;
-    saveProfile: (e: Event) => void;
-    savePassword: (e: Event) => void;
     generateTelegramLinkCode: () => void;
   }
 }
 
-window.uploadAvatar = uploadAvatar;
-window.saveProfile = saveProfile;
-window.savePassword = savePassword;
+document.getElementById('avatar-input')?.addEventListener('change', uploadAvatar);
+document.getElementById('form-profile')?.addEventListener('submit', saveProfile);
+document.getElementById('form-password')?.addEventListener('submit', savePassword);
 window.generateTelegramLinkCode = generateTelegramLinkCode;
 </script>

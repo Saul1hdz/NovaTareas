@@ -6,13 +6,13 @@ import {
   getCategoriesByUser,
 } from './db.js';
 import { consumeTelegramLinkCode } from './telegramLink.js';
-import { consumeRateLimit, resetRateLimit, safeErrorSummary } from './security.js';
+import { consumeRateLimit, resetRateLimit } from './security.js';
 import { validateTaskInput } from './taskValidation.js';
 import { defaultReminderFor } from './appTime.js';
 
 // Proveedores compartidos: una sola definición de modelo, timeouts y
 // respaldos para toda la aplicación.
-import { callOllama, callZai, trimToCompleteSentence } from './ai/providers.js';
+import { callOllama, callZai } from './ai/providers.js';
 
 const tryZai = prompt => callZai(prompt);
 const tryOllama = prompt => callOllama(prompt);
@@ -21,10 +21,6 @@ const tryOllama = prompt => callOllama(prompt);
 const BOT_TOKEN      = process.env.TELEGRAM_BOT_TOKEN;
 const API_BASE       = `https://api.telegram.org/bot${BOT_TOKEN}`;
 const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
-const ZAI_URL       = 'https://api.z.ai/api/paas/v4/chat/completions';
-const ZAI_MODEL     = process.env.ZAI_MODEL || 'glm-4.5-flash';
-const OLLAMA_URL     = process.env.OLLAMA_URL   || 'http://localhost:11434';
-const OLLAMA_MODEL   = process.env.OLLAMA_MODEL || 'llama3.2:3b';
 
 // ─── Estado de conversación ──────────────────────────────────────────────────
 //

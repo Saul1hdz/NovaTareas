@@ -2,7 +2,7 @@
 
 // Proveedores compartidos: una sola definición de modelo, timeouts y
 // respaldos para toda la aplicación.
-import { callOllama, callZai, trimToCompleteSentence } from './ai/providers.js';
+import { callOllama, callZai } from './ai/providers.js';
 
 const tryZai = prompt => callZai(prompt);
 const tryOllama = prompt => callOllama(prompt);
@@ -24,9 +24,6 @@ export const AI_META = {
 };
 
 const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
-const ZAI_URL      = 'https://api.z.ai/api/paas/v4/chat/completions';
-const OLLAMA_URL   = process.env.OLLAMA_URL   || 'http://localhost:11434';
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b';
 
 const VALID_PRIORITIES = ['baja', 'media', 'alta', 'urgente'];
 const VALID_USER_TYPES = ['comun', 'estudiante', 'empleado'];

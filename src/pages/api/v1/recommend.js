@@ -2,31 +2,26 @@
 export const prerender = false;
 
 import { validateTaskInput, generateRecommendation } from '../../../lib/aiEngine.js';
-import { safeEqualStrings, safeErrorSummary } from '../../../lib/security.js';
+import {
+  consumeRateLimit,
+  getClientIp,
+  safeEqualStrings,
+  safeErrorSummary,
+} from '../../../lib/security.js';
 
 const AI_API_KEY = process.env.AI_API_KEY?.trim();
 
-// ── Rate limiting simple en memoria (protege el saldo de z.ai) ───────────────
 const RATE_LIMIT_MAX    = Number(process.env.AI_RATE_LIMIT_MAX)    || 20;
 const RATE_LIMIT_WINDOW = Number(process.env.AI_RATE_LIMIT_WINDOW) || 5 * 60 * 1000;
-const rateLog = new Map(); // ip -> [timestamps]
 
-function isRateLimited(ip) {
-  const now   = Date.now();
-  const calls = (rateLog.get(ip) || []).filter(t => now - t < RATE_LIMIT_WINDOW);
-  calls.push(now);
-  rateLog.set(ip, calls);
-  return calls.length > RATE_LIMIT_MAX;
-}
-
-function json(data, status) {
+function json(data, status, headers = {}) {
   return new Response(JSON.stringify(data, null, 2), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
   });
 }
 
-export async function POST({ request, clientAddress }) {
+export async function POST({ request }) {
   if (!AI_API_KEY) {
     return json({ error: 'API externa no configurada.' }, 503);
   }
@@ -36,10 +31,18 @@ export async function POST({ request, clientAddress }) {
     return json({ error: 'No autorizado.' }, 401);
   }
 
-  const ip = clientAddress || 'unknown';
-
-  if (isRateLimited(ip)) {
-    return json({ error: 'Demasiadas peticiones. Espera unos minutos e inténtalo de nuevo.' }, 429);
+  const limit = await consumeRateLimit(
+    'api-v1-recommend-ip',
+    getClientIp(request),
+    RATE_LIMIT_MAX,
+    RATE_LIMIT_WINDOW
+  );
+  if (!limit.allowed) {
+    return json(
+      { error: 'Demasiadas peticiones. Espera unos minutos e inténtalo de nuevo.' },
+      429,
+      { 'Retry-After': String(limit.retryAfterSeconds) }
+    );
   }
 
   // 1. Parseo seguro del JSON

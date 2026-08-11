@@ -40,6 +40,7 @@ export default defineConfig({
       CRON_SECRET: 'cron-solo-para-pruebas',
       TELEGRAM_WEBHOOK_SECRET: 'telegram-solo-para-pruebas',
       TELEGRAM_BOT_TOKEN: '',
+      REGISTRATION_ENABLED: 'true',
       APP_TIME_ZONE: 'America/El_Salvador',
       GOOGLE_CLIENT_ID: 'google-client-solo-para-pruebas',
       GOOGLE_CLIENT_SECRET: 'google-secret-solo-para-pruebas',

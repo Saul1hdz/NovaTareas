@@ -2,44 +2,24 @@ import { getDb }                         from '../../../../lib/db.js';
 import { getUser }                       from '../../../../lib/auth.js';
 import { getRagContext }                 from '../../../../lib/rag.js';
 import { parseId }                     from '../../../../lib/routeParams.js';
+import { consumeRateLimit } from '../../../../lib/security.js';
 
 // Proveedores compartidos: una sola definición de modelo, timeouts y
 // respaldos para toda la aplicación.
-import { callOllama, callZai, trimToCompleteSentence } from '../../../../lib/ai/providers.js';
+import { callOllama, callZai } from '../../../../lib/ai/providers.js';
 
 const tryZai = prompt => callZai(prompt);
 const tryOllama = prompt => callOllama(prompt);
 
 
-const OLLAMA_URL   = process.env.OLLAMA_URL   || 'http://localhost:11434';
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b';
 const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
-const ZAI_URL      = 'https://api.z.ai/api/paas/v4/chat/completions';
 const ZAI_MODEL    = process.env.ZAI_MODEL || 'glm-4.5-flash';
 // Identifica el prompt con el que se generó cada recomendación guardada.
 const PROMPT_VERSION = 'task-recommendation-v1';
 
-// ── Rate limiting simple en memoria ──────────────────────────────────────────
-// Cada llamada exitosa a z.ai cuesta saldo real. Sin este límite, un usuario
-// (o un bug en el frontend que reintente en bucle) puede agotar la cuenta.
-// Es en memoria porque basta para un solo proceso; si se despliega con varias
-// instancias, reemplazar por un store compartido (Redis, tabla en SQLite, etc.)
 const RATE_LIMIT_MAX    = Number(process.env.AI_RATE_LIMIT_MAX)    || 5;  // llamadas
 const RATE_LIMIT_WINDOW = Number(process.env.AI_RATE_LIMIT_WINDOW) || 5 * 60 * 1000; // ms (5 min)
-const rateLimitLog = new Map(); // userId -> [timestamps]
-
-function isRateLimited(userId) {
-  const now   = Date.now();
-  const calls = (rateLimitLog.get(userId) || []).filter(t => now - t < RATE_LIMIT_WINDOW);
-  rateLimitLog.set(userId, calls);
-  return calls.length >= RATE_LIMIT_MAX;
-}
-
-function registerCall(userId) {
-  const calls = rateLimitLog.get(userId) || [];
-  calls.push(Date.now());
-  rateLimitLog.set(userId, calls);
-}
 
 export const POST = async ({ request, params }) => {
   const user = await getUser(request);
@@ -52,12 +32,17 @@ export const POST = async ({ request, params }) => {
   const task = await db.prepare('SELECT * FROM tasks WHERE id=$1 AND user_id=$2').get(taskId, user.userId);
   if (!task) return json({ error: 'No encontrado' }, 404);
 
-  if (isRateLimited(user.userId)) {
+  const rateLimit = await consumeRateLimit(
+    'task-ai-user',
+    String(user.userId),
+    RATE_LIMIT_MAX,
+    RATE_LIMIT_WINDOW
+  );
+  if (!rateLimit.allowed) {
     return json({
       error: `Límite de ${RATE_LIMIT_MAX} recomendaciones cada ${RATE_LIMIT_WINDOW / 60000} minutos alcanzado. Intenta de nuevo más tarde.`
-    }, 429);
+    }, 429, { 'Retry-After': String(rateLimit.retryAfterSeconds) });
   }
-  registerCall(user.userId);
 
   const userRecord = await db.prepare('SELECT user_type FROM users WHERE id=$1').get(user.userId);
   const userType   = userRecord?.user_type || 'comun';
@@ -236,8 +221,8 @@ function getRulesRecommendation(description, userType, priority = 'media') {
   return tips[userType] || tips.comun;
 }
 
-function json(data, status) {
+function json(data, status, headers = {}) {
   return new Response(JSON.stringify(data), {
-    status, headers: { 'Content-Type': 'application/json' }
+    status, headers: { 'Content-Type': 'application/json', ...headers }
   });
 }

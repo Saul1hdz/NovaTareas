@@ -42,6 +42,7 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/migrations ./migrations
 COPY --from=build /app/scripts ./scripts
 COPY --from=build /app/src ./src
+COPY --from=build /app/telegram ./telegram
 
 # Los avatares se sirven desde dist/client. El directorio se crea aquí para
 # poder montar encima un volumen persistente con el dueño correcto.

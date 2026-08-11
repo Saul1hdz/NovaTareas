@@ -54,6 +54,57 @@ describe('primitivas de seguridad', () => {
     expect(row.total).toBe(1);
   });
 
+  it('no permite superar el máximo con solicitudes concurrentes', async () => {
+    const db = getDb();
+    const key = `concurrente-${crypto.randomUUID()}`;
+    await db.query(`
+      CREATE OR REPLACE FUNCTION test_delay_rate_limit_insert()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        PERFORM pg_sleep(0.05);
+        RETURN NEW;
+      END;
+      $$;
+      CREATE TRIGGER test_delay_rate_limit_insert
+      BEFORE INSERT ON rate_limit_hits
+      FOR EACH ROW EXECUTE FUNCTION test_delay_rate_limit_insert();
+    `);
+
+    try {
+      const results = await Promise.all(
+        Array.from({ length: 12 }, () => consumeRateLimit('concurrencia', key, 3, 60_000))
+      );
+      expect(results.filter(result => result.allowed)).toHaveLength(3);
+      expect(results.filter(result => !result.allowed)).toHaveLength(9);
+    } finally {
+      await db.query('DROP TRIGGER IF EXISTS test_delay_rate_limit_insert ON rate_limit_hits');
+      await db.query('DROP FUNCTION IF EXISTS test_delay_rate_limit_insert()');
+    }
+  });
+
+  it('normaliza namespace y sujeto según los límites de la tabla', async () => {
+    const namespace = `scope-${'n'.repeat(80)}`;
+    const subject = `subject-${'s'.repeat(240)}`;
+
+    expect((await consumeRateLimit(namespace, subject, 1, 60_000)).allowed).toBe(true);
+
+    const stored = await getDb().prepare(`
+      SELECT scope, subject
+      FROM rate_limit_hits
+      WHERE scope = $1 AND subject = $2
+    `).get(namespace.slice(0, 60), subject.slice(0, 200));
+    expect(stored.scope).toHaveLength(60);
+    expect(stored.subject).toHaveLength(200);
+
+    await resetRateLimit(namespace, subject);
+    const remaining = await getDb().prepare(`
+      SELECT COUNT(*)::int AS total
+      FROM rate_limit_hits
+      WHERE scope = $1 AND subject = $2
+    `).get(namespace.slice(0, 60), subject.slice(0, 200));
+    expect(remaining.total).toBe(0);
+  });
+
   it('firma sesiones con versión y vencimiento', async () => {
     const token = await createToken(7, 'Usuario', 3);
     const payload = await verifyToken(token);

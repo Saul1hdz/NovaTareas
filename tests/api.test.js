@@ -15,7 +15,10 @@ import { POST as recommendPOST, GET as recommendGET } from '../src/pages/api/v1/
 
 /** Construye un contexto de petición similar al que entrega Astro. */
 function makeContext(body, ip = '127.0.0.1', apiKey = 'api-externa-solo-para-pruebas') {
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Forwarded-For': ip,
+  };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
   return {
     request: new Request('http://localhost:4321/api/v1/recommend', {
@@ -23,7 +26,6 @@ function makeContext(body, ip = '127.0.0.1', apiKey = 'api-externa-solo-para-pru
       headers,
       body: typeof body === 'string' ? body : JSON.stringify(body),
     }),
-    clientAddress: ip,
   };
 }
 

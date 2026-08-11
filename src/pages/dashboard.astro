@@ -194,8 +194,8 @@ const { total, done, active, urgent, overdue, labels } =
   </div>
 
   <!-- NEW TASK MODAL -->
-  <div class="modal-overlay" id="modal" onclick="closeModal(event)">
-    <div class="modal-box" onclick="event.stopPropagation()">
+  <div class="modal-overlay" id="modal">
+    <div class="modal-box">
       <div class="modal-header">
         <h2>Nueva tarea</h2>
         <button class="modal-close" onclick="closeModal()">✕</button>
@@ -240,8 +240,8 @@ const { total, done, active, urgent, overdue, labels } =
     </div>
   </div>
   <!-- MODAL ARCHIVAR CON OBSERVACIONES -->
-  <div class="modal-overlay" id="archive-modal" onclick="closeArchiveModal(event)">
-    <div class="modal-box" onclick="event.stopPropagation()" style="max-width:460px">
+  <div class="modal-overlay" id="archive-modal">
+    <div class="modal-box" style="max-width:460px">
       <div class="modal-header">
         <h2>📦 Archivar tarea</h2>
         <button class="modal-close" onclick="document.getElementById('archive-modal').classList.remove('open')">✕</button>
@@ -272,8 +272,8 @@ const { total, done, active, urgent, overdue, labels } =
   </div>
 
   <!-- MODAL HISTORIAL Y COMENTARIOS -->
-  <div class="modal-overlay" id="history-modal" onclick="closeHistoryModal(event)">
-    <div class="modal-box" onclick="event.stopPropagation()" style="max-width:560px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden">
+  <div class="modal-overlay" id="history-modal">
+    <div class="modal-box" style="max-width:560px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden">
       <div class="modal-header">
         <h2> Historial de tarea</h2>
         <button class="modal-close" onclick="document.getElementById('history-modal').classList.remove('open')">✕</button>
@@ -1843,7 +1843,7 @@ button:focus-visible {
 }
 </style>
 
-<script define:vars={{ theme }}>
+<script is:inline define:vars={{ theme }}>
 // ── STATE ──
 let allTasks = [];
 let archiveTasks = [];
@@ -2896,6 +2896,18 @@ window.closeSidebar      = closeSidebar;
 window.toggleSidebar     = toggleSidebar;
 window.closeDayPanel     = closeDayPanel;
 window.openDayPanel      = openDayPanel;
+
+[
+  ['modal', closeModal],
+  ['archive-modal', closeArchiveModal],
+  ['history-modal', closeHistoryModal],
+].forEach(([id, close]) => {
+  const overlay = document.getElementById(id);
+  overlay?.addEventListener('click', close);
+  overlay?.querySelector('.modal-box')?.addEventListener('click', event => {
+    event.stopPropagation();
+  });
+});
 
 // ── INIT ──
 loadTasks();

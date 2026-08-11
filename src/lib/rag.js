@@ -300,7 +300,7 @@ export function buildRagContext(similarTasks) {
 
  * @param {number} userId   - ID del usuario autenticado
  * @param {object} task     - Tarea nueva (title, description, priority)
- * @returns {string}        - Bloque de contexto para inyectar en el prompt
+ * @returns {Promise<string>} - Bloque de contexto para inyectar en el prompt
  */
 export async function getRagContext(userId, task) {
   try {

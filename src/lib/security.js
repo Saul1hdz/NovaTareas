@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
-import { getDb } from './db.js';
+import { getDb, withTransaction } from './db.js';
 
 export function safeEqualStrings(left, right) {
   if (typeof left !== 'string' || typeof right !== 'string') return false;
@@ -26,41 +26,53 @@ export function getClientIp(request) {
  */
 export async function consumeRateLimit(namespace, key, maxAttempts, windowMs) {
   const db = getDb();
+  const scope = String(namespace).slice(0, 60);
   const subject = String(key).slice(0, 200);
   const windowSeconds = Math.ceil(windowMs / 1000);
 
-  // El registro más antiguo dentro de la ventana marca cuándo se libera cupo.
-  const current = await db.prepare(`
-    SELECT COUNT(*)::int AS hits,
-           MIN(created_at) AS oldest
-    FROM rate_limit_hits
-    WHERE scope = $1 AND subject = $2
-      AND created_at > NOW() - ($3::int * INTERVAL '1 second')
-  `).get(namespace, subject, windowSeconds);
+  return withTransaction(async (tx) => {
+    // Serializa únicamente la misma cuota. Sin este lock, dos procesos pueden
+    // observar el mismo COUNT y aceptar en paralelo más intentos que el máximo.
+    await tx.prepare(`
+      SELECT pg_advisory_xact_lock(
+        hashtextextended($1 || chr(31) || $2, 0)
+      )
+    `).run(scope, subject);
 
-  if (current.hits >= maxAttempts) {
-    const freesAt = new Date(current.oldest).getTime() + windowMs;
-    const retryAfterMs = Math.max(1000, freesAt - Date.now());
-    return { allowed: false, retryAfterSeconds: Math.ceil(retryAfterMs / 1000) };
-  }
+    const current = await tx.prepare(`
+      SELECT COUNT(*)::int AS hits,
+             MIN(created_at) AS oldest
+      FROM rate_limit_hits
+      WHERE scope = $1 AND subject = $2
+        AND created_at > NOW() - ($3::int * INTERVAL '1 second')
+    `).get(scope, subject, windowSeconds);
 
-  await db.prepare(
-    'INSERT INTO rate_limit_hits (scope, subject) VALUES ($1, $2)'
-  ).run(namespace, subject);
+    if (current.hits >= maxAttempts) {
+      const freesAt = new Date(current.oldest).getTime() + windowMs;
+      const retryAfterMs = Math.max(1000, freesAt - Date.now());
+      return { allowed: false, retryAfterSeconds: Math.ceil(retryAfterMs / 1000) };
+    }
 
-  // Barrido perezoso: evita que la tabla crezca sin límite sin necesitar cron.
-  await db.prepare(`
-    DELETE FROM rate_limit_hits
-    WHERE scope = $1 AND created_at < NOW() - ($2::int * INTERVAL '1 second')
-  `).run(namespace, windowSeconds * 4);
+    await tx.prepare(
+      'INSERT INTO rate_limit_hits (scope, subject) VALUES ($1, $2)'
+    ).run(scope, subject);
 
-  return { allowed: true, retryAfterSeconds: 0 };
+    // Barrido perezoso: evita que la tabla crezca sin límite sin necesitar cron.
+    await tx.prepare(`
+      DELETE FROM rate_limit_hits
+      WHERE scope = $1 AND created_at < NOW() - ($2::int * INTERVAL '1 second')
+    `).run(scope, windowSeconds * 4);
+
+    return { allowed: true, retryAfterSeconds: 0 };
+  }, db);
 }
 
 export async function resetRateLimit(namespace, key) {
+  const scope = String(namespace).slice(0, 60);
+  const subject = String(key).slice(0, 200);
   await getDb().prepare(
     'DELETE FROM rate_limit_hits WHERE scope = $1 AND subject = $2'
-  ).run(namespace, String(key).slice(0, 200));
+  ).run(scope, subject);
 }
 
 export function safeErrorSummary(error) {
