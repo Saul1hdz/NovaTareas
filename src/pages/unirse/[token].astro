@@ -1,0 +1,243 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getUser } from '../../lib/auth.js';
+import { getDb } from '../../lib/db.js';
+import { describeInvite, getTaskAccess, ROLE_LABELS } from '../../lib/collaboration.js';
+
+// Un enlace de invitación es una credencial: no debe quedar en ninguna caché
+// intermedia ni en el historial de un proxy.
+Astro.response.headers.set('Cache-Control', 'private, no-store, max-age=0');
+
+const token = String(Astro.params.token || '');
+const rawUser = await getUser(Astro.request);
+const user = rawUser as { username: string; userId: number } | null;
+
+const db = getDb();
+const invite = await describeInvite(db, token);
+
+const theme = user
+  ? ((await db.prepare('SELECT theme FROM users WHERE id=$1').get(user.userId))?.theme || 'dark')
+  : 'dark';
+
+// Si ya participa, la página lo dice en lugar de pedirle que se una otra vez.
+const access = user && invite
+  ? await getTaskAccess(db, invite.task_id, user.userId)
+  : null;
+
+// El registro público está cerrado salvo que se active a conciencia, así que
+// invitar a alguien sin cuenta lo dejaría en un callejón sin salida: la página
+// tiene que decirlo en vez de ofrecerle crear una.
+const registrationOpen = process.env.REGISTRATION_ENABLED === 'true';
+
+const roleLabel = invite ? (ROLE_LABELS[invite.role] || invite.role) : '';
+const ROLE_HINTS: Record<string, string> = {
+  lector: 'Podrás ver la tarea, su historial y los comentarios del equipo.',
+  comentarista: 'Podrás aportar ideas y comentarios, además de ver todo el historial.',
+  editor: 'Podrás editar la tarea, marcar su avance y aportar ideas y comentarios.',
+};
+---
+<Base title="Invitación" theme={theme}>
+  <div class="join-page">
+    <div class="join-card">
+      <div class="logo">
+        <span class="logo-icon">✦</span>
+        <span>NovaTareas</span>
+        <span class="logo-pro">PRO</span>
+      </div>
+
+      {!invite && (
+        <>
+          <h1>Enlace no válido</h1>
+          <p class="muted">
+            Este enlace de invitación no existe. Pídele al propietario de la tarea
+            que genere uno nuevo.
+          </p>
+          <a class="join-btn secondary" href="/dashboard">Ir a mis tareas</a>
+        </>
+      )}
+
+      {invite && !invite.usable && (
+        <>
+          <h1>Enlace caducado</h1>
+          <p class="muted">
+            {invite.revoked_at
+              ? 'El propietario revocó este enlace.'
+              : invite.expired
+                ? 'Este enlace ya expiró.'
+                : 'Este enlace alcanzó su número máximo de usos.'}
+          </p>
+          <a class="join-btn secondary" href="/dashboard">Ir a mis tareas</a>
+        </>
+      )}
+
+      {invite && invite.usable && (
+        <>
+          <h1>Te invitaron a colaborar</h1>
+          <div class="task-preview">
+            <div class="task-preview-title">{invite.title}</div>
+            {invite.description && <p class="muted">{invite.description}</p>}
+            <div class="task-preview-meta">
+              <span class="chip">Propietario: {invite.owner_name}</span>
+              <span class="chip chip-accent">Entrarás como {roleLabel}</span>
+            </div>
+          </div>
+          <p class="muted">{ROLE_HINTS[invite.role] || ''}</p>
+
+          {!user && (
+            <>
+              <p class="muted">
+                {registrationOpen
+                  ? 'Inicia sesión o crea tu cuenta para unirte.'
+                  : 'Inicia sesión con tu cuenta de NovaTareas para unirte.'}
+              </p>
+              <a class="join-btn" href={`/?next=/unirse/${encodeURIComponent(token)}`}>
+                Iniciar sesión y unirme →
+              </a>
+              {!registrationOpen && (
+                <p class="muted">
+                  El registro público está deshabilitado: si aún no tienes cuenta,
+                  pídele a quien administra NovaTareas que te la cree.
+                </p>
+              )}
+            </>
+          )}
+
+          {user && access && (
+            <>
+              <p class="muted">
+                Ya participas en esta tarea como {ROLE_LABELS[access.role] || access.role}.
+              </p>
+              <a class="join-btn" href="/dashboard">Abrir mis tareas</a>
+            </>
+          )}
+
+          {user && !access && (
+            <>
+              <button class="join-btn" id="join-btn" data-token={token}>
+                Unirme a la tarea →
+              </button>
+              <a class="join-link" href="/dashboard">Ahora no</a>
+            </>
+          )}
+
+          <p class="error-msg" id="join-error"></p>
+        </>
+      )}
+    </div>
+  </div>
+</Base>
+
+<style>
+  .join-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+  }
+  .join-card {
+    width: 100%;
+    max-width: 460px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 2rem 1.75rem;
+    box-shadow: var(--card-shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    text-align: center;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    font-weight: 800;
+    font-size: 1.15rem;
+    margin-bottom: 0.4rem;
+  }
+  .logo-icon { color: var(--accent); }
+  .logo-pro {
+    font-size: 0.62rem;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 5px;
+    padding: 0.1rem 0.35rem;
+    letter-spacing: 0.05em;
+  }
+  h1 { font-size: 1.3rem; }
+  .muted { color: var(--text2); font-size: 0.88rem; line-height: 1.5; }
+  .task-preview {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1rem;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .task-preview-title { font-weight: 700; font-size: 1rem; }
+  .task-preview-meta { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .chip {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text2);
+    background: var(--glass);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.25rem 0.65rem;
+  }
+  .chip-accent {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .join-btn {
+    display: block;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 10px;
+    padding: 0.75rem 1.2rem;
+    font-weight: 700;
+    font-size: 0.95rem;
+    width: 100%;
+  }
+  .join-btn.secondary {
+    background: var(--bg3);
+    color: var(--text2);
+    border: 1px solid var(--border);
+  }
+  .join-link { color: var(--text2); font-size: 0.85rem; }
+  .error-msg { color: var(--red); font-size: 0.85rem; min-height: 1rem; }
+</style>
+
+<script>
+  const button = document.getElementById('join-btn') as HTMLButtonElement | null;
+  const error = document.getElementById('join-error');
+
+  button?.addEventListener('click', async () => {
+    button.disabled = true;
+    button.textContent = 'Uniéndote...';
+    if (error) error.textContent = '';
+
+    try {
+      const response = await fetch('/api/invites/accept', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: button.dataset.token }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        window.location.href = '/dashboard';
+        return;
+      }
+      if (error) error.textContent = data.error || 'No se pudo aceptar la invitación.';
+    } catch {
+      if (error) error.textContent = 'Error de red.';
+    }
+    button.disabled = false;
+    button.textContent = 'Unirme a la tarea →';
+  });
+</script>

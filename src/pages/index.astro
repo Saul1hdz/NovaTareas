@@ -257,6 +257,17 @@ if (user) return Astro.redirect('/dashboard');
 </style>
 
 <script>
+/**
+ * Destino tras autenticarse. Solo se acepta `?next=/unirse/<token>`, que es el
+ * único caso real: alguien abrió un enlace de invitación sin sesión iniciada.
+ * Cualquier otro valor se ignora para no convertir el login en un redirector
+ * abierto hacia sitios externos.
+ */
+function nextDestination(): string {
+  const next = new URLSearchParams(window.location.search).get('next') || '';
+  return /^\/unirse\/[A-Za-z0-9_%-]{16,200}$/.test(next) ? next : '/dashboard';
+}
+
 const QUESTIONS = [
   '¿Cuál fue el nombre de tu primera mascota?',
   '¿En qué ciudad o pueblo nació tu madre?',
@@ -331,7 +342,7 @@ async function handleLogin(e: SubmitEvent) {
       body: JSON.stringify({ email: form.email.value, password: form.password.value })
     });
     const data = await res.json();
-    if (data.ok) { window.location.href = '/dashboard'; }
+    if (data.ok) { window.location.href = nextDestination(); }
     else { err.textContent = data.error || 'Error al iniciar sesión'; }
   } catch { err.textContent = 'Error de red'; }
   btn.disabled = false; btn.textContent = 'Entrar →';
@@ -396,7 +407,7 @@ async function handleRegister(e: SubmitEvent) {
       })
     });
     const data = await res.json();
-    if (data.ok) { window.location.href = '/dashboard'; }
+    if (data.ok) { window.location.href = nextDestination(); }
     else { err.textContent = data.error || 'Error al registrarse'; }
   } catch { err.textContent = 'Error de red'; }
   btn.disabled = false; btn.textContent = 'Crear cuenta →';

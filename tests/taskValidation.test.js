@@ -37,6 +37,18 @@ describe('validación de tareas y comentarios', () => {
     }).error).toBe('La fecha límite no es válida');
     expect(validateCommentInput({ body: 'x'.repeat(2001) }).error).toContain('2000');
     expect(validateCommentInput({ body: 'avance ficticio', ask_ai: true }).values)
-      .toEqual({ body: 'avance ficticio', ask_ai: true });
+      .toEqual({ body: 'avance ficticio', ask_ai: true, kind: 'comentario' });
+  });
+
+  it('acota la visibilidad y el tipo de aporte del modo colaborativo', () => {
+    expect(validateTaskInput({ title: 'Tarea', visibility: 'colaborativa' }).values.visibility)
+      .toBe('colaborativa');
+    expect(validateTaskInput({ title: 'Tarea', visibility: 'publica' }).error)
+      .toBe('Visibilidad inválida');
+
+    expect(validateCommentInput({ body: 'idea del equipo', kind: 'idea' }).values.kind)
+      .toBe('idea');
+    expect(validateCommentInput({ body: 'aporte', kind: 'anuncio' }).error)
+      .toBe('Tipo de comentario inválido');
   });
 });

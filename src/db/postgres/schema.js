@@ -37,6 +37,20 @@ export const recommendationSourceEnum = pgEnum('recommendation_source', [
   'history',
   'rules',
 ]);
+// Una tarea nace privada. Pasa a `colaborativa` cuando su dueño genera el primer
+// enlace de invitación o marca la casilla al crearla.
+export const taskVisibilityEnum = pgEnum('task_visibility', [
+  'privada',
+  'colaborativa',
+]);
+// El propietario no se guarda como colaborador: es `tasks.user_id`. Estos son
+// los niveles que puede conceder a los demás, de menor a mayor.
+export const collaboratorRoleEnum = pgEnum('collaborator_role', [
+  'lector',
+  'comentarista',
+  'editor',
+]);
+export const commentKindEnum = pgEnum('comment_kind', ['comentario', 'idea']);
 
 const identity = (name = 'id') => integer(name)
   .primaryKey()
@@ -145,6 +159,7 @@ export const tasks = pgTable('tasks', {
   reminderSent: boolean('reminder_sent').notNull().default(false),
   overdueNotified: boolean('overdue_notified').notNull().default(false),
   archived: boolean('archived').notNull().default(false),
+  visibility: taskVisibilityEnum('visibility').notNull().default('privada'),
   observations: text('observations'),
   whatWorked: text('what_worked'),
   whatFailed: text('what_failed'),
@@ -218,6 +233,9 @@ export const taskComments = pgTable('task_comments', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   body: text('body').notNull(),
+  // Un comentario es seguimiento; una idea es una propuesta que el equipo puede
+  // discutir. Se distinguen para poder filtrarlas en el panel colaborativo.
+  kind: commentKindEnum('kind').notNull().default('comentario'),
   aiReply: text('ai_reply'),
   createdAt: auditTimestamp('created_at'),
 }, (table) => [
@@ -227,6 +245,55 @@ export const taskComments = pgTable('task_comments', {
     'task_comments_body_length',
     sql`char_length(btrim(${table.body})) BETWEEN 1 AND 4000`,
   ),
+]);
+
+// ─── Modo colaborativo ───────────────────────────────────────────────────────
+//
+// Quién puede ver y tocar una tarea que no es suya, y por qué enlace entró.
+
+export const taskCollaborators = pgTable('task_collaborators', {
+  id: identity(),
+  taskId: integer('task_id')
+    .notNull()
+    .references(() => tasks.id, { onDelete: 'cascade' }),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  role: collaboratorRoleEnum('role').notNull().default('comentarista'),
+  // Si quien invitó borra su cuenta, la colaboración sigue siendo válida.
+  invitedBy: integer('invited_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: auditTimestamp('created_at'),
+  updatedAt: auditTimestamp('updated_at'),
+}, (table) => [
+  uniqueIndex('task_collaborators_task_user_unique').on(table.taskId, table.userId),
+  index('task_collaborators_user_idx').on(table.userId),
+]);
+
+export const taskInvites = pgTable('task_invites', {
+  id: identity(),
+  taskId: integer('task_id')
+    .notNull()
+    .references(() => tasks.id, { onDelete: 'cascade' }),
+  // Solo el hash: quien lea la base no puede reconstruir el enlace, igual que
+  // con los códigos de Telegram y los tokens de recuperación.
+  tokenHash: varchar('token_hash', { length: 64 }).notNull(),
+  role: collaboratorRoleEnum('role').notNull().default('comentarista'),
+  createdBy: integer('created_by')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  // 0 significa sin límite de usos.
+  maxUses: integer('max_uses').notNull().default(0),
+  uses: integer('uses').notNull().default(0),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: auditTimestamp('created_at'),
+}, (table) => [
+  uniqueIndex('task_invites_hash_unique').on(table.tokenHash),
+  index('task_invites_task_idx').on(table.taskId),
+  index('task_invites_expiry_idx').on(table.expiresAt),
+  check('task_invites_hash_hex', sql`${table.tokenHash} ~ '^[0-9a-f]{64}$'`),
+  check('task_invites_max_uses_nonnegative', sql`${table.maxUses} >= 0`),
+  check('task_invites_uses_nonnegative', sql`${table.uses} >= 0`),
 ]);
 
 export const taskEmbeddings = pgTable('task_embeddings', {
@@ -348,6 +415,8 @@ export const postgresSchema = {
   subtasks,
   taskHistory,
   taskComments,
+  taskCollaborators,
+  taskInvites,
   taskEmbeddings,
   taskRecommendations,
   telegramLinkCodes,

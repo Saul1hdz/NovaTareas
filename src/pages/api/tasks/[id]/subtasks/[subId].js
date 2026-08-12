@@ -1,6 +1,7 @@
 import { getDb } from '../../../../../lib/db.js';
 import { getUser } from '../../../../../lib/auth.js';
 import { parseId } from '../../../../../lib/routeParams.js';
+import { can, getTaskAccess } from '../../../../../lib/collaboration.js';
 
 export const PATCH = async ({ request, params }) => {
   const user = await getUser(request);
@@ -13,11 +14,18 @@ export const PATCH = async ({ request, params }) => {
   }
 
   const db = getDb();
-  const sub = await db.prepare(`
-    SELECT s.* FROM subtasks s
-    JOIN tasks t ON t.id=s.task_id
-    WHERE s.id=$1 AND s.task_id=$2 AND t.user_id=$3
-  `).get(subId, taskId, user.userId);
+  const access = await getTaskAccess(db, taskId, user.userId);
+  if (!access) return new Response(JSON.stringify({ error: 'No encontrado' }), { status: 404 });
+  if (!can(access, 'edit')) {
+    return new Response(
+      JSON.stringify({ error: 'Tu nivel en esta tarea no permite marcar subtareas' }),
+      { status: 403, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
+  const sub = await db.prepare(
+    'SELECT id FROM subtasks WHERE id=$1 AND task_id=$2'
+  ).get(subId, taskId);
 
   if (!sub) return new Response(JSON.stringify({ error: 'No encontrado' }), { status: 404 });
 

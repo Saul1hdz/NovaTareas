@@ -1,5 +1,7 @@
 const PRIORITIES = new Set(['baja', 'media', 'alta', 'urgente']);
 const STATUSES = new Set(['pendiente', 'en progreso', 'completada']);
+const VISIBILITIES = new Set(['privada', 'colaborativa']);
+const COMMENT_KINDS = new Set(['comentario', 'idea']);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function text(value, field, { required = false, max }) {
@@ -63,6 +65,13 @@ export function validateTaskInput(body, { partial = false } = {}) {
     values.status = body.status;
   }
 
+  if (body.visibility !== undefined) {
+    if (typeof body.visibility !== 'string' || !VISIBILITIES.has(body.visibility)) {
+      return { error: 'Visibilidad inválida' };
+    }
+    values.visibility = body.visibility;
+  }
+
   if (body.archived !== undefined) {
     if (typeof body.archived !== 'boolean') {
       return { error: 'Archivada debe ser un valor booleano' };
@@ -102,5 +111,13 @@ export function validateCommentInput(body) {
   if (body.ask_ai !== undefined && typeof body.ask_ai !== 'boolean') {
     return { error: 'ask_ai debe ser un valor booleano' };
   }
-  return { values: { body: comment.value, ask_ai: body.ask_ai === true } };
+  // En una tarea colaborativa no es lo mismo registrar un avance que proponer
+  // una idea al equipo, así que el tipo viaja con el comentario.
+  const kind = body.kind === undefined ? 'comentario' : body.kind;
+  if (typeof kind !== 'string' || !COMMENT_KINDS.has(kind)) {
+    return { error: 'Tipo de comentario inválido' };
+  }
+  return {
+    values: { body: comment.value, ask_ai: body.ask_ai === true, kind },
+  };
 }

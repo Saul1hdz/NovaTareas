@@ -15,6 +15,13 @@
       "when": 1785010685837,
       "tag": "0001_chief_old_lace",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786494067457,
+      "tag": "0002_familiar_puppet_master",
+      "breakpoints": true
     }
   ]
 }

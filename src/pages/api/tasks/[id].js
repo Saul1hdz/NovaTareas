@@ -5,6 +5,7 @@ import { validateTaskInput } from '../../../lib/taskValidation.js';
 import { safeErrorSummary } from '../../../lib/security.js';
 import { parseId } from '../../../lib/routeParams.js';
 import { defaultReminderFor } from '../../../lib/appTime.js';
+import { can, getTaskAccess } from '../../../lib/collaboration.js';
 
 // Campos que se rastrean en el historial con etiquetas legibles
 const TRACKED_FIELDS = {
@@ -44,9 +45,10 @@ export const PATCH = async ({ request, params }) => {
   const taskId = parseId(params.id);
   if (taskId === null) return json({ error: 'No encontrado' }, 404);
 
-  const db   = getDb();
-  const task = await db.prepare('SELECT * FROM tasks WHERE id=$1 AND user_id=$2').get(taskId, user.userId);
-  if (!task) return json({ error: 'No encontrado' }, 404);
+  const db     = getDb();
+  const access = await getTaskAccess(db, taskId, user.userId);
+  if (!access) return json({ error: 'No encontrado' }, 404);
+  const task = access.task;
 
   let rawBody;
   try {
@@ -57,6 +59,16 @@ export const PATCH = async ({ request, params }) => {
   const validation = validateTaskInput(rawBody, { partial: true });
   if (validation.error) return json({ error: validation.error }, 400);
   const body = validation.values;
+
+  // Archivar y cambiar la visibilidad son decisiones del propietario; el resto
+  // de campos los puede tocar cualquier colaborador con nivel de edición.
+  const ownerOnly = body.archived !== undefined || body.visibility !== undefined;
+  if (ownerOnly && !can(access, 'manage')) {
+    return json({ error: 'Solo el propietario puede archivar o cambiar la visibilidad' }, 403);
+  }
+  if (!can(access, 'edit')) {
+    return json({ error: 'Tu nivel en esta tarea no permite editarla' }, 403);
+  }
   const fields = [];
   const vals   = [];
   // Cada asignación numera su parámetro por la posición real que ocupa. El
@@ -121,6 +133,9 @@ export const PATCH = async ({ request, params }) => {
     }
   }
 
+  // ── Visibilidad (privada / colaborativa) ────────────────────────────────────
+  if (body.visibility !== undefined) set('visibility', body.visibility);
+
   // ── Observaciones al archivar ───────────────────────────────────────────────
   if (body.observations !== undefined) set('observations', body.observations);
   if (body.what_worked  !== undefined) set('what_worked', body.what_worked);
@@ -153,7 +168,10 @@ export const PATCH = async ({ request, params }) => {
   }
 
   // ── Notificaciones Telegram ─────────────────────────────────────────────────
-  const dbUser = await db.prepare('SELECT telegram_chat_id FROM users WHERE id=$1').get(user.userId);
+  // El aviso va al propietario de la tarea, no a quien la editó: en una tarea
+  // colaborativa quien la completa suele ser otra persona y el dueño es quien
+  // necesita enterarse.
+  const dbUser = await db.prepare('SELECT telegram_chat_id FROM users WHERE id=$1').get(task.user_id);
   const chatId = dbUser?.telegram_chat_id;
 
   if (chatId) {
@@ -181,7 +199,13 @@ export const DELETE = async ({ request, params }) => {
   const taskId = parseId(params.id);
   if (taskId === null) return json({ error: 'No encontrado' }, 404);
 
-  const db = getDb();
+  const db     = getDb();
+  const access = await getTaskAccess(db, taskId, user.userId);
+  if (!access) return json({ error: 'No encontrado' }, 404);
+  if (!can(access, 'manage')) {
+    return json({ error: 'Solo el propietario puede eliminar la tarea' }, 403);
+  }
+
   const result = await db.prepare('DELETE FROM tasks WHERE id=$1 AND user_id=$2')
     .run(taskId, user.userId);
   if (result.rowCount === 0) return json({ error: 'No encontrado' }, 404);

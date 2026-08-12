@@ -45,13 +45,21 @@ export const GET = async ({ request }) => {
   // garantizado y la lista cambiaría entre peticiones idénticas.
   // `subtasks` son las subtareas reales del usuario; la recomendación de IA se
   // trae aparte, de su propia tabla, en lugar de ir mezclada entre ellas.
+  // El id del usuario se reutiliza en el JOIN, en el rol y en el conteo de
+  // colaboradores, así que se numera una sola vez y se reusa el placeholder.
+  const me = placeholder(user.userId);
+
   let query = `SELECT t.*, STRING_AGG(
        s.id::text || '::' || s.text || '::' ||
        CASE WHEN s.done THEN '1' ELSE '0' END,
        '||' ORDER BY s.id
      ) as subtasks_raw,
      r.recommendation AS recommendation_text,
-     r.source         AS recommendation_source
+     r.source         AS recommendation_source,
+     COALESCE(mine.role::text, 'propietario') AS my_role,
+     (t.user_id = ${me})                      AS is_owner,
+     (SELECT COUNT(*)::int FROM task_collaborators c WHERE c.task_id = t.id)
+                                              AS collaborator_count
   FROM tasks t
   LEFT JOIN subtasks s ON s.task_id = t.id
   LEFT JOIN LATERAL (
@@ -61,7 +69,9 @@ export const GET = async ({ request }) => {
     ORDER BY created_at DESC
     LIMIT 1
   ) r ON TRUE
-  WHERE t.user_id=${placeholder(user.userId)} AND t.archived=${placeholder(archived)}`;
+  LEFT JOIN task_collaborators mine ON mine.task_id = t.id AND mine.user_id = ${me}
+  WHERE (t.user_id = ${me} OR mine.user_id IS NOT NULL)
+    AND t.archived=${placeholder(archived)}`;
 
   if (search)   { query += ` AND t.title ILIKE ${placeholder(`%${search}%`)}`; }
   if (label)    { query += ` AND t.label=${placeholder(label)}`; }
@@ -71,7 +81,7 @@ export const GET = async ({ request }) => {
     query += ` AND t.due_date BETWEEN ${placeholder(from)} AND ${placeholder(to)}`;
   }
 
-  query += ` GROUP BY t.id, r.recommendation, r.source ORDER BY
+  query += ` GROUP BY t.id, r.recommendation, r.source, mine.role ORDER BY
     CASE t.priority WHEN 'urgente' THEN 1 WHEN 'alta' THEN 2 WHEN 'media' THEN 3 WHEN 'baja' THEN 4 ELSE 5 END,
     t.due_date ASC NULLS LAST, t.created_at DESC`;
 
@@ -111,6 +121,7 @@ export const POST = async ({ request }) => {
     priority = 'media',
     label = '',
     due_date = null,
+    visibility = 'privada',
   } = validation.values;
 
   // Si no se indica un recordatorio explícito se programa para la mañana del
@@ -124,10 +135,10 @@ export const POST = async ({ request }) => {
 
   // ── Insertar tarea ──────────────────────────────────────────────────────────
   const created = await db.prepare(
-    `INSERT INTO tasks (user_id, title, description, priority, label, due_date, reminder_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)
-     RETURNING id`
-  ).get(user.userId, title, description, priority, label, due_date, reminderAt);
+    `INSERT INTO tasks (user_id, title, description, priority, label, due_date, reminder_at, visibility)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     RETURNING id, visibility`
+  ).get(user.userId, title, description, priority, label, due_date, reminderAt, visibility);
 
   // ── Notificaciones Telegram (solo si el usuario tiene chat vinculado) ───────
   const dbUser = await db.prepare('SELECT telegram_chat_id FROM users WHERE id = $1').get(user.userId);
@@ -149,7 +160,7 @@ export const POST = async ({ request }) => {
     }
   }
 
-  return json({ id: created.id }, 201);
+  return json({ id: created.id, visibility: created.visibility }, 201);
 };
 
 function json(data, status) {

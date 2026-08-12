@@ -79,6 +79,8 @@ describe('esquema PostgreSQL objetivo', () => {
       'subtasks',
       'task_history',
       'task_comments',
+      'task_collaborators',
+      'task_invites',
       'task_embeddings',
       'task_recommendations',
       'telegram_link_codes',

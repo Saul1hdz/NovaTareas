@@ -3,6 +3,7 @@ import { getUser }                       from '../../../../lib/auth.js';
 import { getRagContext }                 from '../../../../lib/rag.js';
 import { parseId }                     from '../../../../lib/routeParams.js';
 import { consumeRateLimit } from '../../../../lib/security.js';
+import { can, getTaskAccess } from '../../../../lib/collaboration.js';
 
 // Proveedores compartidos: una sola definición de modelo, timeouts y
 // respaldos para toda la aplicación.
@@ -29,8 +30,12 @@ export const POST = async ({ request, params }) => {
   const taskId = parseId(params.id);
   if (taskId === null) return json({ error: 'No encontrado' }, 404);
 
-  const task = await db.prepare('SELECT * FROM tasks WHERE id=$1 AND user_id=$2').get(taskId, user.userId);
-  if (!task) return json({ error: 'No encontrado' }, 404);
+  const access = await getTaskAccess(db, taskId, user.userId);
+  if (!access) return json({ error: 'No encontrado' }, 404);
+  if (!can(access, 'comment')) {
+    return json({ error: 'Tu nivel en esta tarea solo permite leerla' }, 403);
+  }
+  const task = access.task;
 
   const rateLimit = await consumeRateLimit(
     'task-ai-user',

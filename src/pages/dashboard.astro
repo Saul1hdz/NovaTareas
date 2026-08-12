@@ -231,6 +231,18 @@ const { total, done, active, urgent, overdue, labels } =
           <label>Fecha límite</label>
           <input type="date" id="new-duedate" />
         </div>
+        <div class="field collab-field">
+          <label class="collab-check">
+            <input type="checkbox" id="new-collaborative" />
+            <span>
+              <strong>Modo colaborativo</strong>
+              <small>
+                La tarea nace privada. Márcala si vas a invitar a otras personas
+                con un enlace; también puedes hacerlo después desde “Equipo”.
+              </small>
+            </span>
+          </label>
+        </div>
         <div id="modal-error" class="error-msg"></div>
         <div class="modal-actions">
           <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
@@ -276,11 +288,12 @@ const { total, done, active, urgent, overdue, labels } =
     <div class="modal-box" style="max-width:560px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden">
       <div class="modal-header">
         <h2> Historial de tarea</h2>
+        <span id="history-role" class="badge badge-role"></span>
         <button class="modal-close" onclick="document.getElementById('history-modal').classList.remove('open')">✕</button>
       </div>
 
       <!-- Edición rápida -->
-      <div style="padding:.85rem 1.4rem;border-bottom:1px solid var(--border);display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
+      <div id="quick-edit-bar" style="padding:.85rem 1.4rem;border-bottom:1px solid var(--border);display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
         <span style="font-size:.75rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-right:.3rem">Editar:</span>
         <select id="edit-priority" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:.38rem .7rem;color:var(--text1);font-size:.83rem">
           <option value="urgente">🔴 Urgente</option>
@@ -303,13 +316,17 @@ const { total, done, active, urgent, overdue, labels } =
 
         <!-- Comentarios -->
         <div>
-          <p style="font-size:.75rem;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.07em;margin-bottom:.55rem">Comentarios de progreso</p>
+          <p style="font-size:.75rem;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.07em;margin-bottom:.55rem">Comentarios e ideas del equipo</p>
           <div id="history-comments" style="font-size:.85rem;display:flex;flex-direction:column;gap:.65rem;margin-bottom:.9rem">
             <em style="color:var(--text2)">Sin comentarios aún.</em>
           </div>
 
           <!-- Nuevo comentario -->
-          <div style="border-top:1px solid var(--border);padding-top:.9rem">
+          <div id="comment-composer" style="border-top:1px solid var(--border);padding-top:.9rem">
+            <div class="kind-toggle" id="comment-kind-toggle">
+              <button type="button" class="kind-btn active" data-kind="comentario">💬 Comentario</button>
+              <button type="button" class="kind-btn" data-kind="idea">💡 Idea</button>
+            </div>
             <textarea
               id="new-comment-body"
               rows="3"
@@ -326,6 +343,82 @@ const { total, done, active, urgent, overdue, labels } =
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL EQUIPO E INVITACIONES -->
+  <div class="modal-overlay" id="collab-modal">
+    <div class="modal-box" style="max-width:560px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden">
+      <div class="modal-header">
+        <h2>👥 Equipo de la tarea</h2>
+        <button class="modal-close" onclick="closeCollabModal()">✕</button>
+      </div>
+
+      <div style="overflow-y:auto;flex:1;padding:1.2rem 1.4rem;display:flex;flex-direction:column;gap:1.3rem">
+        <input type="hidden" id="collab-task-id" />
+
+        <div>
+          <div id="collab-task-title" style="font-weight:700;font-size:1rem"></div>
+          <div id="collab-visibility" class="collab-visibility"></div>
+        </div>
+
+        <!-- Participantes -->
+        <div>
+          <p class="collab-section-title">Participantes</p>
+          <div id="collab-participants" class="collab-list">
+            <em style="color:var(--text2)">Cargando...</em>
+          </div>
+        </div>
+
+        <!-- Invitaciones (solo propietario) -->
+        <div id="collab-invite-section" class="hidden">
+          <p class="collab-section-title">Invitar por enlace</p>
+          <p style="font-size:.8rem;color:var(--text2);line-height:1.5;margin-bottom:.6rem">
+            Quien abra el enlace se unirá con el nivel que elijas, hasta que
+            caduque o lo revoques. Necesita tener ya una cuenta de NovaTareas:
+            el registro público está cerrado.
+          </p>
+          <div class="invite-controls">
+            <label>
+              <span>Nivel</span>
+              <select id="invite-role">
+                <option value="lector">Lector · solo ver</option>
+                <option value="comentarista" selected>Comentarista · aportar ideas</option>
+                <option value="editor">Editor · editar la tarea</option>
+              </select>
+            </label>
+            <label>
+              <span>Vigencia (días)</span>
+              <input type="number" id="invite-days" min="1" max="30" value="7" />
+            </label>
+            <label>
+              <span>Usos (0 = sin límite)</span>
+              <input type="number" id="invite-uses" min="0" max="100" value="0" />
+            </label>
+          </div>
+          <button class="btn-primary" id="btn-create-invite" onclick="createInvite()"
+            style="width:100%;margin-top:.7rem;font-size:.85rem">
+            🔗 Generar enlace de invitación
+          </button>
+
+          <div id="invite-result" class="invite-result hidden">
+            <p style="font-size:.75rem;color:var(--text2);margin-bottom:.4rem">
+              Copia el enlace ahora: por seguridad no vuelve a mostrarse.
+            </p>
+            <div class="invite-link-row">
+              <input type="text" id="invite-link" readonly />
+              <button class="btn-secondary" onclick="copyInviteLink()" style="font-size:.8rem">Copiar</button>
+            </div>
+          </div>
+
+          <p class="collab-section-title" style="margin-top:1rem">Enlaces activos</p>
+          <div id="collab-invites" class="collab-list">
+            <em style="color:var(--text2)">Cargando...</em>
+          </div>
+        </div>
+
+        <div id="collab-error" class="error-msg"></div>
       </div>
     </div>
   </div>
@@ -1698,6 +1791,150 @@ button:focus-visible {
   border-color: rgba(99,179,237,0.6) !important;
   box-shadow: 0 12px 24px rgba(99,179,237,0.15) !important;
 }
+
+/* ── MODO COLABORATIVO ───────────────────────────────────────────────────── */
+
+.collab-btn {
+  background: linear-gradient(135deg, rgba(34,212,122,0.18), rgba(34,212,122,0.08)) !important;
+  border: 1.5px solid rgba(34,212,122,0.4) !important;
+  color: #22d47a !important;
+}
+.collab-btn:hover {
+  background: linear-gradient(135deg, rgba(34,212,122,0.3), rgba(34,212,122,0.15)) !important;
+}
+
+.badge-team {
+  background: rgba(34,212,122,0.14);
+  color: #22d47a;
+  border: 1px solid rgba(34,212,122,0.35);
+}
+.badge-role {
+  background: rgba(124,106,247,0.14);
+  color: var(--accent2);
+  border: 1px solid rgba(124,106,247,0.35);
+}
+.badge-private {
+  background: var(--glass);
+  color: var(--text2);
+  border: 1px solid var(--border);
+}
+
+.collab-field { margin-top: .2rem; }
+.collab-check {
+  display: flex;
+  gap: .6rem;
+  align-items: flex-start;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .7rem .85rem;
+  cursor: pointer;
+}
+.collab-check input { margin-top: .2rem; accent-color: var(--accent); }
+.collab-check strong { display: block; font-size: .88rem; }
+.collab-check small { color: var(--text2); font-size: .76rem; line-height: 1.45; }
+
+.collab-section-title {
+  font-size: .75rem;
+  color: var(--accent);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  margin-bottom: .55rem;
+}
+.collab-visibility { font-size: .8rem; color: var(--text2); margin-top: .25rem; }
+.collab-list { display: flex; flex-direction: column; gap: .5rem; font-size: .85rem; }
+.collab-row {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+  padding: .6rem .75rem;
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.collab-row-name { font-weight: 600; }
+.collab-row-meta { font-size: .75rem; color: var(--text2); }
+.collab-row-actions { margin-left: auto; display: flex; gap: .4rem; align-items: center; }
+.collab-row select {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .3rem .5rem;
+  color: var(--text);
+  font-size: .78rem;
+}
+.collab-remove {
+  color: var(--red) !important;
+  border: 1px solid rgba(255,85,102,0.35) !important;
+  border-radius: 8px !important;
+  padding: .3rem .6rem !important;
+  font-size: .76rem !important;
+}
+
+.invite-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: .6rem;
+}
+.invite-controls label { display: flex; flex-direction: column; gap: .3rem; }
+.invite-controls span { font-size: .74rem; color: var(--text2); font-weight: 600; }
+.invite-controls select,
+.invite-controls input {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .45rem .6rem;
+  color: var(--text);
+  font-size: .82rem;
+}
+.invite-result {
+  margin-top: .8rem;
+  padding: .75rem;
+  background: rgba(124,106,247,0.08);
+  border: 1px solid rgba(124,106,247,0.3);
+  border-radius: 10px;
+}
+.invite-link-row { display: flex; gap: .4rem; }
+.invite-link-row input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .45rem .6rem;
+  color: var(--text);
+  font-size: .78rem;
+}
+
+.kind-toggle { display: flex; gap: .4rem; margin-bottom: .5rem; }
+.kind-btn {
+  background: var(--bg3) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text2) !important;
+  border-radius: 999px !important;
+  padding: .3rem .8rem !important;
+  font-size: .78rem !important;
+  font-weight: 600 !important;
+}
+.kind-btn.active {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: #fff !important;
+}
+
+.comment-author { font-weight: 700; font-size: .82rem; }
+.comment-idea {
+  border-left: 3px solid var(--yellow);
+}
+.comment-kind-tag {
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--yellow);
+}
 </style>
 
 <style>
@@ -2059,6 +2296,7 @@ function renderTasks(tasks, containerId, isArchive = false) {
       if (normalDate) {
         info.appendChild(createTextElement('span', 'badge badge-due', dueLabel));
       }
+      appendCollabBadges(info, t);
       content.appendChild(info);
       appendTaskText(content, null, t.description);
       appendTaskText(content, 'Qué salió bien', t.what_worked);
@@ -2070,11 +2308,14 @@ function renderTasks(tasks, containerId, isArchive = false) {
 
       const actions = document.createElement('div');
       actions.className = 'task-actions';
-      actions.append(
-        createActionButton('complete-btn', 'Reabrir', () => unarchiveTask(t.id)),
-        createActionButton('history-btn', 'Historial', () => openHistoryModal(t.id)),
-        createActionButton('del-btn', 'Borrar', () => deleteTask(t.id))
-      );
+      if (isOwnerOf(t)) {
+        actions.appendChild(createActionButton('complete-btn', 'Reabrir', () => unarchiveTask(t.id)));
+      }
+      actions.appendChild(createActionButton('history-btn', 'Historial', () => openHistoryModal(t.id)));
+      actions.appendChild(createActionButton('collab-btn', 'Equipo', () => openCollabModal(t.id)));
+      if (isOwnerOf(t)) {
+        actions.appendChild(createActionButton('del-btn', 'Borrar', () => deleteTask(t.id)));
+      }
       content.appendChild(actions);
       card.appendChild(content);
       container.appendChild(card);
@@ -2109,6 +2350,7 @@ function renderTasks(tasks, containerId, isArchive = false) {
         dueLabel
       ));
     }
+    appendCollabBadges(badges, t);
     tab.appendChild(badges);
     frame.appendChild(tab);
 
@@ -2118,20 +2360,84 @@ function renderTasks(tasks, containerId, isArchive = false) {
     appendSubtasks(body, t.subtasks);
     appendRecommendation(body, t.recommendation);
 
+    // Los botones se pintan según el nivel real del usuario en la tarea: a un
+    // lector no se le ofrece un botón que la API le va a rechazar.
     const actions = document.createElement('div');
     actions.className = 'task-actions';
-    actions.append(
-      createActionButton('complete-btn', isDone ? 'Reabrir' : 'Terminada', () => toggleTask(t.id, t.status)),
-      createActionButton('ai-btn', 'Consejos', () => genAI(t.id)),
-      createActionButton('archive-btn', isDone ? 'Archivar' : 'Arch', () => archiveTask(t.id)),
-      createActionButton('history-btn', 'Historial', () => openHistoryModal(t.id)),
-      createActionButton('del-btn', 'Borrar', () => deleteTask(t.id))
-    );
+    if (canEdit(t)) {
+      actions.appendChild(createActionButton(
+        'complete-btn',
+        isDone ? 'Reabrir' : 'Terminada',
+        () => toggleTask(t.id, t.status)
+      ));
+    }
+    if (canComment(t)) {
+      actions.appendChild(createActionButton('ai-btn', 'Consejos', () => genAI(t.id)));
+    }
+    if (isOwnerOf(t)) {
+      actions.appendChild(createActionButton(
+        'archive-btn',
+        isDone ? 'Archivar' : 'Arch',
+        () => archiveTask(t.id)
+      ));
+    }
+    actions.appendChild(createActionButton('history-btn', 'Historial', () => openHistoryModal(t.id)));
+    actions.appendChild(createActionButton('collab-btn', 'Equipo', () => openCollabModal(t.id)));
+    if (isOwnerOf(t)) {
+      actions.appendChild(createActionButton('del-btn', 'Borrar', () => deleteTask(t.id)));
+    }
     body.appendChild(actions);
     frame.appendChild(body);
     card.appendChild(frame);
     container.appendChild(card);
   });
+}
+
+// ── MODO COLABORATIVO: niveles ──
+// El servidor manda `my_role` con cada tarea; aquí solo se decide qué se pinta.
+// La API vuelve a comprobar el nivel en cada petición: esto es comodidad, no
+// seguridad.
+const ROLE_LABELS = {
+  propietario: 'Propietario',
+  editor: 'Editor',
+  comentarista: 'Comentarista',
+  lector: 'Lector',
+};
+const ROLE_ORDER = { lector: 1, comentarista: 2, editor: 3, propietario: 4 };
+
+function roleOf(task) {
+  return task.my_role || 'propietario';
+}
+function isOwnerOf(task) {
+  return task.is_owner !== false;
+}
+function canEdit(task) {
+  return (ROLE_ORDER[roleOf(task)] || 0) >= ROLE_ORDER.editor;
+}
+function canComment(task) {
+  return (ROLE_ORDER[roleOf(task)] || 0) >= ROLE_ORDER.comentarista;
+}
+
+function appendCollabBadges(parent, task) {
+  const collaborators = Number(task.collaborator_count || 0);
+
+  if (!isOwnerOf(task)) {
+    parent.appendChild(createTextElement(
+      'span',
+      'badge badge-role',
+      `Compartida · ${ROLE_LABELS[roleOf(task)] || roleOf(task)}`
+    ));
+  }
+
+  if (collaborators > 0) {
+    parent.appendChild(createTextElement(
+      'span',
+      'badge badge-team',
+      `👥 ${collaborators + 1}`
+    ));
+  } else if (isOwnerOf(task) && task.visibility === 'privada') {
+    parent.appendChild(createTextElement('span', 'badge badge-private', '🔒 Privada'));
+  }
 }
 
 function createTextElement(tag, className, text) {
@@ -2356,22 +2662,31 @@ async function createTask() {
       description: document.getElementById('new-desc').value,
       priority: document.getElementById('new-priority').value,
       label: document.getElementById('new-label').value,
-      due_date: document.getElementById('new-duedate').value || null
+      due_date: document.getElementById('new-duedate').value || null,
+      visibility: document.getElementById('new-collaborative').checked
+        ? 'colaborativa'
+        : 'privada'
     })
   });
   if (res.ok) {
+    const created = await res.json();
+    const wasCollaborative = document.getElementById('new-collaborative').checked;
     document.getElementById('modal').classList.remove('open');
     document.getElementById('new-title').value = '';
     document.getElementById('new-desc').value = '';
     document.getElementById('new-label').value = '';
     document.getElementById('new-duedate').value = '';
     document.getElementById('new-priority').value = 'media';
+    document.getElementById('new-collaborative').checked = false;
     currentLabel = '';
     document.querySelectorAll('.label-chip').forEach(chip => {
       chip.classList.remove('active');
     });
-    loadTasks();
+    await loadTasks();
     updateLabelsList();
+    // Marcar "modo colaborativo" solo sirve si a continuación se puede invitar,
+    // así que el panel de equipo se abre con la tarea recién creada.
+    if (wasCollaborative && created?.id) openCollabModal(created.id);
   } else {
     const data = await res.json();
     document.getElementById('modal-error').textContent = data.error;
@@ -2788,6 +3103,7 @@ async function loadHistoryData(taskId) {
     const res  = await fetch(`/api/tasks/${taskId}/history`);
     if (!res.ok) throw new Error('Error al cargar historial');
     const data = await res.json();
+    applyHistoryPermissions(data);
 
     // Cambios automáticos
     const changesEl = document.getElementById('history-changes');
@@ -2798,6 +3114,11 @@ async function loadHistoryData(taskId) {
         const row = document.createElement('div');
         row.style.cssText = 'padding:.3rem 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;flex-wrap:wrap';
         const change = document.createElement('span');
+        if (h.author_name) {
+          const author = createTextElement('span', '', `${h.author_name} · `);
+          author.style.cssText = 'color:var(--text2);font-size:.78rem';
+          change.appendChild(author);
+        }
         const field = createTextElement('span', '', `${h.field}: `);
         field.style.cssText = 'color:var(--accent);font-weight:600';
         const oldValue = createTextElement('span', '', h.old_value || '—');
@@ -2819,12 +3140,27 @@ async function loadHistoryData(taskId) {
     } else {
       commentsEl.replaceChildren(...data.comments.map(c => {
         const card = document.createElement('div');
+        card.className = c.kind === 'idea' ? 'comment-idea' : '';
         card.style.cssText = 'padding:.7rem .85rem;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid var(--border)';
-        const date = createTextElement('div', '', formatDateShort(c.created_at));
-        date.style.cssText = 'font-size:.75rem;color:var(--text2);margin-bottom:.3rem';
+
+        // En una tarea compartida el autor es la mitad del mensaje.
+        const head = document.createElement('div');
+        head.style.cssText = 'display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap;margin-bottom:.3rem';
+        head.appendChild(createTextElement(
+          'span',
+          'comment-author',
+          c.author_name || 'Participante'
+        ));
+        if (c.kind === 'idea') {
+          head.appendChild(createTextElement('span', 'comment-kind-tag', '💡 Idea'));
+        }
+        const date = createTextElement('span', '', formatDateShort(c.created_at));
+        date.style.cssText = 'font-size:.75rem;color:var(--text2);margin-left:auto';
+        head.appendChild(date);
+
         const body = createTextElement('div', '', c.body);
         body.style.cssText = 'color:var(--text);line-height:1.5';
-        card.append(date, body);
+        card.append(head, body);
         if (c.ai_reply) {
           const reply = createTextElement('div', '', `🤖 ${c.ai_reply}`);
           reply.style.cssText = 'margin-top:.6rem;padding:.5rem .75rem;background:rgba(124,106,247,0.1);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;font-size:.82rem;color:var(--text);line-height:1.5';
@@ -2839,11 +3175,49 @@ async function loadHistoryData(taskId) {
   }
 }
 
+/**
+ * Ajusta el modal al nivel que el servidor reconoce al usuario: un lector no
+ * ve la barra de edición rápida ni el cuadro para escribir.
+ */
+function applyHistoryPermissions(data) {
+  const role = data.my_role || 'propietario';
+  const level = ROLE_ORDER[role] || 0;
+
+  const quickEdit = document.getElementById('quick-edit-bar');
+  if (quickEdit) quickEdit.classList.toggle('hidden', level < ROLE_ORDER.editor);
+
+  const composer = document.getElementById('comment-composer');
+  if (composer) composer.classList.toggle('hidden', level < ROLE_ORDER.comentarista);
+
+  const roleTag = document.getElementById('history-role');
+  if (roleTag) {
+    const participants = (data.participants || []).length;
+    roleTag.textContent = participants > 1
+      ? `${ROLE_LABELS[role] || role} · ${participants} participantes`
+      : ROLE_LABELS[role] || role;
+  }
+}
+
 function setStatusText(container, message, error = false) {
   const status = createTextElement('em', '', message);
   status.style.color = error ? 'var(--red)' : 'var(--text2)';
   container.replaceChildren(status);
 }
+
+// Tipo del próximo aporte: seguimiento normal o idea para el equipo.
+let currentCommentKind = 'comentario';
+
+document.querySelectorAll('#comment-kind-toggle .kind-btn').forEach(button => {
+  button.addEventListener('click', () => {
+    currentCommentKind = button.dataset.kind;
+    document.querySelectorAll('#comment-kind-toggle .kind-btn').forEach(other => {
+      other.classList.toggle('active', other === button);
+    });
+    document.getElementById('new-comment-body').placeholder = currentCommentKind === 'idea'
+      ? 'Propón una idea al equipo...'
+      : 'Escribe tu avance, duda o nota sobre esta tarea...';
+  });
+});
 
 async function submitComment(askAi) {
   const taskId = document.getElementById('history-task-id').value;
@@ -2854,21 +3228,250 @@ async function submitComment(askAi) {
   if (btn) { btn.disabled = true; btn.textContent = askAi ? '⏳ Consultando IA...' : '⏳ Guardando...'; }
 
   try {
-    await fetch(`/api/tasks/${taskId}/comments`, {
+    const res = await fetch(`/api/tasks/${taskId}/comments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body, ask_ai: askAi }),
+      body: JSON.stringify({ body, ask_ai: askAi, kind: currentCommentKind }),
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Error al guardar el comentario.');
+    }
     document.getElementById('new-comment-body').value = '';
     await loadHistoryData(taskId);
   } catch(err) {
-    alert('Error al guardar el comentario.');
+    alert(err?.message || 'Error al guardar el comentario.');
   } finally {
     if (btn) {
       btn.disabled = false;
       btn.textContent = askAi ? '🤖 Comentar + IA' : '💬 Comentar';
     }
   }
+}
+
+// ── EQUIPO E INVITACIONES ──
+
+let collabState = { taskId: null, isOwner: false };
+
+async function openCollabModal(taskId) {
+  collabState = { taskId, isOwner: false };
+  document.getElementById('collab-task-id').value = taskId;
+  document.getElementById('collab-error').textContent = '';
+  document.getElementById('invite-result').classList.add('hidden');
+  document.getElementById('collab-invite-section').classList.add('hidden');
+  setStatusText(document.getElementById('collab-participants'), 'Cargando...');
+
+  const task = allTasks.find(t => t.id === taskId) || archiveTasks.find(t => t.id === taskId);
+  document.getElementById('collab-task-title').textContent = task?.title || '';
+
+  document.getElementById('collab-modal').classList.add('open');
+  await loadCollabData(taskId);
+}
+
+function closeCollabModal(event) {
+  if (event && event.target !== document.getElementById('collab-modal')) return;
+  document.getElementById('collab-modal').classList.remove('open');
+}
+
+async function loadCollabData(taskId) {
+  try {
+    const res = await fetch(`/api/tasks/${taskId}/collaborators`);
+    if (!res.ok) throw new Error('No se pudo cargar el equipo de la tarea.');
+    const data = await res.json();
+    collabState = { taskId, isOwner: Boolean(data.is_owner) };
+
+    document.getElementById('collab-visibility').textContent = data.visibility === 'colaborativa'
+      ? `Tarea colaborativa · tú entras como ${ROLE_LABELS[data.my_role] || data.my_role}`
+      : 'Tarea privada · solo tú puedes verla';
+
+    renderParticipants(data.participants || [], data);
+
+    const inviteSection = document.getElementById('collab-invite-section');
+    inviteSection.classList.toggle('hidden', !data.is_owner);
+    if (data.is_owner) await loadInvites(taskId);
+  } catch (error) {
+    setStatusText(document.getElementById('collab-participants'), error.message, true);
+  }
+}
+
+function renderParticipants(participants, data) {
+  const container = document.getElementById('collab-participants');
+  if (!participants.length) {
+    setStatusText(container, 'Sin participantes.');
+    return;
+  }
+
+  container.replaceChildren(...participants.map(person => {
+    const row = document.createElement('div');
+    row.className = 'collab-row';
+
+    const info = document.createElement('div');
+    info.appendChild(createTextElement('div', 'collab-row-name', person.full_name || person.username));
+    info.appendChild(createTextElement(
+      'div',
+      'collab-row-meta',
+      ROLE_LABELS[person.role] || person.role
+    ));
+    row.appendChild(info);
+
+    const actions = document.createElement('div');
+    actions.className = 'collab-row-actions';
+
+    // El propietario no se administra a sí mismo: para dejar de compartir se
+    // revocan los enlaces o se quita a cada colaborador.
+    if (data.is_owner && person.role !== 'propietario') {
+      const select = document.createElement('select');
+      ['lector', 'comentarista', 'editor'].forEach(role => {
+        const option = document.createElement('option');
+        option.value = role;
+        option.textContent = ROLE_LABELS[role];
+        option.selected = role === person.role;
+        select.appendChild(option);
+      });
+      select.addEventListener('change', () => changeRole(person.user_id, select.value));
+      actions.appendChild(select);
+      actions.appendChild(createActionButton(
+        'collab-remove',
+        'Quitar',
+        () => removeCollaborator(person.user_id, person.full_name)
+      ));
+    }
+    row.appendChild(actions);
+    return row;
+  }));
+}
+
+async function loadInvites(taskId) {
+  const container = document.getElementById('collab-invites');
+  setStatusText(container, 'Cargando...');
+
+  const res = await fetch(`/api/tasks/${taskId}/invites`);
+  if (!res.ok) {
+    setStatusText(container, 'No se pudieron cargar los enlaces.', true);
+    return;
+  }
+  const { invites } = await res.json();
+  const active = invites.filter(invite => invite.active);
+
+  if (!active.length) {
+    setStatusText(container, 'No hay enlaces activos.');
+    return;
+  }
+
+  container.replaceChildren(...active.map(invite => {
+    const row = document.createElement('div');
+    row.className = 'collab-row';
+
+    const info = document.createElement('div');
+    info.appendChild(createTextElement(
+      'div',
+      'collab-row-name',
+      `Enlace de ${ROLE_LABELS[invite.role] || invite.role}`
+    ));
+    const usos = invite.max_uses > 0
+      ? `${invite.uses}/${invite.max_uses} usos`
+      : `${invite.uses} usos`;
+    info.appendChild(createTextElement(
+      'div',
+      'collab-row-meta',
+      `Caduca el ${formatDateShort(invite.expires_at)} · ${usos}`
+    ));
+    row.appendChild(info);
+
+    const actions = document.createElement('div');
+    actions.className = 'collab-row-actions';
+    actions.appendChild(createActionButton(
+      'collab-remove',
+      'Revocar',
+      () => revokeInvite(invite.id)
+    ));
+    row.appendChild(actions);
+    return row;
+  }));
+}
+
+async function createInvite() {
+  const taskId = collabState.taskId;
+  const button = document.getElementById('btn-create-invite');
+  const errorEl = document.getElementById('collab-error');
+  errorEl.textContent = '';
+  button.disabled = true;
+  button.textContent = '⏳ Generando...';
+
+  try {
+    const res = await fetch(`/api/tasks/${taskId}/invites`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        role: document.getElementById('invite-role').value,
+        expires_in_days: Number(document.getElementById('invite-days').value),
+        max_uses: Number(document.getElementById('invite-uses').value),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'No se pudo generar el enlace.');
+
+    // Primero se refresca el panel (que oculta el resultado anterior) y solo
+    // después se muestra el enlace nuevo, o quedaría escondido al instante.
+    await loadCollabData(taskId);
+    await loadTasks();
+    document.getElementById('invite-link').value = data.url;
+    document.getElementById('invite-result').classList.remove('hidden');
+  } catch (error) {
+    errorEl.textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = '🔗 Generar enlace de invitación';
+  }
+}
+
+async function copyInviteLink() {
+  const input = document.getElementById('invite-link');
+  input.select();
+  try {
+    await navigator.clipboard.writeText(input.value);
+    document.getElementById('collab-error').textContent = '';
+  } catch {
+    // Sin permiso de portapapeles el texto queda seleccionado para copiarlo a mano.
+    document.getElementById('collab-error').textContent =
+      'No se pudo copiar automáticamente; el enlace está seleccionado.';
+  }
+}
+
+async function revokeInvite(inviteId) {
+  if (!confirm('¿Revocar este enlace? Quien aún no lo haya usado no podrá entrar.')) return;
+  const taskId = collabState.taskId;
+  const res = await fetch(`/api/tasks/${taskId}/invites/${inviteId}`, { method: 'DELETE' });
+  if (!res.ok) {
+    document.getElementById('collab-error').textContent = 'No se pudo revocar el enlace.';
+    return;
+  }
+  await loadInvites(taskId);
+}
+
+async function changeRole(userId, role) {
+  const taskId = collabState.taskId;
+  const res = await fetch(`/api/tasks/${taskId}/collaborators/${userId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
+  });
+  if (!res.ok) {
+    document.getElementById('collab-error').textContent = 'No se pudo cambiar el nivel.';
+    return;
+  }
+  await loadCollabData(taskId);
+}
+
+async function removeCollaborator(userId, name) {
+  if (!confirm(`¿Quitar a ${name || 'este colaborador'} de la tarea?`)) return;
+  const taskId = collabState.taskId;
+  const res = await fetch(`/api/tasks/${taskId}/collaborators/${userId}`, { method: 'DELETE' });
+  if (!res.ok) {
+    document.getElementById('collab-error').textContent = 'No se pudo quitar al colaborador.';
+    return;
+  }
+  await Promise.all([loadCollabData(taskId), loadTasks()]);
 }
 
 async function saveQuickEdit() {
@@ -2910,6 +3513,10 @@ function formatDateShort(dateStr) {
 
 window.openHistoryModal  = openHistoryModal;
 window.closeHistoryModal = closeHistoryModal;
+window.openCollabModal   = openCollabModal;
+window.closeCollabModal  = closeCollabModal;
+window.createInvite      = createInvite;
+window.copyInviteLink    = copyInviteLink;
 window.submitComment     = submitComment;
 window.saveQuickEdit     = saveQuickEdit;
 window.unarchiveTask     = unarchiveTask;
@@ -2922,6 +3529,7 @@ window.openDayPanel      = openDayPanel;
   ['modal', closeModal],
   ['archive-modal', closeArchiveModal],
   ['history-modal', closeHistoryModal],
+  ['collab-modal', closeCollabModal],
 ].forEach(([id, close]) => {
   const overlay = document.getElementById(id);
   overlay?.addEventListener('click', close);
