@@ -8,6 +8,7 @@ import {
   safeEqualStrings,
   safeErrorSummary,
 } from '../../../lib/security.js';
+import { annotate, currentContext } from '../../../lib/observability.js';
 
 const AI_API_KEY = process.env.AI_API_KEY?.trim();
 
@@ -21,14 +22,29 @@ function json(data, status, headers = {}) {
   });
 }
 
+/**
+ * Error controlado: se anota su tipo para el log y se devuelve el `request_id`
+ * al cliente. Así quien reporta el fallo puede citar el identificador exacto y
+ * encontrarlo en los logs sin buscar por hora aproximada.
+ */
+function failure(errorType, message, status, headers = {}) {
+  annotate({ error_type: errorType });
+  const requestId = currentContext()?.request_id;
+  return json(
+    requestId ? { error: message, request_id: requestId } : { error: message },
+    status,
+    headers,
+  );
+}
+
 export async function POST({ request }) {
   if (!AI_API_KEY) {
-    return json({ error: 'API externa no configurada.' }, 503);
+    return failure('api_no_configurada', 'API externa no configurada.', 503);
   }
   const authorization = request.headers.get('authorization') || '';
   const match = authorization.match(/^Bearer\s+(.+)$/i);
   if (!match || !safeEqualStrings(match[1], AI_API_KEY)) {
-    return json({ error: 'No autorizado.' }, 401);
+    return failure('no_autorizado', 'No autorizado.', 401);
   }
 
   const limit = await consumeRateLimit(
@@ -38,8 +54,9 @@ export async function POST({ request }) {
     RATE_LIMIT_WINDOW
   );
   if (!limit.allowed) {
-    return json(
-      { error: 'Demasiadas peticiones. Espera unos minutos e inténtalo de nuevo.' },
+    return failure(
+      'limite_de_uso',
+      'Demasiadas peticiones. Espera unos minutos e inténtalo de nuevo.',
       429,
       { 'Retry-After': String(limit.retryAfterSeconds) }
     );
@@ -50,13 +67,15 @@ export async function POST({ request }) {
   try {
     body = await request.json();
   } catch {
-    return json({ error: 'El cuerpo de la petición no es JSON válido.' }, 400);
+    return failure('json_invalido', 'El cuerpo de la petición no es JSON válido.', 400);
   }
 
   // 2. Validación del contrato de entrada
   const validation = validateTaskInput(body);
   if (!validation.ok) {
-    return json({ error: validation.error }, 400);
+    // Se registra que falló la validación, nunca el valor recibido: el cuerpo
+    // es entrada de terceros y puede traer datos personales.
+    return failure('validacion_entrada', validation.error, 400);
   }
 
   // 3. Generación de la recomendación
@@ -75,11 +94,11 @@ export async function POST({ request }) {
     }, 200);
   } catch (err) {
     console.error('[v1/recommend] error inesperado:', safeErrorSummary(err));
-    return json({ error: 'Error interno al generar la recomendación.' }, 500);
+    return failure('error_interno', 'Error interno al generar la recomendación.', 500);
   }
 }
 
 // Rechazo explícito de otros métodos con mensaje claro
 export async function GET() {
-  return json({ error: 'Método no permitido. Usa POST con un cuerpo JSON.' }, 405);
+  return failure('metodo_no_permitido', 'Método no permitido. Usa POST con un cuerpo JSON.', 405);
 }

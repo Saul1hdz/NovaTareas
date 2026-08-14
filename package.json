@@ -20,7 +20,9 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "astro check",
-    "db:seed": "node scripts/seed-demo.mjs"
+    "db:seed": "node scripts/seed-demo.mjs",
+    "measure": "node scripts/measure-endpoint.mjs",
+    "measure:baseline": "node scripts/measure-endpoint.mjs --scenario=recommend --requests=30"
   },
   "dependencies": {
     "@astrojs/node": "^11.0.2",

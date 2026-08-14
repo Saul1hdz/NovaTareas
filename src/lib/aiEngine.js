@@ -3,9 +3,15 @@
 // Proveedores compartidos: una sola definición de modelo, timeouts y
 // respaldos para toda la aplicación.
 import { callOllama, callZai } from './ai/providers.js';
+import { annotate } from './observability.js';
 
 const tryZai = prompt => callZai(prompt);
 const tryOllama = prompt => callOllama(prompt);
+
+// Identifica la plantilla de prompt con la que se generó una recomendación.
+// Sin esto, comparar dos mediciones separadas por un cambio de prompt es
+// comparar cosas distintas sin saberlo.
+export const PROMPT_VERSION = 'recommend-v1';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Motor de recomendaciones reutilizable, SIN dependencia de base de datos ni
@@ -81,15 +87,35 @@ export function validateTaskInput(body) {
  */
 export async function generateRecommendation(task) {
   const prompt = buildPrompt(task);
+  const startedAt = performance.now();
+
+  // Cada salida anota qué respondió realmente. Es el dato que convierte una
+  // medición de latencia en algo interpretable: 40 ms de reglas locales y 3 s
+  // de z.ai son el mismo endpoint, pero no el mismo comportamiento.
+  const report = (source, model, fallback) => annotate({
+    ai_component: 'recommendation-engine',
+    ai_source: source,
+    ai_model: model,
+    ai_prompt_version: PROMPT_VERSION,
+    ai_duration_ms: Math.round(performance.now() - startedAt),
+    ai_fallback: fallback,
+  });
 
   if (ZAI_API_KEY) {
     const text = await tryZai(prompt);
-    if (text) return { text, source: 'zai' };
+    if (text) {
+      report('zai', AI_META.primary_model, false);
+      return { text, source: 'zai' };
+    }
   }
 
   const ollamaText = await tryOllama(prompt);
-  if (ollamaText) return { text: ollamaText, source: 'ollama' };
+  if (ollamaText) {
+    report('ollama', process.env.OLLAMA_MODEL || 'llama3.2:3b', true);
+    return { text: ollamaText, source: 'ollama' };
+  }
 
+  report('rules', null, true);
   return { text: getRulesRecommendation(task), source: 'rules' };
 }
 

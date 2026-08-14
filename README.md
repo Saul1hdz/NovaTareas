@@ -49,6 +49,7 @@ Docente: Ing. Marco Arévalo Zambrano
 15. [Plan de mejora por semana](#15-plan-de-mejora-por-semana)
 16. [Documentación adicional](#16-documentación-adicional)
 17. [Stack tecnológico](#17-stack-tecnológico)
+18. [Observabilidad y medición de rendimiento](#18-observabilidad-y-medición-de-rendimiento)
 
 ---
 
@@ -799,6 +800,68 @@ Si necesitas entrar en detalle, cada documento cubre una parte distinta:
 | CI/CD | GitHub Actions |
 | Runtime | Node.js 22.12 o posterior, dentro de la línea 22 |
 | Contenedores | Docker Compose (web, migraciones, PostgreSQL, bot y planificador) |
+
+---
+
+## 18. Observabilidad y medición de rendimiento
+
+Cada solicitud emite **un evento JSON** por línea en la salida del contenedor,
+con identificador de correlación, ruta, estado, duración, coste de PostgreSQL y
+—cuando interviene— el componente de IA que respondió.
+
+```json
+{"ts":"2026-08-14T02:52:35.328Z","level":"info","event":"http_request",
+ "request_id":"a361aae4-3edf-4469-94d3-bcb645de4800","method":"GET",
+ "route":"/api/tasks","status":200,"outcome":"success","duration_ms":24,
+ "app_version":"dev","db_queries":2,"db_duration_ms":18.93}
+```
+
+El mismo `request_id` viaja al cliente en la cabecera `x-request-id`, así que un
+fallo reportado se localiza en el log sin buscar por hora.
+
+Los campos publicables son una lista blanca en `src/lib/observability.js`: nunca
+salen cuerpos, cabeceras, contraseñas, correos ni el *query string*. Las rutas se
+normalizan (`/api/tasks/:id`, `/unirse/:token`) para no filtrar identificadores
+ni tokens. `tests/observability.test.js` lo verifica.
+
+### Ver los eventos
+
+```bash
+docker compose -f compose.dev.yml logs web | grep http_request
+```
+
+### Medir el rendimiento
+
+`scripts/measure-endpoint.mjs` ejecuta un escenario repetible y publica p50, p95,
+máximo y tasa de error. Exige un mínimo de 20 solicitudes.
+
+```bash
+# Flujo crítico: listado de tareas del dashboard (necesita sesión)
+MEASURE_USER_EMAIL=ana.demo@example.test MEASURE_USER_PASSWORD=tu-clave \
+  node scripts/measure-endpoint.mjs --scenario=tasks --requests=30
+
+# Bajo carga
+node scripts/measure-endpoint.mjs --scenario=tasks --requests=40 --concurrency=8
+
+# Control sin base de datos ni sesión
+node scripts/measure-endpoint.mjs --scenario=health --requests=40
+
+# API pública de IA (requiere AI_API_KEY)
+node scripts/measure-endpoint.mjs --scenario=recommend --requests=30
+```
+
+| Opción | Por defecto | Para qué |
+|---|---|---|
+| `--scenario` | `recommend` | `recommend`, `recommend-invalid`, `tasks`, `health` |
+| `--requests` | 30 | Tamaño de la muestra (mínimo 20) |
+| `--concurrency` | 1 | Solicitudes simultáneas |
+| `--warmup` | 3 | Solicitudes descartadas antes de medir |
+| `--url` | `http://127.0.0.1:4321` | Destino |
+| `--out` | `docs/mediciones` | Carpeta de resultados |
+
+Cada ejecución guarda el detalle en `docs/mediciones/`. El análisis completo —
+línea base, cuello de botella, mejora aplicada y plan de escalabilidad— está en
+[`docs/OBSERVABILIDAD_SEMANA_5.md`](docs/OBSERVABILIDAD_SEMANA_5.md).
 
 ---
 

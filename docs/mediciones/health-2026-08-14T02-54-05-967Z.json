@@ -1,0 +1,266 @@
+{
+  "scenario": "health",
+  "description": "GET /api/v1/health (control: sin autenticación ni consulta de negocio)",
+  "base_url": "http://127.0.0.1:4321",
+  "measured_at": "2026-08-14T02:54:05.967Z",
+  "app_version": "build-semana5",
+  "ai_model": "glm-4.5-flash",
+  "ai_configured": true,
+  "concurrency": 8,
+  "warmup": 3,
+  "wall_clock_ms": 572,
+  "throughput_rps": 69.93,
+  "requests": 40,
+  "errors": 0,
+  "error_rate": 0,
+  "p50_ms": 108.57,
+  "p95_ms": 170.28,
+  "max_ms": 195.2,
+  "min_ms": 35.43,
+  "avg_ms": 108.91,
+  "status_codes": {
+    "200": 40
+  },
+  "samples": [
+    {
+      "duration_ms": 35.43,
+      "status": 200,
+      "ok": true,
+      "request_id": "b605dbd7-315c-4c5a-a906-c1295cf383c2"
+    },
+    {
+      "duration_ms": 89.57,
+      "status": 200,
+      "ok": true,
+      "request_id": "01b84876-e6f3-4a90-a14b-eaaa8e019414"
+    },
+    {
+      "duration_ms": 92.83,
+      "status": 200,
+      "ok": true,
+      "request_id": "4352af81-d031-4bd3-baf5-77d638b585d8"
+    },
+    {
+      "duration_ms": 100.66,
+      "status": 200,
+      "ok": true,
+      "request_id": "1a8592d8-d49e-44ae-ab72-cd24c34f62a6"
+    },
+    {
+      "duration_ms": 108.92,
+      "status": 200,
+      "ok": true,
+      "request_id": "f3a7fdaa-5b5e-43e5-9e0c-02e05b0bb783"
+    },
+    {
+      "duration_ms": 108.3,
+      "status": 200,
+      "ok": true,
+      "request_id": "4f704f33-edfd-4d4f-88b5-88b8787da0d0"
+    },
+    {
+      "duration_ms": 114.41,
+      "status": 200,
+      "ok": true,
+      "request_id": "790a47a9-9b4f-468d-a9a7-8fd6d93a2e40"
+    },
+    {
+      "duration_ms": 118.22,
+      "status": 200,
+      "ok": true,
+      "request_id": "2fd58f90-d094-4dd1-95e6-669b3136a555"
+    },
+    {
+      "duration_ms": 128.26,
+      "status": 200,
+      "ok": true,
+      "request_id": "6644a262-4ead-4d0f-9d74-1300627f2746"
+    },
+    {
+      "duration_ms": 101.14,
+      "status": 200,
+      "ok": true,
+      "request_id": "f2441d38-bdcd-47bb-b89f-acb8eb82de6c"
+    },
+    {
+      "duration_ms": 111.15,
+      "status": 200,
+      "ok": true,
+      "request_id": "b7912f04-d836-4056-be22-b5cf990773d1"
+    },
+    {
+      "duration_ms": 110.71,
+      "status": 200,
+      "ok": true,
+      "request_id": "1cb8e2e6-8479-4188-b54a-e89112bdb4e8"
+    },
+    {
+      "duration_ms": 108.85,
+      "status": 200,
+      "ok": true,
+      "request_id": "191da1f0-e668-4e6a-ad1b-50212979a4b3"
+    },
+    {
+      "duration_ms": 106.48,
+      "status": 200,
+      "ok": true,
+      "request_id": "0d28276c-b47d-46b1-9208-5f9b8dafa6a5"
+    },
+    {
+      "duration_ms": 103.83,
+      "status": 200,
+      "ok": true,
+      "request_id": "3a8d59d6-2a74-4167-8831-adebbd4fc333"
+    },
+    {
+      "duration_ms": 108.14,
+      "status": 200,
+      "ok": true,
+      "request_id": "9fb89f4a-0bf7-40e2-b74f-3c1583ad0305"
+    },
+    {
+      "duration_ms": 96.17,
+      "status": 200,
+      "ok": true,
+      "request_id": "6afc000d-29ba-4ed3-b415-c2e46d9cf801"
+    },
+    {
+      "duration_ms": 130.82,
+      "status": 200,
+      "ok": true,
+      "request_id": "524ed2a2-2e0f-47f1-a0a3-6ad3a09bd989"
+    },
+    {
+      "duration_ms": 119.65,
+      "status": 200,
+      "ok": true,
+      "request_id": "6f4c6485-e7c0-4918-8095-2255dbccaf96"
+    },
+    {
+      "duration_ms": 158.79,
+      "status": 200,
+      "ok": true,
+      "request_id": "a484d386-e99f-493e-b138-137581f6ae7a"
+    },
+    {
+      "duration_ms": 142.81,
+      "status": 200,
+      "ok": true,
+      "request_id": "102bfd65-eed7-41b0-98a5-a61f35170bbc"
+    },
+    {
+      "duration_ms": 169.97,
+      "status": 200,
+      "ok": true,
+      "request_id": "30f63a6c-0fe5-48c6-8a5f-a820c3d24e16"
+    },
+    {
+      "duration_ms": 132.38,
+      "status": 200,
+      "ok": true,
+      "request_id": "23525044-12ee-4cfd-a92f-b660a93df2a3"
+    },
+    {
+      "duration_ms": 176.16,
+      "status": 200,
+      "ok": true,
+      "request_id": "8e21a12f-0066-4007-bafd-69589c093291"
+    },
+    {
+      "duration_ms": 195.2,
+      "status": 200,
+      "ok": true,
+      "request_id": "c93740fa-3740-40d2-b7c3-58c4e2d7860f"
+    },
+    {
+      "duration_ms": 99.56,
+      "status": 200,
+      "ok": true,
+      "request_id": "193f5738-ad77-4464-8df2-cfa7f8f6d57e"
+    },
+    {
+      "duration_ms": 129.39,
+      "status": 200,
+      "ok": true,
+      "request_id": "6da34d1e-48d2-41b4-a029-b358377453ae"
+    },
+    {
+      "duration_ms": 113.71,
+      "status": 200,
+      "ok": true,
+      "request_id": "93541d1d-e653-4248-961e-823466b44510"
+    },
+    {
+      "duration_ms": 109.65,
+      "status": 200,
+      "ok": true,
+      "request_id": "359e3fb0-32fb-40dd-ad5c-39b12bf9ee20"
+    },
+    {
+      "duration_ms": 104.4,
+      "status": 200,
+      "ok": true,
+      "request_id": "3a7e99dd-31df-49cd-a19a-962dd390e376"
+    },
+    {
+      "duration_ms": 116.62,
+      "status": 200,
+      "ok": true,
+      "request_id": "88017361-21a8-48e5-9323-f3f9dde1836c"
+    },
+    {
+      "duration_ms": 122.09,
+      "status": 200,
+      "ok": true,
+      "request_id": "96f8767a-0e3a-4bb5-8f48-c86f126f8109"
+    },
+    {
+      "duration_ms": 100.21,
+      "status": 200,
+      "ok": true,
+      "request_id": "0d4174db-9040-4e2d-aa48-47e30600b901"
+    },
+    {
+      "duration_ms": 105.27,
+      "status": 200,
+      "ok": true,
+      "request_id": "bacbdb3e-4b6f-4852-952b-5606ba13b8f3"
+    },
+    {
+      "duration_ms": 76.73,
+      "status": 200,
+      "ok": true,
+      "request_id": "fdf08044-d63b-434e-b10e-a7d3858ba0d8"
+    },
+    {
+      "duration_ms": 64.36,
+      "status": 200,
+      "ok": true,
+      "request_id": "59666a75-7284-426c-8173-e137e9f8c814"
+    },
+    {
+      "duration_ms": 63.01,
+      "status": 200,
+      "ok": true,
+      "request_id": "ec7ec1f8-e3f6-48c3-a9a6-f0124a7cb7bb"
+    },
+    {
+      "duration_ms": 70.96,
+      "status": 200,
+      "ok": true,
+      "request_id": "429493e2-7644-46d9-ae2b-4ad479d7d862"
+    },
+    {
+      "duration_ms": 61.53,
+      "status": 200,
+      "ok": true,
+      "request_id": "0446261d-dfbd-4984-9c78-e2a72b2c2136"
+    },
+    {
+      "duration_ms": 50.03,
+      "status": 200,
+      "ok": true,
+      "request_id": "77dd18c4-b897-4f60-a1a3-f36c7e6c1a66"
+    }
+  ]
+}
