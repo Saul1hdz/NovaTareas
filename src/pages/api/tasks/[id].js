@@ -164,6 +164,17 @@ export const PATCH = async ({ request, params }) => {
       if (Object.keys(trackedChanges).length > 0) {
         await recordHistory(tx, taskId, user.userId, task, trackedChanges);
       }
+
+      // Volver la tarea privada corta el acceso de los colaboradores —de eso se
+      // encarga getTaskAccess— pero un enlace vigente seguiría admitiendo gente
+      // nueva a una tarea que ya no se comparte. Se revocan en la misma
+      // transacción para que no quede ninguna puerta abierta.
+      if (body.visibility === 'privada') {
+        await tx.prepare(`
+          UPDATE task_invites SET revoked_at = NOW()
+          WHERE task_id = $1 AND revoked_at IS NULL
+        `).run(taskId);
+      }
     }, db);
   }
 

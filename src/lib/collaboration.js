@@ -51,11 +51,19 @@ export function roleLevel(role) {
  * para que las rutas puedan responder 404 sin revelar su existencia.
  */
 export async function getTaskAccess(db, taskId, userId) {
+  // La visibilidad manda sobre la lista de colaboradores. Sin la condición
+  // `t.visibility = 'colaborativa'`, una tarea que el propietario devolvió a
+  // privada seguía siendo accesible para quienes ya estaban dentro: la interfaz
+  // decía «Privada» y el acceso real no lo era.
   const row = await db.prepare(`
     SELECT t.*, c.role AS collaborator_role
     FROM tasks t
     LEFT JOIN task_collaborators c ON c.task_id = t.id AND c.user_id = $2
-    WHERE t.id = $1 AND (t.user_id = $2 OR c.user_id IS NOT NULL)
+    WHERE t.id = $1
+      AND (
+        t.user_id = $2
+        OR (c.user_id IS NOT NULL AND t.visibility = 'colaborativa')
+      )
   `).get(taskId, userId);
 
   if (!row) return null;
@@ -74,9 +82,11 @@ export async function getTaskAccess(db, taskId, userId) {
  * posición real que ocupe.
  */
 export function visibleTaskCondition(userParam, alias = 't') {
-  return `(${alias}.user_id = ${userParam} OR EXISTS (
-    SELECT 1 FROM task_collaborators tc
-    WHERE tc.task_id = ${alias}.id AND tc.user_id = ${userParam}
+  return `(${alias}.user_id = ${userParam} OR (
+    ${alias}.visibility = 'colaborativa' AND EXISTS (
+      SELECT 1 FROM task_collaborators tc
+      WHERE tc.task_id = ${alias}.id AND tc.user_id = ${userParam}
+    )
   ))`;
 }
 

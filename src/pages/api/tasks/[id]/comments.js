@@ -3,6 +3,7 @@ import { getUser } from '../../../../lib/auth.js';
 import { validateCommentInput } from '../../../../lib/taskValidation.js';
 import { parseId } from '../../../../lib/routeParams.js';
 import { can, getTaskAccess } from '../../../../lib/collaboration.js';
+import { consumeRateLimit } from '../../../../lib/security.js';
 
 // Proveedores compartidos: una sola definición de modelo, timeouts y
 // respaldos para toda la aplicación.
@@ -13,6 +14,13 @@ const tryOllama = prompt => callOllama(prompt);
 
 
 const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
+
+// La respuesta de IA en un comentario llama al proveedor externo igual que el
+// endpoint de recomendaciones, así que tiene que pagar la misma cuota. Sin
+// esto, cualquier comentarista de una tarea compartida podía disparar llamadas
+// sin límite: coste externo y carga local sin acotar.
+const AI_RATE_LIMIT_MAX    = Number(process.env.AI_RATE_LIMIT_MAX)    || 5;
+const AI_RATE_LIMIT_WINDOW = Number(process.env.AI_RATE_LIMIT_WINDOW) || 5 * 60 * 1000;
 
 export const POST = async ({ request, params }) => {
   const user = await getUser(request);
@@ -48,6 +56,20 @@ export const POST = async ({ request, params }) => {
   let aiReply = null;
 
   if (body.ask_ai) {
+    const limite = await consumeRateLimit(
+      'task-comment-ai-user',
+      String(user.userId),
+      AI_RATE_LIMIT_MAX,
+      AI_RATE_LIMIT_WINDOW,
+    );
+    if (!limite.allowed) {
+      return json({
+        error: `Límite de ${AI_RATE_LIMIT_MAX} respuestas de IA cada `
+          + `${AI_RATE_LIMIT_WINDOW / 60000} minutos alcanzado. `
+          + `Puedes guardar el comentario sin IA.`,
+      }, 429, { 'Retry-After': String(limite.retryAfterSeconds) });
+    }
+
     // Historial de cambios
     const history = await db.prepare(`
       SELECT field, old_value, new_value, changed_at
@@ -174,11 +196,12 @@ const historyLines = history.length > 0
 
 
 
-function json(data, status) {
+function json(data, status, headers = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json',
+      ...headers,
     },
   });
 }

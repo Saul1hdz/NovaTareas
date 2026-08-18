@@ -14,6 +14,28 @@ No hay equipos ni espacios de trabajo: el permiso es siempre por tarea. Esto
 mantiene el modelo simple y evita que compartir una tarea abra el resto del
 tablero de nadie.
 
+### Volver una tarea privada corta el acceso
+
+La visibilidad manda sobre la lista de colaboradores. Si el propietario devuelve
+una tarea compartida a **privada**:
+
+- Los colaboradores dejan de verla al instante: desaparece de su listado y las
+  rutas de la tarea les responden «no encontrado».
+- Los enlaces de invitación que siguieran vigentes quedan revocados en la misma
+  transacción, para que nadie entre a una tarea que ya no se comparte.
+- La lista de colaboradores **se conserva**. Si el propietario vuelve a marcarla
+  como colaborativa, el equipo recupera su acceso con el mismo nivel que tenía.
+
+Se guarda la lista en vez de borrarla porque volver privada una tarea suele ser
+temporal —revisar algo a solas antes de seguir— y rehacer el equipo a mano sería
+un castigo desproporcionado. Para sacar a alguien de forma definitiva está
+«Quitar» en el panel de equipo.
+
+> Antes de la revisión de seguridad del 17 de agosto de 2026, cambiar la
+> visibilidad a privada **no** retiraba el acceso: la interfaz decía «Privada»
+> mientras los colaboradores anteriores seguían entrando. Ver
+> `tests/collaborationSecurity.test.js`.
+
 ## Niveles
 
 | Nivel | Ver tarea, historial y comentarios | Comentar y aportar ideas | Editar la tarea y sus subtareas | Archivar, borrar, invitar y administrar |
@@ -135,3 +157,20 @@ tarea privada invisible para terceros, generación y canje del enlace, límites 
 nivel (comentarista que no edita, editor que no archiva, colaborador que no
 administra), cupo de usos agotado, enlace revocado y retirada de acceso al quitar
 a un colaborador.
+
+
+## Controles de seguridad
+
+Cuatro puntos que el gate de despliegue del 17 de agosto de 2026 exigió cerrar,
+cada uno con su prueba negativa en `tests/collaborationSecurity.test.js`:
+
+| Control | Dónde vive |
+|---|---|
+| Mutaciones con cookie exigen `Origin`/`Referer` del propio sitio | `src/lib/csrf.js` + `src/middleware.js` |
+| La visibilidad privada retira el acceso y revoca los enlaces | `src/lib/collaboration.js`, `src/pages/api/tasks/[id].js` |
+| Cada quien ve solo la recomendación de IA que pidió | `src/pages/api/tasks.js` |
+| La IA en comentarios paga cuota y responde 429 | `src/pages/api/tasks/[id]/comments.js` |
+
+La recomendación de IA puede derivarse del historial archivado de quien la pide
+(RAG), así que **no** se comparte con el resto del equipo aunque la tarea sí lo
+esté: cada participante ve la suya o ninguna.

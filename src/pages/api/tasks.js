@@ -65,12 +65,15 @@ export const GET = async ({ request }) => {
   LEFT JOIN LATERAL (
     SELECT recommendation, source
     FROM task_recommendations
-    WHERE task_id = t.id
+    WHERE task_id = t.id AND user_id = ${me}
     ORDER BY created_at DESC
     LIMIT 1
   ) r ON TRUE
   LEFT JOIN task_collaborators mine ON mine.task_id = t.id AND mine.user_id = ${me}
-  WHERE (t.user_id = ${me} OR mine.user_id IS NOT NULL)
+  WHERE (
+      t.user_id = ${me}
+      OR (mine.user_id IS NOT NULL AND t.visibility = 'colaborativa')
+    )
     AND t.archived=${placeholder(archived)}`;
 
   if (search)   { query += ` AND t.title ILIKE ${placeholder(`%${search}%`)}`; }
