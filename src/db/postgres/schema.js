@@ -3,6 +3,7 @@ import {
   boolean,
   check,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -336,6 +337,8 @@ export const taskRecommendations = pgTable('task_recommendations', {
 }, (table) => [
   index('task_recommendations_task_created_idx').on(table.taskId, table.createdAt),
   index('task_recommendations_user_created_idx').on(table.userId, table.createdAt),
+  uniqueIndex('task_recommendations_feedback_identity_unique')
+    .on(table.id, table.taskId, table.userId),
   check(
     'task_recommendations_text_length',
     sql`char_length(btrim(${table.recommendation})) BETWEEN 1 AND 12000`,
@@ -373,6 +376,11 @@ export const recommendationFeedback = pgTable('recommendation_feedback', {
   uniqueIndex('recommendation_feedback_unique').on(table.recommendationId, table.userId),
   index('recommendation_feedback_task_idx').on(table.taskId, table.createdAt),
   index('recommendation_feedback_user_idx').on(table.userId),
+  foreignKey({
+    name: 'recommendation_feedback_recommendation_task_user_fk',
+    columns: [table.recommendationId, table.taskId, table.userId],
+    foreignColumns: [taskRecommendations.id, taskRecommendations.taskId, taskRecommendations.userId],
+  }).onDelete('cascade'),
   check(
     'recommendation_feedback_comment_length',
     sql`char_length(${table.comment}) <= 2000`,

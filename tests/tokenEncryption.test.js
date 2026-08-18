@@ -20,10 +20,13 @@ describe('cifrado de tokens persistidos', () => {
     expect(() => decryptToken('token-sin-cifrar')).toThrow(/no está cifrado/i);
   });
 
-  it('detecta alteraciones del ciphertext', () => {
+  it('detecta alteraciones reales de los bytes del ciphertext', () => {
     const encrypted = encryptToken('token-ficticio');
-    const tampered = `${encrypted.slice(0, -1)}A`;
+    const parts = encrypted.split(':');
+    const ciphertext = Buffer.from(parts[4], 'base64url');
+    ciphertext[0] ^= 0x01;
+    parts[4] = ciphertext.toString('base64url');
 
-    expect(() => decryptToken(tampered)).toThrow(/descifrar/i);
+    expect(() => decryptToken(parts.join(':'))).toThrow(/descifrar/i);
   });
 });

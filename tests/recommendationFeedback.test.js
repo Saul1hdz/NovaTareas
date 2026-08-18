@@ -181,6 +181,70 @@ describe('flujo de valoración sobre la base real', { sequential: true }, () => 
     expect(datos.current_feedback.comment).toBe('Releyéndola, sí me sirve.');
   });
 
+  it('no confunde dos recomendaciones distintas con texto idéntico', async () => {
+    const db = getDb();
+    const duenaId = (await db.prepare('SELECT id FROM users WHERE email = $1')
+      .get('valora@example.test')).id;
+    const duplicada = await createTask({
+      request: request('/api/tasks', 'POST', { title: 'Tarea con consejos iguales' }, duena),
+    });
+    const id = Number((await duplicada.json()).id);
+    const snapshot = JSON.stringify({ title: 'Tarea con consejos iguales' });
+    const primera = await db.prepare(`
+      INSERT INTO task_recommendations
+        (task_id, user_id, source, input_snapshot, recommendation, created_at)
+      VALUES ($1, $2, 'rules', $3::jsonb, 'Consejo idéntico', NOW() - INTERVAL '1 minute')
+      RETURNING id
+    `).get(id, duenaId, snapshot);
+    await db.prepare(`
+      INSERT INTO recommendation_feedback
+        (recommendation_id, task_id, user_id, useful, comment)
+      VALUES ($1, $2, $3, true, 'Valoración de la primera fila')
+    `).run(primera.id, id, duenaId);
+    const segunda = await db.prepare(`
+      INSERT INTO task_recommendations
+        (task_id, user_id, source, input_snapshot, recommendation, created_at)
+      VALUES ($1, $2, 'rules', $3::jsonb, 'Consejo idéntico', NOW())
+      RETURNING id
+    `).get(id, duenaId, snapshot);
+
+    const consulta = await getFeedback({
+      request: request(`/api/tasks/${id}/feedback`, 'GET', undefined, duena),
+      params: { id: String(id) },
+    });
+    const datos = await consulta.json();
+    expect(datos.recommendation.id).toBe(segunda.id);
+    expect(datos.current_feedback).toBeNull();
+    expect(datos.history).toHaveLength(1);
+    expect(datos.history[0].recommendation_id).toBe(primera.id);
+  });
+
+  it('la base rechaza feedback ligado a otra tarea', async () => {
+    const db = getDb();
+    const duenaId = (await db.prepare('SELECT id FROM users WHERE email = $1')
+      .get('valora@example.test')).id;
+    const tareaA = await createTask({
+      request: request('/api/tasks', 'POST', { title: 'Tarea A de integridad' }, duena),
+    });
+    const tareaB = await createTask({
+      request: request('/api/tasks', 'POST', { title: 'Tarea B de integridad' }, duena),
+    });
+    const idA = Number((await tareaA.json()).id);
+    const idB = Number((await tareaB.json()).id);
+    const recomendacion = await db.prepare(`
+      INSERT INTO task_recommendations
+        (task_id, user_id, source, input_snapshot, recommendation)
+      VALUES ($1, $2, 'rules', '{}'::jsonb, 'Consejo para la tarea A')
+      RETURNING id
+    `).get(idA, duenaId);
+
+    await expect(db.prepare(`
+      INSERT INTO recommendation_feedback
+        (recommendation_id, task_id, user_id, useful, comment)
+      VALUES ($1, $2, $3, true, '')
+    `).run(recomendacion.id, idB, duenaId)).rejects.toThrow(/foreign key|constraint/i);
+  });
+
   it('genera una recomendación nueva cuando se pide', async () => {
     const antes = await getDb().prepare(
       'SELECT COUNT(*)::int AS total FROM task_recommendations WHERE task_id = $1'

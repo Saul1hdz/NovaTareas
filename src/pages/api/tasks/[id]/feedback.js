@@ -25,7 +25,7 @@ export const GET = async ({ request, params }) => {
 
   const actual = await recomendacionActual(db, taskId, user.userId);
   const historial = await db.prepare(`
-    SELECT f.id, f.useful, f.comment, f.created_at, f.updated_at,
+    SELECT f.id, f.recommendation_id, f.useful, f.comment, f.created_at, f.updated_at,
            r.recommendation, r.source
     FROM recommendation_feedback f
     JOIN task_recommendations r ON r.id = f.recommendation_id
@@ -40,7 +40,7 @@ export const GET = async ({ request, params }) => {
       : null,
     // Valoración de la recomendación que está viendo ahora mismo, si ya opinó.
     current_feedback: actual
-      ? historial.find(f => f.recommendation === actual.recommendation) || null
+      ? historial.find(f => Number(f.recommendation_id) === Number(actual.id)) || null
       : null,
     history: historial,
   }, 200);

@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX "task_recommendations_feedback_identity_unique" ON "task_recommendations" USING btree ("id","task_id","user_id");--> statement-breakpoint
+ALTER TABLE "recommendation_feedback" ADD CONSTRAINT "recommendation_feedback_recommendation_task_user_fk" FOREIGN KEY ("recommendation_id","task_id","user_id") REFERENCES "public"."task_recommendations"("id","task_id","user_id") ON DELETE cascade ON UPDATE no action;
