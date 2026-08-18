@@ -121,3 +121,31 @@ export function validateCommentInput(body) {
     values: { body: comment.value, ask_ai: body.ask_ai === true, kind },
   };
 }
+
+/**
+ * Valoración de una recomendación: el pulgar es obligatorio y el porqué no.
+ * Un «no me sirve» sin explicación sigue siendo señal útil; obligar a escribir
+ * haría que la gente dejara de valorar.
+ */
+export function validateFeedbackInput(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { error: 'El cuerpo debe ser un objeto JSON' };
+  }
+  if (typeof body.useful !== 'boolean') {
+    return { error: 'Indica si la recomendación te resultó útil' };
+  }
+  const comment = text(body.comment, 'El comentario', { max: 2000 });
+  if (comment.error) return comment;
+
+  if (body.regenerate !== undefined && typeof body.regenerate !== 'boolean') {
+    return { error: 'regenerate debe ser un valor booleano' };
+  }
+
+  return {
+    values: {
+      useful: body.useful,
+      comment: comment.value === undefined ? '' : comment.value,
+      regenerate: body.regenerate === true,
+    },
+  };
+}

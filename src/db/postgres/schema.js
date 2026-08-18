@@ -342,6 +342,43 @@ export const taskRecommendations = pgTable('task_recommendations', {
   ),
 ]);
 
+/**
+ * Valoración de una recomendación de IA: el pulgar y, sobre todo, el porqué.
+ *
+ * Es la señal que faltaba para poder mejorar: hasta ahora el sistema generaba
+ * consejos y nadie sabía si servían. Se guarda por usuario y por recomendación
+ * concreta —no por tarea— porque cada participante ve la suya, y sobrevive al
+ * archivado para alimentar las recomendaciones de tareas parecidas.
+ */
+export const recommendationFeedback = pgTable('recommendation_feedback', {
+  id: identity(),
+  recommendationId: integer('recommendation_id')
+    .notNull()
+    .references(() => taskRecommendations.id, { onDelete: 'cascade' }),
+  // Se guarda también la tarea aunque se pueda deducir: las consultas de
+  // contexto buscan por tarea archivada y así se evita un JOIN en cada una.
+  taskId: integer('task_id')
+    .notNull()
+    .references(() => tasks.id, { onDelete: 'cascade' }),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  useful: boolean('useful').notNull(),
+  comment: text('comment').notNull().default(''),
+  createdAt: auditTimestamp('created_at'),
+  updatedAt: auditTimestamp('updated_at'),
+}, (table) => [
+  // Una sola valoración por persona y recomendación: volver a valorar corrige
+  // la anterior en vez de acumular opiniones contradictorias del mismo usuario.
+  uniqueIndex('recommendation_feedback_unique').on(table.recommendationId, table.userId),
+  index('recommendation_feedback_task_idx').on(table.taskId, table.createdAt),
+  index('recommendation_feedback_user_idx').on(table.userId),
+  check(
+    'recommendation_feedback_comment_length',
+    sql`char_length(${table.comment}) <= 2000`,
+  ),
+]);
+
 export const telegramLinkCodes = pgTable('telegram_link_codes', {
   id: identity(),
   userId: integer('user_id')
@@ -419,6 +456,7 @@ export const postgresSchema = {
   taskInvites,
   taskEmbeddings,
   taskRecommendations,
+  recommendationFeedback,
   telegramLinkCodes,
   rateLimitHits,
   recoveryTokens,

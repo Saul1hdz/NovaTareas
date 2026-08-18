@@ -4,6 +4,10 @@ import { getRagContext }                 from '../../../../lib/rag.js';
 import { parseId }                     from '../../../../lib/routeParams.js';
 import { consumeRateLimit } from '../../../../lib/security.js';
 import { can, getTaskAccess } from '../../../../lib/collaboration.js';
+import {
+  archivedFeedbackContext,
+  feedbackForPrompt,
+} from '../../../../lib/recommendationFeedback.js';
 
 // Proveedores compartidos: una sola definición de modelo, timeouts y
 // respaldos para toda la aplicación.
@@ -49,32 +53,49 @@ export const POST = async ({ request, params }) => {
     }, 429, { 'Retry-After': String(rateLimit.retryAfterSeconds) });
   }
 
-  const userRecord = await db.prepare('SELECT user_type FROM users WHERE id=$1').get(user.userId);
+  const previas = await feedbackForPrompt(db, taskId, user.userId);
+  const saved = await generateForTask(db, task, user.userId, { feedback: previas });
+  return json(describeRecommendation(saved), 200);
+};
+
+/**
+ * Genera y guarda una recomendación para una tarea, devolviendo la fila.
+ *
+ * Vive aparte del handler porque el endpoint de valoración necesita generar
+ * exactamente igual —misma cascada, mismo guardado— pero pasándole lo que el
+ * usuario dijo de la recomendación anterior.
+ */
+export async function generateForTask(db, task, userId, { feedback = [] } = {}) {
+  const userRecord = await db.prepare('SELECT user_type FROM users WHERE id=$1').get(userId);
   const userType   = userRecord?.user_type || 'comun';
 
   // ── RAG: recuperar contexto del historial del usuario ─────────────────────
   // Esta operación indexa tareas sin embedding al vuelo y busca las similares.
   // Si el usuario no tiene historial, ragContext queda vacío y el sistema
   // genera recomendaciones normales sin contexto adicional.
-  const ragContext = await getRagContext(user.userId, task);
+  const ragContext = await getRagContext(userId, task);
   const hasRag     = ragContext.length > 0;
 
-  // ── Construir prompt (con o sin contexto RAG) ─────────────────────────────
-  const prompt = buildPrompt(task, userType, ragContext);
+  // Lo que el usuario opinó de los consejos de sus tareas ya archivadas. Es la
+  // memoria de largo plazo: sobrevive a la tarea que la originó y evita repetir
+  // enfoques que esa persona ya dijo que no le funcionan.
+  const aprendido = await archivedFeedbackContext(db, userId);
+
+  const prompt = buildPrompt(task, userType, ragContext, [...feedback, ...aprendido]);
 
   // ── 1. z.ai con contexto RAG ──────────────────────────────────────────────
   if (ZAI_API_KEY) {
     const text = await tryZai(prompt);
-    if (text) return saveAndReturn(db, task, user.userId, text, 'zai', hasRag);
+    if (text) return saveRecommendation(db, task, userId, text, 'zai', hasRag);
   }
 
   // ── 2. Ollama con contexto RAG ────────────────────────────────────────────
   const ollamaText = await tryOllama(prompt);
-  if (ollamaText) return saveAndReturn(db, task, user.userId, ollamaText, 'ollama', hasRag);
+  if (ollamaText) return saveRecommendation(db, task, userId, ollamaText, 'ollama', hasRag);
 
   // ── 3. Historial de tareas archivadas (sin LLM) ───────────────────────────
-  const archivedRec = await getRecommendationFromArchived(db, user.userId, task);
-  if (archivedRec) return saveAndReturn(db, task, user.userId, archivedRec, 'history', false);
+  const archivedRec = await getRecommendationFromArchived(db, userId, task);
+  if (archivedRec) return saveRecommendation(db, task, userId, archivedRec, 'history', false);
 
   // ── 4. Reglas locales (último recurso) ────────────────────────────────────
   const rec = getRulesRecommendation(
@@ -82,12 +103,18 @@ export const POST = async ({ request, params }) => {
     userType,
     task.priority
   );
-  return saveAndReturn(db, task, user.userId, rec, 'rules', false);
-};
+  return saveRecommendation(db, task, userId, rec, 'rules', false);
+}
 
 // ─── Prompt con contexto RAG inyectado ────────────────────────────────────────
 
-export function buildPrompt(task, userType, ragContext) {
+/** Recorta un texto largo: al prompt le basta con reconocer de qué consejo habla. */
+function recorte(texto, max = 160) {
+  const limpio = String(texto || '').replace(/\s+/g, ' ').trim();
+  return limpio.length > max ? `${limpio.slice(0, max)}…` : limpio;
+}
+
+export function buildPrompt(task, userType, ragContext, feedback = []) {
   const typeContext = {
     estudiante: 'El usuario es estudiante. Adapta las recomendaciones al contexto académico.',
     empleado:   'El usuario es empleado. Adapta las recomendaciones al contexto laboral.',
@@ -105,9 +132,28 @@ export function buildPrompt(task, userType, ragContext) {
       ragContext
     : '';
 
+  // Lo que el usuario opinó del intento anterior. Es la parte más valiosa del
+  // prompt: sin ella la IA vuelve a proponer el consejo que ya se descartó.
+  const feedbackInstruction = feedback.length > 0
+    ? `=== VALORACIÓN DE TUS RECOMENDACIONES ANTERIORES ===\n` +
+      feedback.map(f =>
+        // Las de otra tarea llevan su título delante: sin eso, la IA no
+        // distingue lo que se dijo aquí de lo que se aprendió antes.
+        (f.task_title ? `- En «${recorte(f.task_title, 60)}», el consejo ` : '- El consejo ') +
+        `«${recorte(f.recommendation)}» le pareció ` +
+        `${f.useful ? 'ÚTIL' : 'POCO ÚTIL'}` +
+        (f.comment ? `, y explicó: "${f.comment}"` : ', sin explicar por qué') +
+        '.'
+      ).join('\n') +
+      `\n\nGenera una recomendación DISTINTA que corrija lo señalado. No repitas ` +
+      `lo que ya se marcó como poco útil. Si la valoración fue positiva, ` +
+      `mantén ese enfoque y profundiza.\n\n`
+    : '';
+
   return (
     `Eres un asistente de productividad personal experto. ${typeContext[userType] || typeContext.comun}\n\n` +
     ragInstruction +
+    feedbackInstruction +
     `=== TAREA NUEVA A ANALIZAR ===\n` +
     `Título: ${task.title}\n` +
     (hasDesc ? `Descripción: ${task.description}\n` : '') +
@@ -135,7 +181,7 @@ export function buildPrompt(task, userType, ragContext) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function saveAndReturn(db, task, userId, text, source, usedRag = false) {
+async function saveRecommendation(db, task, userId, text, source, usedRag = false) {
   // Antes esto hacía DELETE + INSERT sobre `subtasks`, así que cada consulta a
   // la IA borraba las subtareas reales que el usuario había escrito. Ahora las
   // recomendaciones tienen su propia tabla y se registra de dónde salió cada
@@ -160,7 +206,12 @@ async function saveAndReturn(db, task, userId, text, source, usedRag = false) {
     text,
   );
 
-  return json({
+  return { ...saved, used_rag: usedRag };
+}
+
+/** Forma en la que el dashboard espera recibir una recomendación recién hecha. */
+export function describeRecommendation(saved) {
+  return {
     recommendation: {
       id: saved.id,
       text: saved.recommendation,
@@ -168,10 +219,10 @@ async function saveAndReturn(db, task, userId, text, source, usedRag = false) {
       model: saved.model,
       created_at: saved.created_at,
     },
-    tip: text,
-    source,
-    rag: usedRag,
-  }, 200);
+    tip: saved.recommendation,
+    source: saved.source,
+    rag: Boolean(saved.used_rag),
+  };
 }
 
 async function getRecommendationFromArchived(db, userId, currentTask) {

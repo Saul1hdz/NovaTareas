@@ -423,6 +423,78 @@ const { total, done, active, urgent, overdue, labels } =
     </div>
   </div>
 
+  <!-- MODAL UTILIDAD DE LA RECOMENDACIÓN -->
+  <div class="modal-overlay" id="useful-modal">
+    <div class="modal-box" style="max-width:540px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden">
+      <div class="modal-header">
+        <h2>Utilidad de la recomendación</h2>
+        <button class="modal-close" onclick="closeUsefulModal()">✕</button>
+      </div>
+
+      <div style="overflow-y:auto;flex:1;padding:1.2rem 1.4rem;display:flex;flex-direction:column;gap:1.2rem">
+        <input type="hidden" id="useful-task-id" />
+
+        <!-- Recomendación que se está valorando -->
+        <div>
+          <p class="useful-section-title">Recomendación actual</p>
+          <div id="useful-current" class="useful-current">
+            <em style="color:var(--text2)">Cargando...</em>
+          </div>
+        </div>
+
+        <!-- Pulgares -->
+        <div>
+          <p class="useful-section-title">¿Te sirvió?</p>
+          <div class="useful-thumbs" id="useful-thumbs">
+            <button type="button" class="thumb-btn" data-useful="1">
+              <span class="thumb-icon">👍</span>
+              <span>Sí, me sirvió</span>
+            </button>
+            <button type="button" class="thumb-btn" data-useful="0">
+              <span class="thumb-icon">👎</span>
+              <span>No me sirvió</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Porqué -->
+        <div>
+          <p class="useful-section-title">¿Por qué? <span class="useful-optional">(opcional, pero es lo que más ayuda)</span></p>
+          <textarea
+            id="useful-comment"
+            rows="3"
+            maxlength="2000"
+            placeholder="Ej.: es muy genérica, ya probé lo del Pomodoro y no me funciona; prefiero pasos concretos."
+            class="useful-textarea"
+          ></textarea>
+        </div>
+
+        <div id="useful-error" class="error-msg"></div>
+
+        <div class="useful-actions">
+          <button class="btn-secondary" id="btn-useful-save" onclick="submitUseful(false)">
+            Guardar valoración
+          </button>
+          <button class="btn-primary" id="btn-useful-regen" onclick="submitUseful(true)">
+            Guardar y generar otra recomendación
+          </button>
+        </div>
+
+        <!-- Valoraciones anteriores de esta tarea -->
+        <div>
+          <p class="useful-section-title">Valoraciones anteriores</p>
+          <div id="useful-history" class="useful-history">
+            <em style="color:var(--text2)">Sin valoraciones aún.</em>
+          </div>
+          <p class="useful-note">
+            Tus comentarios se conservan al archivar la tarea y se tienen en cuenta
+            en las recomendaciones de tareas parecidas.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </Base>
 
 <style is:global>
@@ -1799,6 +1871,11 @@ button:focus-visible {
   border: 1.5px solid rgba(34,212,122,0.4) !important;
   color: #22d47a !important;
 }
+.useful-btn {
+  background: linear-gradient(135deg, rgba(255,204,68,0.2), rgba(255,204,68,0.08)) !important;
+  border: 1.5px solid rgba(255,204,68,0.42) !important;
+  color: #ffcc44 !important;
+}
 .collab-btn:hover {
   background: linear-gradient(135deg, rgba(34,212,122,0.3), rgba(34,212,122,0.15)) !important;
 }
@@ -1843,6 +1920,89 @@ button:focus-visible {
   margin-bottom: .55rem;
 }
 .collab-visibility { font-size: .8rem; color: var(--text2); margin-top: .25rem; }
+
+/* ── Utilidad de la recomendación ── */
+.useful-section-title {
+  font-size: .75rem;
+  color: var(--accent);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  margin-bottom: .55rem;
+}
+.useful-optional {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  color: var(--text2);
+}
+.useful-current {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .75rem .9rem;
+  font-size: .85rem;
+  line-height: 1.5;
+  color: var(--text);
+  max-height: 150px;
+  overflow-y: auto;
+}
+.useful-thumbs { display: flex; gap: .6rem; flex-wrap: wrap; }
+.thumb-btn {
+  flex: 1;
+  min-width: 150px;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  background: var(--bg3) !important;
+  border: 1.5px solid var(--border) !important;
+  border-radius: 10px !important;
+  padding: .7rem .9rem !important;
+  color: var(--text2) !important;
+  font-size: .86rem;
+  font-weight: 600;
+  transition: all .15s;
+}
+.thumb-btn .thumb-icon { font-size: 1.1rem; }
+.thumb-btn:hover { border-color: var(--accent) !important; color: var(--text) !important; }
+/* El estado elegido se marca con color e icono, no solo con el borde: en la
+   pantalla oscura un borde fino apenas se distingue. */
+.thumb-btn.selected[data-useful="1"] {
+  background: rgba(34,212,122,0.16) !important;
+  border-color: #22d47a !important;
+  color: #22d47a !important;
+}
+.thumb-btn.selected[data-useful="0"] {
+  background: rgba(255,85,102,0.14) !important;
+  border-color: #ff5566 !important;
+  color: #ff5566 !important;
+}
+.useful-textarea {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: .65rem .85rem;
+  color: var(--text);
+  font-size: .85rem;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.useful-actions { display: flex; gap: .55rem; flex-wrap: wrap; }
+.useful-actions button { flex: 1; min-width: 165px; font-size: .82rem; }
+.useful-history { display: flex; flex-direction: column; gap: .5rem; font-size: .82rem; }
+.useful-item {
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: .55rem .7rem;
+  background: var(--glass);
+}
+.useful-item.up { border-left-color: #22d47a; }
+.useful-item.down { border-left-color: #ff5566; }
+.useful-item-head { font-size: .75rem; color: var(--text2); margin-bottom: .25rem; }
+.useful-note { font-size: .75rem; color: var(--text2); margin-top: .6rem; line-height: 1.45; }
 .collab-list { display: flex; flex-direction: column; gap: .5rem; font-size: .85rem; }
 .collab-row {
   display: flex;
@@ -2380,6 +2540,10 @@ function renderTasks(tasks, containerId, isArchive = false) {
         isDone ? 'Archivar' : 'Arch',
         () => archiveTask(t.id)
       ));
+    }
+    // Solo tiene sentido valorar si ya hay una recomendación que valorar.
+    if (t.recommendation) {
+      actions.appendChild(createActionButton('useful-btn', 'Utilidad', () => openUsefulModal(t.id)));
     }
     actions.appendChild(createActionButton('history-btn', 'Historial', () => openHistoryModal(t.id)));
     actions.appendChild(createActionButton('collab-btn', 'Equipo', () => openCollabModal(t.id)));
@@ -3273,6 +3437,142 @@ function closeCollabModal(event) {
   document.getElementById('collab-modal').classList.remove('open');
 }
 
+// ── UTILIDAD DE LA RECOMENDACIÓN ──────────────────────────────────────────
+
+// El pulgar elegido; null mientras no se haya marcado ninguno.
+let usefulChoice = null;
+
+async function openUsefulModal(taskId) {
+  usefulChoice = null;
+  document.getElementById('useful-task-id').value = taskId;
+  document.getElementById('useful-comment').value = '';
+  document.getElementById('useful-error').textContent = '';
+  document.querySelectorAll('#useful-thumbs .thumb-btn')
+    .forEach(b => b.classList.remove('selected'));
+  setStatusText(document.getElementById('useful-current'), 'Cargando...');
+  setStatusText(document.getElementById('useful-history'), 'Cargando...');
+  document.getElementById('useful-modal').classList.add('open');
+  await loadUsefulData(taskId);
+}
+
+function closeUsefulModal(event) {
+  if (event && event.target !== document.getElementById('useful-modal')) return;
+  document.getElementById('useful-modal').classList.remove('open');
+}
+
+function markThumb(useful) {
+  usefulChoice = useful;
+  document.querySelectorAll('#useful-thumbs .thumb-btn').forEach(boton => {
+    boton.classList.toggle('selected', boton.dataset.useful === (useful ? '1' : '0'));
+  });
+  document.getElementById('useful-error').textContent = '';
+}
+
+async function loadUsefulData(taskId) {
+  try {
+    const res = await fetch(`/api/tasks/${taskId}/feedback`);
+    if (!res.ok) throw new Error('No se pudo cargar la valoración.');
+    const data = await res.json();
+
+    const actual = document.getElementById('useful-current');
+    if (data.recommendation?.text) {
+      actual.textContent = data.recommendation.text;
+    } else {
+      setStatusText(actual, 'Esta tarea todavía no tiene una recomendación tuya. Pulsa «Consejos» primero.');
+    }
+
+    // Si ya opinó sobre esta misma recomendación, se recupera su elección para
+    // que pueda corregirla en vez de empezar de cero.
+    if (data.current_feedback) {
+      markThumb(Boolean(data.current_feedback.useful));
+      document.getElementById('useful-comment').value = data.current_feedback.comment || '';
+    }
+
+    const historial = document.getElementById('useful-history');
+    if (!data.history?.length) {
+      setStatusText(historial, 'Sin valoraciones aún.');
+    } else {
+      historial.replaceChildren(...data.history.map(f => {
+        const fila = document.createElement('div');
+        fila.className = `useful-item ${f.useful ? 'up' : 'down'}`;
+        fila.appendChild(createTextElement(
+          'div',
+          'useful-item-head',
+          `${f.useful ? '👍 Útil' : '👎 No útil'} · ${formatDateShort(f.updated_at || f.created_at)}`
+        ));
+        if (f.comment) {
+          fila.appendChild(createTextElement('div', '', f.comment));
+        }
+        return fila;
+      }));
+    }
+  } catch (error) {
+    setStatusText(document.getElementById('useful-current'), 'Error al cargar.', true);
+  }
+}
+
+async function submitUseful(regenerate) {
+  const taskId = document.getElementById('useful-task-id').value;
+  const errorBox = document.getElementById('useful-error');
+
+  if (usefulChoice === null) {
+    errorBox.textContent = 'Marca primero si la recomendación te sirvió o no.';
+    return;
+  }
+
+  const guardar = document.getElementById('btn-useful-save');
+  const regenerar = document.getElementById('btn-useful-regen');
+  const boton = regenerate ? regenerar : guardar;
+  const textoOriginal = boton.textContent;
+  guardar.disabled = true;
+  regenerar.disabled = true;
+  boton.textContent = regenerate ? 'Generando...' : 'Guardando...';
+  errorBox.textContent = '';
+
+  try {
+    const res = await fetch(`/api/tasks/${taskId}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        useful: usefulChoice,
+        comment: document.getElementById('useful-comment').value.trim(),
+        regenerate,
+      }),
+    });
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok && res.status !== 429) {
+      throw new Error(data?.error || `Error del servidor (HTTP ${res.status}).`);
+    }
+    // El 429 al regenerar no pierde la valoración: se guardó antes de intentar
+    // llamar a la IA, así que se avisa y se sigue.
+    if (data?.warning) errorBox.textContent = data.warning;
+
+    if (data?.recommendation?.text) {
+      document.getElementById('useful-current').textContent = data.recommendation.text;
+      document.getElementById('useful-comment').value = '';
+      usefulChoice = null;
+      document.querySelectorAll('#useful-thumbs .thumb-btn')
+        .forEach(b => b.classList.remove('selected'));
+      await loadTasks();
+    }
+    await loadUsefulData(taskId);
+    if (!regenerate && !data?.warning) {
+      document.getElementById('useful-modal').classList.remove('open');
+    }
+  } catch (error) {
+    errorBox.textContent = error?.message || 'No se pudo guardar la valoración.';
+  } finally {
+    guardar.disabled = false;
+    regenerar.disabled = false;
+    boton.textContent = textoOriginal;
+  }
+}
+
+document.querySelectorAll('#useful-thumbs .thumb-btn').forEach(boton => {
+  boton.addEventListener('click', () => markThumb(boton.dataset.useful === '1'));
+});
+
 async function loadCollabData(taskId) {
   try {
     const res = await fetch(`/api/tasks/${taskId}/collaborators`);
@@ -3514,6 +3814,9 @@ function formatDateShort(dateStr) {
 window.openHistoryModal  = openHistoryModal;
 window.closeHistoryModal = closeHistoryModal;
 window.openCollabModal   = openCollabModal;
+window.openUsefulModal   = openUsefulModal;
+window.closeUsefulModal  = closeUsefulModal;
+window.submitUseful      = submitUseful;
 window.closeCollabModal  = closeCollabModal;
 window.createInvite      = createInvite;
 window.copyInviteLink    = copyInviteLink;
@@ -3530,6 +3833,7 @@ window.openDayPanel      = openDayPanel;
   ['archive-modal', closeArchiveModal],
   ['history-modal', closeHistoryModal],
   ['collab-modal', closeCollabModal],
+  ['useful-modal', closeUsefulModal],
 ].forEach(([id, close]) => {
   const overlay = document.getElementById(id);
   overlay?.addEventListener('click', close);

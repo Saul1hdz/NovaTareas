@@ -118,6 +118,8 @@ src/lib/ai/providers.js             ← define la cascada z.ai → Ollama → re
 src/pages/api/tasks/[id]/ai.js      ← endpoint de recomendaciones (dashboard)
 src/pages/api/v1/recommend.js       ← endpoint de IA para clientes externos
 src/lib/telegramBot.js              ← función getAiRecommendation (bot)
+src/pages/api/tasks/[id]/feedback.js ← valoración útil/no útil de cada recomendación
+src/lib/recommendationFeedback.js   ← recupera esa valoración para el próximo prompt
 ```
 
 Así es como viaja una recomendación de principio a fin:
@@ -138,6 +140,30 @@ archivado → si falla → reglas locales
         ↓
 Devuelve la recomendación en español al dashboard, a Telegram o a la API
 ```
+
+### La recomendación aprende de lo que dices de ella
+
+Cada recomendación tiene un botón **Utilidad** en su tarjeta. Abre una ventana
+con dos pulgares y una caja de texto para explicar el porqué:
+
+```
+El usuario marca 👍 o 👎 y escribe por qué
+        ↓
+Se guarda en recommendation_feedback, ligada a esa recomendación y a esa persona
+        ↓
+Al pedir otra recomendación —desde «Utilidad» o desde «Consejos»— el prompt
+incluye lo que se dijo: qué consejo se descartó y con qué motivo
+        ↓
+La IA recibe la orden de proponer algo DISTINTO que corrija lo señalado
+```
+
+El comentario **sobrevive al archivado**: cuando la tarea se cierra, lo aprendido
+sigue disponible como contexto de largo plazo y entra en las recomendaciones de
+tareas parecidas, identificado con el título de la tarea de la que salió.
+
+Cada persona valora la recomendación que pidió. En una tarea compartida, nadie ve
+ni puntúa el consejo de otro, por la misma razón por la que no ve su contenido:
+puede derivarse de su historial privado.
 
 Esa **cascada de respaldos** no es un adorno: es una decisión de diseño
 importante. Garantiza que el usuario reciba siempre algo útil aunque no haya
