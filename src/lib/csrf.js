@@ -47,6 +47,29 @@ export function declaredOrigin(request) {
 }
 
 /**
+ * Origen efectivo visto por el usuario.
+ *
+ * El adaptador Node recibe HTTP desde el reverse proxy aunque el navegador use
+ * HTTPS. Caddy conserva el Host público y declara el esquema original en
+ * X-Forwarded-Proto; sin reconstruirlo, una petición legítima parece cruzada.
+ * Solo se aceptan los dos esquemas web y el primer valor de la cadena. El proxy
+ * de producción debe sobrescribir esta cabecera y el puerto de la app debe
+ * permanecer privado.
+ */
+export function effectiveRequestOrigin(request, requestUrl) {
+  const url = new URL(requestUrl);
+  const forwardedProto = (request.headers.get('x-forwarded-proto') || '')
+    .split(',', 1)[0]
+    .trim()
+    .toLowerCase();
+
+  if (forwardedProto === 'http' || forwardedProto === 'https') {
+    url.protocol = `${forwardedProto}:`;
+  }
+  return url.origin;
+}
+
+/**
  * Decide si una petición debe rechazarse por origen cruzado.
  * Devuelve el motivo, o null cuando puede continuar.
  */
@@ -59,7 +82,7 @@ export function crossSiteRejection(request, requestUrl) {
   // navegador siempre lo envía en una mutación. Aceptarlo «por si acaso» es
   // justamente el agujero que este control cierra.
   if (!origen) return 'origen_ausente';
-  if (origen !== new URL(requestUrl).origin) return 'origen_cruzado';
+  if (origen !== effectiveRequestOrigin(request, requestUrl)) return 'origen_cruzado';
   return null;
 }
 

@@ -8,6 +8,7 @@ export default defineConfig({
       'tests/dashboardAiRequest.test.js',
       'tests/deploymentContract.test.js',
       'tests/zaiThinking.test.js',
+      'tests/csrf.test.js',
     ],
     reporters: ['verbose'],
   },
