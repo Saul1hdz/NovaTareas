@@ -76,6 +76,10 @@ export const users = pgTable('users', {
   googleRefreshToken: text('google_refresh_token'),
   googleTokenExpiry: timestamp('google_token_expiry', { withTimezone: true }),
   sessionVersion: integer('session_version').notNull().default(0),
+  // Momento en que el usuario confirmó su correo desde el enlace de verificación.
+  // NULL significa "no verificado" solo cuando el registro lo exigió; para
+  // cuentas creadas antes de esta función, NULL se trata como verificado.
+  emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
   createdAt: auditTimestamp('created_at'),
   updatedAt: auditTimestamp('updated_at'),
 }, (table) => [
@@ -444,6 +448,24 @@ export const recoveryTokens = pgTable('recovery_tokens', {
   index('recovery_tokens_expiry_idx').on(table.expiresAt),
   check(
     'recovery_tokens_hash_hex',
+    sql`${table.tokenHash} ~ '^[0-9a-f]{64}$'`,
+  ),
+]);
+
+export const emailVerificationTokens = pgTable('email_verification_tokens', {
+  id: identity(),
+  tokenHash: varchar('token_hash', { length: 64 }).notNull(),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: auditTimestamp('created_at'),
+}, (table) => [
+  uniqueIndex('email_verification_tokens_hash_unique').on(table.tokenHash),
+  index('email_verification_tokens_expiry_idx').on(table.expiresAt),
+  check(
+    'email_verification_tokens_hash_hex',
     sql`${table.tokenHash} ~ '^[0-9a-f]{64}$'`,
   ),
 ]);

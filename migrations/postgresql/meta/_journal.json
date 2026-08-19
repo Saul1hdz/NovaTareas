@@ -43,6 +43,13 @@
       "when": 1787101539724,
       "tag": "0005_safe_ender_wiggin",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787108279879,
+      "tag": "0006_sad_infant_terrible",
+      "breakpoints": true
     }
   ]
 }

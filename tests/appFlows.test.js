@@ -33,13 +33,9 @@ async function registerUser(email, name, answer1, answer2) {
     request: request('/api/register', 'POST', {
       full_name: name,
       email,
-      telefono: '+50370000000',
+      telefono: '+50361234567',
       password: 'Clave1234',
       user_type: 'estudiante',
-      q1_index: 0,
-      q1_answer: answer1,
-      q2_index: 1,
-      q2_answer: answer2,
     }),
   });
 }
@@ -60,54 +56,31 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
   let taskId;
   let subtaskId;
 
-  it('registra usuarios y guarda respuestas con hash', async () => {
+  it('registra usuarios y crea sesión', async () => {
     const firstRegistration = await registerUser(
       'ana@example.test',
       'Ana Prueba',
-      'Luna',
-      'Santa Ana'
     );
     const secondRegistration = await registerUser(
       'beto@example.test',
       'Beto Prueba',
-      'Sol',
-      'San Miguel'
     );
     expect(firstRegistration.status).toBe(201);
     expect(secondRegistration.status).toBe(201);
     expect(firstRegistration.headers.get('set-cookie')).toContain('novatareas_token=');
-
-    const rows = await getDb().prepare(
-      'SELECT q1_answer, q2_answer FROM security_questions ORDER BY user_id'
-    ).all();
-    expect(rows).toHaveLength(2);
-    expect(rows.every(row => row.q1_answer.startsWith('$2'))).toBe(true);
-    expect(rows.every(row => row.q2_answer.startsWith('$2'))).toBe(true);
   });
 
-  it('no revela si una cuenta existe durante la recuperación', async () => {
-    const questionResponse = await recover({
+  it('no revela si una cuenta existe durante la recuperación por correo', async () => {
+    const emailResponse = await recover({
       request: request('/api/auth/recover', 'POST', {
-        action: 'get_question',
+        action: 'request_email_reset',
         email: 'persona-inexistente@example.test',
       }),
     });
-    const question = await questionResponse.json();
-    expect(questionResponse.status).toBe(200);
-    expect(question.ok).toBe(true);
-    expect(question.error).toBeUndefined();
-
-    const answerResponse = await recover({
-      request: request('/api/auth/recover', 'POST', {
-        action: 'check_answer',
-        email: 'persona-inexistente@example.test',
-        answer: 'cualquier respuesta',
-        question_index: question.question_index,
-      }),
-    });
-    const answer = await answerResponse.json();
-    expect(answerResponse.status).toBe(200);
-    expect(answer.message).toBe('Respuesta incorrecta. Intenta con la otra pregunta.');
+    const emailData = await emailResponse.json();
+    expect(emailResponse.status).toBe(200);
+    expect(emailData.ok).toBe(true);
+    expect(emailData.error).toBeUndefined();
   });
 
   it('inicia sesión con cookie protegida', async () => {
@@ -257,32 +230,16 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
       .toBeNull();
   });
 
-  it('bloquea recuperación sin borrar la cuenta', async () => {
-    let question = await recover({
+  it('no borra la cuenta cuando la recuperación por correo falla', async () => {
+    const response = await recover({
       request: request('/api/auth/recover', 'POST', {
-        action: 'get_question',
+        action: 'request_email_reset',
         email: 'ana@example.test',
       }),
     });
-    let questionData = await question.json();
-
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const response = await recover({
-        request: request('/api/auth/recover', 'POST', {
-          action: 'check_answer',
-          email: 'ana@example.test',
-          answer: 'incorrecta',
-          question_index: questionData.question_index,
-        }),
-      });
-
-      if (attempt < 4) {
-        questionData = await response.json();
-        questionData.question_index = questionData.next_question_index;
-      } else {
-        expect(response.status).toBe(429);
-      }
-    }
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.ok).toBe(true);
 
     expect((await getDb().prepare(
       'SELECT COUNT(*) AS total FROM users WHERE email = $1'
@@ -290,24 +247,20 @@ describe('flujos locales con base aislada', { sequential: true }, () => {
   });
 
   it('usa un token de un solo uso e invalida sesiones anteriores', async () => {
-    const questionResponse = await recover({
-      request: request('/api/auth/recover', 'POST', {
-        action: 'get_question',
-        email: 'beto@example.test',
-      }),
-    });
-    const question = await questionResponse.json();
+    const { createHash } = await import('node:crypto');
+    const beto = await getDb().prepare(
+      'SELECT id FROM users WHERE email = $1'
+    ).get('beto@example.test');
+    expect(beto).toBeTruthy();
 
-    const checked = await recover({
-      request: request('/api/auth/recover', 'POST', {
-        action: 'check_answer',
-        email: 'beto@example.test',
-        answer: 'Sol',
-        question_index: question.question_index,
-      }),
-    });
-    const { recovery_token: token } = await checked.json();
-    expect(token).toBeTruthy();
+    // El enlace llega por correo; aquí se inserta el mismo hash que el correo
+    // contendría, para probar el consumo del token sin depender del SMTP.
+    const token = 'token-prueba-single-use';
+    const hash = createHash('sha256').update(token).digest('hex');
+    await getDb().prepare(`
+      INSERT INTO recovery_tokens (token_hash, user_id, expires_at)
+      VALUES ($1, $2, NOW() + INTERVAL '15 minutes')
+    `).run(hash, beto.id);
 
     const reset = await recover({
       request: request('/api/auth/recover', 'POST', {
