@@ -153,7 +153,25 @@ export async function POST({ request }) {
         name: full_name.trim(),
       });
       if (!mail.sent) {
-        return json({ error: 'No se pudo enviar el correo de verificación. Intenta nuevamente.' }, 502);
+        // Si el correo no pudo enviarse, no dejar una cuenta huérfana:
+        // se revierte el registro para que el usuario pueda reintentar
+        // (sin chocar con "Ya existe una cuenta").
+        try {
+          await withTransaction(async (tx) => {
+            await tx.prepare('DELETE FROM email_verification_tokens WHERE user_id = $1').run(userId);
+            await tx.prepare('DELETE FROM security_questions WHERE user_id = $1').run(userId);
+            await tx.prepare('DELETE FROM users WHERE id = $1').run(userId);
+          }, db);
+        } catch (cleanupError) {
+          console.error('[register] cleanup', safeErrorSummary(cleanupError));
+        }
+        return json(
+          {
+            error: 'No se pudo enviar el correo de verificación. Verifica que el correo sea correcto e inténtalo de nuevo.',
+            recoverable: true,
+          },
+          502
+        );
       }
       return json({ ok: true, pending_verification: true }, 201);
     }
