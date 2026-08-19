@@ -36,6 +36,13 @@
       "when": 1787016813283,
       "tag": "0004_striped_dormammu",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787106612669,
+      "tag": "0005_mature_karma",
+      "breakpoints": true
     }
   ]
 }

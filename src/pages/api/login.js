@@ -11,6 +11,8 @@ import {
   getClientIp,
   resetRateLimit,
 } from '../../lib/security.js';
+import { isEmailVerified } from '../../lib/emailVerification.js';
+import { emailVerificationRequired } from '../../lib/mailer.js';
 
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 
@@ -48,6 +50,16 @@ export const POST = async ({ request }) => {
   const user = await db.prepare('SELECT * FROM users WHERE email = $1').get(normalizedEmail);
   if (!user || !await verifyPassword(password, user.password_hash)) {
     return json({ error: 'Credenciales inválidas' }, 401);
+  }
+
+  // Si la política de verificación está activa, las cuentas nuevas deben
+  // confirmar su correo antes de iniciar sesión. Las cuentas viejas (NULL)
+  // se consideran verificadas por compatibilidad.
+  if (emailVerificationRequired() && !isEmailVerified(user)) {
+    return json(
+      { error: 'Debes verificar tu correo antes de iniciar sesión. Revisa tu bandeja de entrada.' },
+      403
+    );
   }
 
   await resetRateLimit('login-email', normalizedEmail);
