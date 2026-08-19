@@ -78,6 +78,12 @@ const { total, done, active, urgent, overdue, labels } =
         </div>
       </header>
 
+      <!-- TÍTULO DE LA PÁGINA -->
+      <div class="page-head">
+        <h1 class="page-title">Mis tareas</h1>
+        <p class="page-subtitle">Organiza tu día sin perder el foco</p>
+      </div>
+
       <!-- STATS -->
       <div class="stats-row" id="stats-row">
         <div class="stat-card">
@@ -654,6 +660,7 @@ const { total, done, active, urgent, overdue, labels } =
 .sidebar {
   width: 240px;
   background: var(--bg2);
+  padding-bottom: 0.5rem;
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -662,17 +669,28 @@ const { total, done, active, urgent, overdue, labels } =
   z-index: 100;
   transition: transform 0.3s;
   overflow-y: auto;
+  /* Declarar solo `overflow-y: auto` deja el eje horizontal en `visible`, que
+     el navegador convierte en `auto`: por eso aparecía una barra de scroll
+     lateral dentro del menú. Aquí nada debe desbordar a lo ancho. */
+  overflow-x: hidden;
 }
 .sidebar.collapsed { transform: translateX(-100%); }
+/* El logo medía 265 px dentro de un menú de 240 y salía cortado. Se ajusta el
+   tamaño para que «NovaTareas PRO» quepa entero: recortarlo con puntos
+   suspensivos dejaba el nombre del producto a medias. */
 .sidebar-logo {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 1.25rem 1.5rem;
-  font-size: 1.1rem;
+  gap: 0.4rem;
+  padding: 1.25rem 0.85rem;
+  font-size: 0.98rem;
   font-weight: 800;
   border-bottom: 1px solid var(--border);
+  white-space: nowrap;
 }
+.logo-text { letter-spacing: -0.01em; }
+.sidebar-logo .logo-icon { font-size: 1.15rem; }
+.sidebar-logo .logo-badge { font-size: 0.55rem; padding: 2px 4px; }
 .logo-icon { color: var(--accent); font-size: 1.4rem; }
 .logo-badge {
   font-size: 0.6rem;
@@ -728,6 +746,23 @@ const { total, done, active, urgent, overdue, labels } =
 }
 .label-chip:hover { background: var(--bg3); color: var(--text); }
 .label-chip.active { color: var(--accent); font-weight: 600; }
+/* Punto de color delante de cada etiqueta. Se dibuja con ::before para no
+   tener que cambiar el JS que genera los chips. */
+#labels-list .label-chip {
+  display: flex !important;
+  align-items: center;
+  gap: 0.55rem;
+}
+#labels-list .label-chip::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent2);
+  flex-shrink: 0;
+}
+#labels-list .label-chip:nth-child(3n+2)::before { background: #38bdf8; }
+#labels-list .label-chip:nth-child(3n+3)::before { background: var(--green); }
 .sidebar-footer {
   padding: 1rem 0.75rem;
   border-top: 1px solid var(--border);
@@ -753,6 +788,9 @@ const { total, done, active, urgent, overdue, labels } =
 
 /* ── MAIN ── */
 .main-content {
+  /* Ancho util del contenido. Al plegar el menu crece, para que la pagina se
+     ensanche hacia los lados en vez de limitarse a correrse. */
+  --contenido: 1080px;
   flex: 1;
   margin-left: 240px;
   display: flex;
@@ -761,20 +799,34 @@ const { total, done, active, urgent, overdue, labels } =
   min-height: 100vh;
   transition: margin-left 0.3s;
 }
-.main-content.expanded { margin-left: 0; }
+/* Al plegar el menú, el contenido recupera los 240 px que ocupaba (el menú es
+   `position: fixed`, así que solo este margen lo separaba) y deja de tener tope
+   de ancho: la página se ensancha hacia los lados en vez de dejar el hueco
+   vacío a la izquierda. `--contenido` vale 100% para que siga sirviendo tanto
+   en `max-width` como dentro de los `calc()` que le restan el relleno. */
+.app .main-content.expanded {
+  --contenido: 100%;
+  margin-left: 0;
+}
 
 /* ── TOPBAR ── */
+/* Rejilla de tres columnas en vez de fila flexible: así el buscador queda
+   centrado respecto a la barra y no respecto al hueco que dejan el botón de
+   menú y la ficha de usuario, que miden distinto. Las columnas laterales son
+   `1fr` iguales, de modo que el centro cae en la mitad exacta. */
 .top-bar {
   position: sticky;
   top: 0;
-  background: var(--bg2);
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
-  padding: 0.75rem 1.5rem;
-  display: flex;
+  padding: 0.8rem 1.5rem;
+  display: grid;
+  grid-template-columns: 1fr minmax(0, 640px) 1fr;
   align-items: center;
   gap: 1rem;
   z-index: 50;
 }
+.top-bar .menu-btn { justify-self: start; }
 .menu-btn {
   background: none;
   border: none;
@@ -783,11 +835,15 @@ const { total, done, active, urgent, overdue, labels } =
   cursor: pointer;
   padding: 0.25rem;
 }
+/* La barra superior ocupa todo el ancho, pero su contenido se apelotonaba a la
+   izquierda: el buscador se cortaba a los 400 px y la ficha del usuario quedaba
+   pegada a él, dejando media pantalla vacía. Ahora el buscador crece y la ficha
+   se va al borde derecho, así la barra se lee de lado a lado. */
 .search-wrap {
-  flex: 1;
   position: relative;
-  max-width: 400px;
+  width: 100%;
 }
+.top-bar .user-chip { justify-self: end; }
 .search-wrap input {
   width: 100%;
   background: var(--bg3);
@@ -830,46 +886,70 @@ const { total, done, active, urgent, overdue, labels } =
 .user-name { font-size: 0.85rem; font-weight: 600; }
 
 /* ── STATS ── */
+/* ── CABECERA DE PÁGINA ── */
+.page-head { padding: 1.5rem 1.5rem 0.25rem; max-width: var(--contenido); }
+.page-title {
+  font-size: 1.9rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.page-subtitle {
+  font-size: 0.9rem;
+  color: var(--text2);
+  margin-top: 0.2rem;
+}
+
+/* ── STATS ──
+   Cinco tarjetas grandes ocupaban la primera pantalla entera y empujaban las
+   tareas fuera de la vista. Ahora es una fila baja: el mismo dato, una quinta
+   parte del espacio. */
 .stats-row {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 1rem;
-  padding: 1.5rem 1.5rem 0;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.6rem;
+  padding: 1rem 1.5rem 0;
+  max-width: var(--contenido);
 }
 .stat-card {
   background: var(--bg2);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 1.25rem;
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 0.4rem;
+  flex-direction: row;
+  align-items: baseline;
+  text-align: left;
+  gap: 0.45rem;
 }
 .stat-num {
-  font-size: 2rem;
+  font-size: 1.25rem;
   font-weight: 800;
   font-family: 'JetBrains Mono', monospace;
+  line-height: 1;
 }
-.stat-label { font-size: 0.75rem; color: var(--text2); font-weight: 600; }
+.stat-label { font-size: 0.72rem; color: var(--text2); font-weight: 500; }
 .stat-green .stat-num { color: var(--green); }
 .stat-red .stat-num { color: var(--red); }
 .stat-yellow .stat-num { color: var(--yellow); }
-.progress-ring-wrap { position: relative; width: 60px; height: 60px; }
-.progress-ring { width: 60px; height: 60px; }
+.stat-progress { align-items: center; }
+.progress-ring-wrap { position: relative; width: 30px; height: 30px; flex-shrink: 0; }
+.progress-ring { width: 30px; height: 30px; }
 .ring-pct {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.75rem;
+  font-size: 0.58rem;
   font-weight: 700;
   font-family: 'JetBrains Mono', monospace;
 }
 
 /* ── FILTERS ── */
+/* El mismo ancho máximo que el resto del contenido. Sin él, «+ Nueva tarea»
+   se pegaba al borde de la ventana mientras las tareas terminaban 500 px
+   antes, y el hueco crecía al plegar el menú lateral. */
 .filters-bar {
   display: flex;
   align-items: center;
@@ -877,6 +957,7 @@ const { total, done, active, urgent, overdue, labels } =
   padding: 1rem 1.5rem;
   gap: 1rem;
   flex-wrap: wrap;
+  max-width: var(--contenido);
 }
 .filter-group { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .filter-btn {
@@ -907,65 +988,66 @@ const { total, done, active, urgent, overdue, labels } =
 .add-task-btn:hover { opacity: 0.9; transform: translateY(-1px); }
 
 /* ── VIEWS ── */
-.view { display: none; padding: 0 1.5rem 1.5rem; }
+/* El tope de ancho vive aquí y no en `.tasks-grid`: la lista lo expresaba como
+   `calc(100% - 48px)` sobre un padre que ya tenía relleno, así que al ensanchar
+   la página restaba el relleno dos veces y terminaba 48 px antes que las
+   estadísticas y el botón «+ Nueva tarea». */
+.view { display: none; padding: 0 1.5rem 1.5rem; max-width: var(--contenido); }
 .view.active { display: block; }
+/* Lista en una columna en vez de mosaico: una tarea es una línea de texto que
+   se lee de izquierda a derecha, y en columnas estrechas los títulos largos se
+   partían en tres renglones. El ancho máximo evita líneas incómodas de leer en
+   pantallas anchas. */
 .tasks-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 1rem;
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
-/* ── TASK CARD ── */
+/* ── TASK CARD ──
+   Una sola superficie. Antes había dos marcos anidados (`task-card` envolviendo
+   a `task-frame`), cada uno con su borde, su fondo y su sombra, más una
+   cabecera con degradado morado: tres capas de decoración alrededor de un
+   título. La prioridad ya se ve en su distintivo, así que la franja lateral de
+   color era una cuarta señal para el mismo dato. */
 .task-card {
-  background: rgba(30, 30, 40, 0.85);
-  border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 14px;
+  background: var(--row);
+  border: 1px solid var(--border);
+  border-radius: 12px;
   padding: 0;
   display: block;
-  transition: all 0.25s ease;
+  transition: background 0.15s, border-color 0.15s;
   position: relative;
-  overflow: visible;
-  height: auto;
+  overflow: hidden;
 }
-.task-card::before {
-  content: '';
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 4px;
-  border-radius: 4px 0 0 4px;
+.task-card:hover {
+  background: var(--row-hover);
+  border-color: #2e2e3d;
 }
-.task-card.p-urgente::before { background: linear-gradient(180deg, var(--red), rgba(255,85,102,0.6)); }
-.task-card.p-alta::before { background: linear-gradient(180deg, var(--orange), rgba(255,136,68,0.6)); }
-.task-card.p-media::before { background: linear-gradient(180deg, var(--yellow), rgba(255,204,68,0.6)); }
-.task-card.p-baja::before { background: linear-gradient(180deg, var(--green), rgba(34,212,122,0.6)); }
-.task-card:hover { 
-  transform: translateY(-2px);
-}
-
-/* Frame that visually encloses the task and provides tab header */
 .task-frame {
-  background: rgba(22,22,28,0.7);
-  border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 12px;
-  padding: 0.75rem 0.9rem 0.85rem 0.9rem;
-  box-shadow: 0 10px 28px rgba(0,0,0,0.35);
-  overflow: visible;
-  height: auto;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0.85rem 1rem;
+  box-shadow: none;
 }
 .task-tab {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
   gap: 0.75rem;
-  background: linear-gradient(90deg, rgba(124,106,247,0.12), rgba(124,106,247,0.04));
-  padding: 0.55rem 0.75rem;
-  border-radius: 10px;
-  margin: -0.75rem -0.9rem 0.6rem -0.9rem;
-  border: 1px solid rgba(124,106,247,0.08);
+  background: transparent;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  margin: 0;
 }
 .task-body {
-  padding-top: 0.25rem;
+  padding-top: 0;
 }
+/* Lo secundario solo ocupa sitio cuando existe. */
+.task-body > *:not(:empty) + * { margin-top: 0.6rem; }
 .task-card.done { 
   opacity: 0.6; 
   background: linear-gradient(135deg, rgba(34,212,122,0.06) 0%, rgba(34,212,122,0.02) 100%);
@@ -1005,15 +1087,24 @@ const { total, done, active, urgent, overdue, labels } =
   color: white;
   box-shadow: 0 4px 12px rgba(34,212,122,0.3);
 }
-.task-info { 
-  flex: 1; 
-  min-width: 0; 
+.task-info {
+  flex: 1 1 14rem;
+  /* Sin un ancho minimo real, los distintivos se quedaban con todo el espacio
+     y el titulo caia a una letra por linea en pantallas estrechas. */
+  min-width: 10rem;
+}
+.task-badges {
+  margin-left: auto;
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
 }
 .task-title {
   font-weight: 700;
   font-size: 0.95rem;
   line-height: 1.35;
-  word-break: break-word;
+  overflow-wrap: anywhere;
   color: var(--text);
 }
 .done .task-title { 
@@ -1032,112 +1123,53 @@ const { total, done, active, urgent, overdue, labels } =
   gap: 0.5rem;
   flex-wrap: wrap;
 }
+/* Distintivos tipo píldora, con el borde del mismo color que el texto en vez
+   de un gris genérico: así cada uno se lee como una etiqueta y no como un
+   recuadro suelto. */
 .badge {
-  font-size: 0.68rem;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
   white-space: nowrap;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.1);
+  text-transform: capitalize;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text2);
 }
-.badge-urgente { background: rgba(255,85,102,0.15); color: var(--red); border: none; }
-.badge-alta { background: rgba(255,136,68,0.15); color: var(--orange); border: none; }
-.badge-media { background: rgba(255,204,68,0.15); color: var(--yellow); border: none; }
-.badge-baja { background: rgba(34,212,122,0.15); color: var(--green); border: none; }
-.badge-label { background: rgba(124,106,247,0.15); color: var(--accent2); border: none; }
-.badge-due { background: rgba(255,255,255,0.08); color: var(--text2); border: 1px solid rgba(255,255,255,0.1); }
-.badge-overdue { background: rgba(255,85,102,0.2); color: var(--red); font-weight: 700; border: none; }
+.badge-urgente { background: rgba(248,113,113,0.12); color: var(--red);    border-color: rgba(248,113,113,0.3); }
+.badge-alta    { background: rgba(251,146,60,0.12);  color: var(--orange); border-color: rgba(251,146,60,0.3); }
+.badge-media   { background: rgba(251,191,36,0.12);  color: var(--yellow); border-color: rgba(251,191,36,0.3); }
+.badge-baja    { background: rgba(52,211,153,0.12);  color: var(--green);  border-color: rgba(52,211,153,0.3); }
+.badge-label   { background: rgba(124,106,247,0.12); color: var(--accent2); border-color: rgba(124,106,247,0.3); }
+.badge-due     { background: transparent; color: var(--text2); border-color: var(--border); }
+.badge-overdue { background: rgba(248,113,113,0.16); color: var(--red); border-color: rgba(248,113,113,0.4); font-weight: 700; }
 .task-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.6rem;
+  gap: 0.15rem;
   justify-content: flex-end;
   align-items: center;
-  padding-top: 0.5rem;
+  margin-top: 0.7rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border);
+  /* Atenuadas mientras no se usa la tarea: el foco es el título, y las
+     acciones aparecen al acercarse. Se mantienen visibles al enfocarlas con el
+     teclado, que si no quedarían inalcanzables sin ratón. */
+  opacity: 0.55;
+  transition: opacity 0.15s;
 }
-.task-actions button {
-  background: rgba(255,255,255,0.06);
-  border: 1.5px solid rgba(255,255,255,0.16);
-  color: var(--text2);
-  border-radius: 8px;
-  padding: 0.7rem 1.1rem;
-  cursor: pointer;
-  font-size: 0.82rem;
-  font-weight: 600;
-  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-  min-width: auto;
-  text-align: center;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  position: relative;
-  overflow: hidden;
-}
-.task-actions button::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 0;
-  height: 0;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.1);
-  transform: translate(-50%, -50%);
-  transition: width 0.6s, height 0.6s;
-}
-.task-actions button:active::before {
-  width: 300px;
-  height: 300px;
-}
-.task-actions button:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
-}
-.task-actions button:active {
-  transform: translateY(-1px);
-}
+.task-card:hover .task-actions,
+.task-card:focus-within .task-actions,
+.archive-card:hover .task-actions,
+.archive-card:focus-within .task-actions { opacity: 1; }
+/* El estilo de estos botones vive en Base.astro, que lo aplica con
+   `!important` para todas las pantallas. Aquí solo quedaba una copia con
+   sombras, rebotes y un círculo que crecía al pulsar: efectos que competían
+   entre sí y que ya no se aplicaban. */
 .task-actions button:focus-visible {
-  outline: 2px solid rgba(124,106,247,0.5);
-  outline-offset: 3px;
-}
-.task-actions .complete-btn {
-  border-color: rgba(34,212,122,0.4);
-  color: var(--green);
-  background: linear-gradient(135deg, rgba(34,212,122,0.18) 0%, rgba(34,212,122,0.08) 100%);
-}
-.task-actions .complete-btn:hover {
-  background: linear-gradient(135deg, rgba(34,212,122,0.28) 0%, rgba(34,212,122,0.16) 100%);
-  border-color: rgba(34,212,122,0.6);
-  box-shadow: 0 12px 24px rgba(34,212,122,0.15);
-}
-.task-actions .ai-btn {
-  border-color: rgba(124,106,247,0.4);
-  color: var(--accent);
-  background: linear-gradient(135deg, rgba(124,106,247,0.18) 0%, rgba(124,106,247,0.08) 100%);
-}
-.task-actions .ai-btn:hover {
-  background: linear-gradient(135deg, rgba(124,106,247,0.28) 0%, rgba(124,106,247,0.16) 100%);
-  border-color: rgba(124,106,247,0.6);
-  box-shadow: 0 12px 24px rgba(124,106,247,0.15);
-}
-.task-actions .archive-btn {
-  border-color: rgba(255,204,68,0.4);
-  color: var(--yellow);
-  background: linear-gradient(135deg, rgba(255,204,68,0.18) 0%, rgba(255,204,68,0.08) 100%);
-}
-.task-actions .archive-btn:hover {
-  background: linear-gradient(135deg, rgba(255,204,68,0.28) 0%, rgba(255,204,68,0.16) 100%);
-  border-color: rgba(255,204,68,0.6);
-  box-shadow: 0 12px 24px rgba(255,204,68,0.15);
-}
-.task-actions .del-btn {
-  border-color: rgba(255,85,102,0.4);
-  color: var(--red);
-  background: linear-gradient(135deg, rgba(255,85,102,0.18) 0%, rgba(255,85,102,0.08) 100%);
-}
-.task-actions .del-btn:hover {
-  background: linear-gradient(135deg, rgba(255,85,102,0.28) 0%, rgba(255,85,102,0.16) 100%);
-  border-color: rgba(255,85,102,0.6);
-  box-shadow: 0 12px 24px rgba(255,85,102,0.15);
+  outline: 2px solid rgba(124,106,247,0.55);
+  outline-offset: 2px;
 }
 .ai-result-box {
   border-radius: 1rem;
@@ -1169,6 +1201,38 @@ const { total, done, active, urgent, overdue, labels } =
   margin-bottom: 0.2rem;
   opacity: 0.9;
 }
+/* ── RECOMENDACIÓN DE LA IA, PLEGABLE ──
+   El texto de la IA es el bloque más largo de la tarjeta y en móvil empujaba
+   todo lo demás fuera de la pantalla. La cabecera pasa a ser un botón con
+   flecha; en pantallas estrechas nace plegada. */
+.ai-rec-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 0.1rem 0;
+  margin-bottom: 0.2rem;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: var(--accent);
+}
+.ai-rec-title { min-width: 0; }
+.ai-rec-arrow {
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  line-height: 1;
+  transition: transform 0.2s;
+}
+/* Plegada la flecha apunta a la derecha; desplegada, hacia abajo. */
+.ai-rec-box.collapsed .ai-rec-arrow { transform: rotate(-90deg); }
+.ai-rec-box.collapsed .ai-rec-body { display: none; }
+.ai-rec-toggle:hover .ai-rec-title,
+.ai-rec-toggle:focus-visible .ai-rec-title { text-decoration: underline; }
+
 .subtask-item {
   display: block;
   font-size: 0.88rem;
@@ -1670,10 +1734,13 @@ button:focus-visible {
   align-items: center;
   gap: 1rem;
   margin: 1rem 1.5rem 0;
-  padding: 0.9rem 1.2rem;
-  background: linear-gradient(135deg, rgba(124,106,247,0.1), rgba(124,106,247,0.04));
-  border: 1px solid rgba(124,106,247,0.25);
+  padding: 1rem 1.2rem;
+  background: var(--bg2);
+  border: 1px solid rgba(124,106,247,0.35);
   border-radius: 14px;
+  /* Este bloque se separa del borde con margen, no con relleno, así que su
+     ancho máximo es 48 px menor para terminar donde terminan los demás. */
+  max-width: calc(var(--contenido) - 48px);
   transition: opacity 0.3s;
 }
 .priority-advisor.hidden { display: none; }
@@ -2292,8 +2359,10 @@ function toggleSidebar() {
     overlay.classList.toggle('visible', !isOpen);
     document.body.style.overflow = isOpen ? '' : 'hidden';
   } else {
-    sb.classList.toggle('collapsed');
-    main.classList.toggle('expanded');
+    // `expanded` no mueve el contenido: solo amplía el ancho útil, de modo que
+    // la página se ensancha hacia la derecha y su borde izquierdo no se mueve.
+    const plegado = sb.classList.toggle('collapsed');
+    main.classList.toggle('expanded', plegado);
   }
 }
 
@@ -2501,7 +2570,7 @@ function renderTasks(tasks, containerId, isArchive = false) {
     tab.appendChild(taskInfo);
 
     const badges = document.createElement('div');
-    badges.style.cssText = 'margin-left:auto;display:flex;gap:.5rem;align-items:center';
+    badges.className = 'task-badges';
     badges.appendChild(createTextElement('span', `badge badge-${t.priority}`, t.priority));
     if (normalDate) {
       badges.appendChild(createTextElement(
@@ -2655,17 +2724,48 @@ const RECOMMENDATION_SOURCES = {
 function appendRecommendation(parent, recommendation) {
   if (!recommendation?.text) return;
   const box = document.createElement('div');
-  box.className = 'ai-result-box';
-  box.appendChild(createTextElement(
-    'div',
-    'ai-recs-header',
+  box.className = 'ai-result-box ai-rec-box';
+
+  const cabecera = document.createElement('button');
+  cabecera.type = 'button';
+  cabecera.className = 'ai-recs-header ai-rec-toggle';
+  cabecera.appendChild(createTextElement(
+    'span',
+    'ai-rec-title',
     `Recomendación Para Iniciar · ${RECOMMENDATION_SOURCES[recommendation.source] || 'Sugerencia'}`
   ));
+  const flecha = createTextElement('span', 'ai-rec-arrow', '▾');
+  flecha.setAttribute('aria-hidden', 'true');
+  cabecera.appendChild(flecha);
+
+  const cuerpo = document.createElement('div');
+  cuerpo.className = 'ai-rec-body';
   const item = document.createElement('div');
   item.className = 'subtask-item';
   item.appendChild(createTextElement('div', 'subtask-text', recommendation.text));
-  box.appendChild(item);
+  cuerpo.appendChild(item);
+
+  // En móvil nace plegada: el texto de la IA ocupa más que la tarea misma.
+  const estrecha = typeof window !== 'undefined'
+    && window.matchMedia('(max-width: 768px)').matches;
+  aplicarPlegadoRecomendacion(box, cabecera, estrecha);
+
+  cabecera.addEventListener('click', evento => {
+    // La tarjeta que la contiene tiene su propio clic: sin esto, plegar la
+    // recomendación abriría también el detalle de la tarea.
+    evento.stopPropagation();
+    aplicarPlegadoRecomendacion(box, cabecera, !box.classList.contains('collapsed'));
+  });
+
+  box.appendChild(cabecera);
+  box.appendChild(cuerpo);
   parent.appendChild(box);
+}
+
+function aplicarPlegadoRecomendacion(box, cabecera, plegar) {
+  box.classList.toggle('collapsed', plegar);
+  cabecera.setAttribute('aria-expanded', plegar ? 'false' : 'true');
+  cabecera.setAttribute('title', plegar ? 'Mostrar la recomendación' : 'Ocultar la recomendación');
 }
 
 // ── STATS ──

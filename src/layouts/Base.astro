@@ -13,38 +13,47 @@ const { title = 'NovaTareas Pro', theme = 'dark' } = Astro.props;
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
   <style is:global>
     :root[data-theme="dark"] {
-      --bg: #0a0a0f;
-      --bg2: #111118;
-      --bg3: #1a1a24;
-      --border: #2a2a3a;
-      --text: #e8e8f0;
-      --text2: #8888aa;
-      --text3: #5555778;
+      --bg: #0b0b12;
+      --bg2: #12121b;
+      --bg3: #191922;
+      --border: #23232f;
+      --text: #ecebf5;
+      --text2: #9a97b8;
+      /* Antes decía `#5555778`, siete dígitos: un color inválido que el
+         navegador descartaba, así que este nivel de texto heredaba el color
+         del padre en lugar del gris tenue previsto. */
+      --text3: #6b6889;
       --accent: #7c6af7;
       --accent2: #a392ff;
-      --green: #22d47a;
-      --red: #ff5566;
-      --yellow: #ffcc44;
-      --orange: #ff8844;
-      --card-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      --green: #34d399;
+      --red: #f87171;
+      --yellow: #fbbf24;
+      --orange: #fb923c;
+      --card-shadow: 0 1px 2px rgba(0,0,0,0.3);
       --glass: rgba(255,255,255,0.03);
+      /* Superficie de fila y su estado al pasar el ratón. Se separan de --bg2
+         porque las listas necesitan un contraste más suave que los paneles. */
+      --row: #14141d;
+      --row-hover: #1a1a25;
     }
     :root[data-theme="light"] {
-      --bg: #f0f0f7;
+      --bg: #f6f6fb;
       --bg2: #ffffff;
-      --bg3: #e8e8f4;
-      --border: #d0d0e0;
-      --text: #1a1a2e;
-      --text2: #55557a;
-      --text3: #8888aa;
+      --bg3: #eeeef6;
+      --border: #e2e2ee;
+      --text: #14142b;
+      --text2: #5b5b7a;
+      --text3: #8a8aa8;
       --accent: #6b58f0;
       --accent2: #8470ff;
-      --green: #18b864;
-      --red: #e84455;
-      --yellow: #e6b800;
-      --orange: #e06030;
-      --card-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      --green: #059669;
+      --red: #dc2626;
+      --yellow: #d97706;
+      --orange: #ea580c;
+      --card-shadow: 0 1px 2px rgba(20,20,43,0.06);
       --glass: rgba(0,0,0,0.02);
+      --row: #ffffff;
+      --row-hover: #f4f4fb;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { font-size: 16px; scroll-behavior: smooth; }
@@ -77,62 +86,58 @@ const { title = 'NovaTareas Pro', theme = 'dark' } = Astro.props;
       -webkit-appearance: none;
     }
 
-    /* ── BOTONES DE TAREAS ── */
+    /* ── BOTONES DE TAREAS ──
+       Discretos en reposo y con color solo al pasar el ratón. Antes cada
+       tarjeta mostraba siete botones de colores saturados compitiendo con el
+       título de la tarea, que es lo único que el usuario viene a leer. */
     .task-actions button {
       font-family: inherit;
-      font-size: 0.82rem;
+      font-size: 0.78rem;
       font-weight: 600;
-      border-radius: 8px !important;
-      padding: 0.6rem 1rem !important;
+      border-radius: 7px !important;
+      padding: 0.38rem 0.7rem !important;
       cursor: pointer;
-      border: 1.5px solid rgba(255,255,255,0.14) !important;
-      background: linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03)) !important;
+      border: 1px solid transparent !important;
+      background: transparent !important;
       color: var(--text2) !important;
       display: inline-flex !important;
       align-items: center !important;
       justify-content: center !important;
-      transition: all 0.2s ease !important;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+      transition: background 0.15s, color 0.15s, border-color 0.15s !important;
+      box-shadow: none !important;
     }
     .task-actions button:hover {
-      transform: translateY(-2px) !important;
-      box-shadow: 0 6px 16px rgba(0,0,0,0.2) !important;
+      background: var(--bg3) !important;
+      color: var(--text) !important;
+      border-color: var(--border) !important;
     }
-    .task-actions .complete-btn {
-      background: linear-gradient(135deg, rgba(34,212,122,0.22), rgba(34,212,122,0.1)) !important;
-      border-color: rgba(34,212,122,0.45) !important;
-      color: #22d47a !important;
-    }
+    /* Cada accion conserva su color, pero solo se revela al apuntarla: en
+       reposo la fila se lee como texto, no como una botonera. */
     .task-actions .complete-btn:hover {
-      background: linear-gradient(135deg, rgba(34,212,122,0.35), rgba(34,212,122,0.18)) !important;
-      box-shadow: 0 6px 20px rgba(34,212,122,0.2) !important;
+      background: rgba(52,211,153,0.14) !important;
+      border-color: rgba(52,211,153,0.35) !important;
+      color: var(--green) !important;
     }
-    .task-actions .ai-btn {
-      background: linear-gradient(135deg, rgba(124,106,247,0.22), rgba(124,106,247,0.1)) !important;
-      border-color: rgba(124,106,247,0.45) !important;
-      color: #7c6af7 !important;
-    }
-    .task-actions .ai-btn:hover {
-      background: linear-gradient(135deg, rgba(124,106,247,0.35), rgba(124,106,247,0.18)) !important;
-      box-shadow: 0 6px 20px rgba(124,106,247,0.2) !important;
-    }
-    .task-actions .archive-btn {
-      background: linear-gradient(135deg, rgba(255,204,68,0.22), rgba(255,204,68,0.1)) !important;
-      border-color: rgba(255,204,68,0.45) !important;
-      color: #ffcc44 !important;
+    .task-actions .ai-btn:hover,
+    .task-actions .useful-btn:hover {
+      background: rgba(124,106,247,0.14) !important;
+      border-color: rgba(124,106,247,0.38) !important;
+      color: var(--accent2) !important;
     }
     .task-actions .archive-btn:hover {
-      background: linear-gradient(135deg, rgba(255,204,68,0.35), rgba(255,204,68,0.18)) !important;
-      box-shadow: 0 6px 20px rgba(255,204,68,0.2) !important;
+      background: rgba(251,191,36,0.13) !important;
+      border-color: rgba(251,191,36,0.35) !important;
+      color: var(--yellow) !important;
     }
-    .task-actions .del-btn {
-      background: linear-gradient(135deg, rgba(255,85,102,0.22), rgba(255,85,102,0.1)) !important;
-      border-color: rgba(255,85,102,0.45) !important;
-      color: #ff5566 !important;
+    .task-actions .collab-btn:hover {
+      background: rgba(52,211,153,0.12) !important;
+      border-color: rgba(52,211,153,0.32) !important;
+      color: var(--green) !important;
     }
     .task-actions .del-btn:hover {
-      background: linear-gradient(135deg, rgba(255,85,102,0.35), rgba(255,85,102,0.18)) !important;
-      box-shadow: 0 6px 20px rgba(255,85,102,0.2) !important;
+      background: rgba(248,113,113,0.14) !important;
+      border-color: rgba(248,113,113,0.38) !important;
+      color: var(--red) !important;
     }
 
     /* ── BOTONES CALENDARIO ── */
