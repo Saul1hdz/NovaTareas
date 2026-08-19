@@ -70,33 +70,6 @@ if (user) return Astro.redirect('/dashboard');
           </select>
         </div>
 
-        <div class="security-section">
-          <div class="security-title">🔐 Preguntas de seguridad</div>
-          <small class="hint">Se usarán para recuperar tu contraseña si la olvidas.</small>
-
-          <div class="field" style="margin-top:0.75rem">
-            <label>Pregunta 1 <span class="req">*</span></label>
-            <select name="q1_index" id="q1_select" required onchange="filterQ2()">
-              <option value="" disabled selected>Elige una pregunta</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Tu respuesta <span class="req">*</span></label>
-            <input type="text" name="q1_answer" placeholder="Tu respuesta..." required autocomplete="off" />
-          </div>
-
-          <div class="field">
-            <label>Pregunta 2 <span class="req">*</span></label>
-            <select name="q2_index" id="q2_select" required onchange="filterQ1()">
-              <option value="" disabled selected>Elige una pregunta</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Tu respuesta <span class="req">*</span></label>
-            <input type="text" name="q2_answer" placeholder="Tu respuesta..." required autocomplete="off" />
-          </div>
-        </div>
-
         <div id="register-error" class="error-msg"></div>
         <button type="submit" class="btn-primary">Crear cuenta →</button>
       </form>
@@ -116,34 +89,17 @@ if (user) return Astro.redirect('/dashboard');
 
         <!-- Paso 1: ingresar correo -->
         <div id="recover-step-email">
-          <p class="recover-info">Ingresa tu correo para restablecer tu contraseña.</p>
+          <p class="recover-info">Ingresa tu correo y te enviaremos un enlace para restablecer tu contraseña.</p>
           <div class="field">
             <label>Correo electrónico</label>
             <input type="email" id="recover-email" placeholder="correo@ejemplo.com" required />
           </div>
           <div id="recover-error-email" class="error-msg"></div>
-          <button class="btn-primary" onclick="startRecovery()">Continuar →</button>
-          <button type="button" class="btn-secondary" onclick="requestEmailReset()" style="margin-top:0.5rem">Enviar enlace por correo</button>
+          <button class="btn-primary" onclick="requestEmailReset()">Enviar enlace por correo</button>
           <button type="button" class="btn-link" onclick="cancelRecovery()">← Volver al login</button>
         </div>
 
-        <!-- Paso 2: responder preguntas -->
-        <div id="recover-step-question" style="display:none">
-          <div class="recover-question-box">
-            <div class="recover-q-label">Pregunta de seguridad</div>
-            <div class="recover-q-text" id="recover-question-text"></div>
-          </div>
-          <div class="field">
-            <label>Tu respuesta</label>
-            <input type="text" id="recover-answer" placeholder="Escribe tu respuesta..." autocomplete="off" />
-          </div>
-          <div class="recover-attempts" id="recover-attempts"></div>
-          <div id="recover-error-question" class="error-msg"></div>
-          <button class="btn-primary" onclick="checkAnswer()">Verificar →</button>
-          <button type="button" class="btn-link" onclick="cancelRecovery()">← Volver al login</button>
-        </div>
-
-        <!-- Paso 3: nueva contraseña -->
+        <!-- Paso 2: nueva contraseña (tras abrir el enlace del correo) -->
         <div id="recover-step-password" style="display:none">
           <p class="recover-info" style="color:var(--green)">✅ Identidad verificada. Crea tu nueva contraseña.</p>
           <div class="field">
@@ -267,19 +223,7 @@ if (user) return Astro.redirect('/dashboard');
   cursor: pointer; text-align: center; padding: 0.25rem !important;
   text-decoration: underline;
 }
-.security-section {
-  background: var(--bg3); border: 1px solid var(--border);
-  border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem;
-}
-.security-title { font-size: 0.85rem; font-weight: 700; color: var(--text); }
 .recover-info { font-size: 0.88rem; color: var(--text2); line-height: 1.5; }
-.recover-question-box {
-  background: var(--bg3); border: 1px solid var(--accent);
-  border-radius: 10px; padding: 1rem;
-}
-.recover-q-label { font-size: 0.72rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem; }
-.recover-q-text { font-size: 0.95rem; color: var(--text); font-weight: 600; line-height: 1.4; }
-.recover-attempts { font-size: 0.78rem; color: var(--text3); }
 </style>
 
 <script>
@@ -292,49 +236,6 @@ if (user) return Astro.redirect('/dashboard');
 function nextDestination(): string {
   const next = new URLSearchParams(window.location.search).get('next') || '';
   return /^\/unirse\/[A-Za-z0-9_%-]{16,200}$/.test(next) ? next : '/dashboard';
-}
-
-const QUESTIONS = [
-  '¿Cuál fue el nombre de tu primera mascota?',
-  '¿En qué ciudad o pueblo nació tu madre?',
-  '¿Cuál era el apellido de tu maestro favorito de la escuela?',
-  '¿Cuál fue el nombre de la primera escuela a la que asististe?',
-  '¿Cuál era el apodo que tenía tu familia para ti cuando eras niño?',
-  '¿Cuál fue el nombre de tu mejor amigo de la infancia?',
-  '¿Cuál fue el primer videojuego que recuerdas haber jugado?',
-  '¿Cuál era el nombre de la calle donde viviste durante tu infancia?',
-  '¿Cuál fue el primer concierto o evento al que asististe?',
-  '¿Cuál era el nombre de tu personaje favorito cuando eras niño?',
-];
-
-// Poblar selects de preguntas
-function populateQuestions() {
-  const q1 = document.getElementById('q1_select') as HTMLSelectElement | null;
-  const q2 = document.getElementById('q2_select') as HTMLSelectElement | null;
-  if (!q1 || !q2) return;
-
-  QUESTIONS.forEach((q, i) => {
-    q1.add(new Option(q, String(i)));
-    q2.add(new Option(q, String(i)));
-  });
-}
-
-function filterQ2() {
-  const q1Val = (document.getElementById('q1_select') as HTMLSelectElement).value;
-  const q2 = document.getElementById('q2_select') as HTMLSelectElement;
-  Array.from(q2.options).forEach((opt) => {
-    opt.disabled = opt.value === q1Val && opt.value !== '';
-  });
-  if (q2.value === q1Val) q2.value = '';
-}
-
-function filterQ1() {
-  const q2Val = (document.getElementById('q2_select') as HTMLSelectElement).value;
-  const q1 = document.getElementById('q1_select') as HTMLSelectElement;
-  Array.from(q1.options).forEach((opt) => {
-    opt.disabled = opt.value === q2Val && opt.value !== '';
-  });
-  if (q1.value === q2Val) q1.value = '';
 }
 
 function switchTab(tab: 'login' | 'register' | 'recover') {
@@ -390,10 +291,6 @@ async function handleRegister(e: SubmitEvent) {
     telefono: HTMLInputElement;
     password: HTMLInputElement;
     user_type: HTMLSelectElement;
-    q1_index: HTMLSelectElement;
-    q1_answer: HTMLInputElement;
-    q2_index: HTMLSelectElement;
-    q2_answer: HTMLInputElement;
   };
   const btn = form.querySelector<HTMLButtonElement>('button[type=submit]');
   const err = document.getElementById('register-error');
@@ -412,17 +309,6 @@ async function handleRegister(e: SubmitEvent) {
     btn.disabled = false; btn.textContent = 'Crear cuenta →'; return;
   }
 
-  const q1 = form.q1_index.value;
-  const q2 = form.q2_index.value;
-  if (!q1 || !q2) {
-    err.textContent = 'Selecciona las dos preguntas de seguridad.';
-    btn.disabled = false; btn.textContent = 'Crear cuenta →'; return;
-  }
-  if (q1 === q2) {
-    err.textContent = 'Las dos preguntas deben ser diferentes.';
-    btn.disabled = false; btn.textContent = 'Crear cuenta →'; return;
-  }
-
   try {
     const res = await fetch('/api/register', {
       method: 'POST',
@@ -433,10 +319,6 @@ async function handleRegister(e: SubmitEvent) {
         telefono,
         password: pwd,
         user_type: form.user_type.value,
-        q1_index: Number(q1),
-        q1_answer: form.q1_answer.value,
-        q2_index: Number(q2),
-        q2_answer: form.q2_answer.value,
       })
     });
     const data = await res.json();
@@ -459,18 +341,14 @@ async function handleRegister(e: SubmitEvent) {
 
 // ── RECUPERACIÓN ───────────────────────────────────────────────────────────
 let recoverEmail = '';
-let recoverQuestionIndex = null;
 let recoverToken = '';
 
 function cancelRecovery() {
   recoverEmail = '';
-  recoverQuestionIndex = null;
   recoverToken = '';
   (document.getElementById('recover-email') as HTMLInputElement).value = '';
-  (document.getElementById('recover-answer') as HTMLInputElement).value = '';
   (document.getElementById('recover-new-password') as HTMLInputElement).value = '';
   document.getElementById('recover-step-email').style.display = '';
-  document.getElementById('recover-step-question').style.display = 'none';
   document.getElementById('recover-step-password').style.display = 'none';
   document.querySelectorAll('#form-recover .error-msg').forEach(element => {
     element.textContent = '';
@@ -478,36 +356,12 @@ function cancelRecovery() {
   switchTab('login');
 }
 
-async function startRecovery() {
-  const email = (document.getElementById('recover-email') as HTMLInputElement).value.trim();
-  const err = document.getElementById('recover-error-email');
-  err.textContent = '';
-
-  if (!email) { err.textContent = 'Ingresa tu correo.'; return; }
-
-  const res = await fetch('/api/auth/recover', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'get_question', email })
-  });
-  const data = await res.json();
-
-  if (!data.ok) { err.textContent = data.error; return; }
-
-  recoverEmail = email;
-  recoverQuestionIndex = data.question_index;
-  document.getElementById('recover-question-text').textContent = data.question;
-  document.getElementById('recover-attempts').textContent = `Intentos restantes: ${data.attempts_left}`;
-  document.getElementById('recover-step-email').style.display = 'none';
-  document.getElementById('recover-step-question').style.display = '';
-}
-
 // Recuperación por correo: envía un enlace de un solo uso al buzón.
 async function requestEmailReset() {
   const email = (document.getElementById('recover-email') as HTMLInputElement).value.trim();
   const err = document.getElementById('recover-error-email');
   err.textContent = '';
-  const btn = document.querySelector('#recover-step-email .btn-secondary') as HTMLButtonElement;
+  const btn = document.querySelector('#recover-step-email .btn-primary') as HTMLButtonElement;
 
   if (!email) { err.textContent = 'Ingresa tu correo.'; return; }
   btn.disabled = true; btn.textContent = 'Enviando...';
@@ -527,44 +381,6 @@ async function requestEmailReset() {
     err.textContent = '📬 Si existe una cuenta con ese correo, te enviamos un enlace de recuperación.';
   } catch { err.textContent = 'Error de red'; }
   btn.disabled = false; btn.textContent = 'Enviar enlace por correo';
-}
-
-async function checkAnswer() {
-  const answer = (document.getElementById('recover-answer') as HTMLInputElement).value.trim();
-  const err = document.getElementById('recover-error-question');
-  err.textContent = '';
-
-  if (!answer) { err.textContent = 'Escribe tu respuesta.'; return; }
-
-  const res = await fetch('/api/auth/recover', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'check_answer', email: recoverEmail, answer, question_index: recoverQuestionIndex })
-  });
-  const data = await res.json();
-
-  if (data.deleted) {
-    document.getElementById('recover-step-question').style.display = 'none';
-    err.textContent = data.error;
-    return;
-  }
-
-  if (!data.ok) {
-    // Respuesta incorrecta, mostrar siguiente pregunta
-    if (data.next_question) {
-      recoverQuestionIndex = data.next_question_index;
-      document.getElementById('recover-question-text').textContent = data.next_question;
-      document.getElementById('recover-attempts').textContent = `Intentos restantes: ${data.attempts_left}`;
-      (document.getElementById('recover-answer') as HTMLInputElement).value = '';
-    }
-    err.textContent = data.message || data.error;
-    return;
-  }
-
-  // Correcto
-  recoverToken = data.recovery_token;
-  document.getElementById('recover-step-question').style.display = 'none';
-  document.getElementById('recover-step-password').style.display = '';
 }
 
 async function resetPassword() {
@@ -595,26 +411,18 @@ async function resetPassword() {
 declare global {
   interface Window {
     switchTab: (tab: 'login' | 'register' | 'recover') => void;
-    startRecovery: () => void;
     requestEmailReset: () => void;
-    checkAnswer: () => void;
     resetPassword: () => void;
     cancelRecovery: () => void;
-    filterQ1: () => void;
-    filterQ2: () => void;
   }
 }
 
 window.switchTab = switchTab;
 document.getElementById('form-login')?.addEventListener('submit', handleLogin);
 document.getElementById('form-register')?.addEventListener('submit', handleRegister);
-window.startRecovery = startRecovery;
 window.requestEmailReset = requestEmailReset;
-window.checkAnswer = checkAnswer;
 window.resetPassword = resetPassword;
 window.cancelRecovery = cancelRecovery;
-window.filterQ1 = filterQ1;
-window.filterQ2 = filterQ2;
 
 // Enlace de recuperación por correo: salta directo al paso de nueva contraseña.
 (function initRecoveryToken() {
@@ -624,7 +432,6 @@ window.filterQ2 = filterQ2;
   recoverToken = token;
   recoverEmail = '';
   document.getElementById('recover-step-email').style.display = 'none';
-  document.getElementById('recover-step-question').style.display = 'none';
   document.getElementById('recover-step-password').style.display = '';
   switchTab('recover');
   // Limpia el token de la URL sin recargar.
@@ -632,6 +439,4 @@ window.filterQ2 = filterQ2;
   url.searchParams.delete('recovery_token');
   history.replaceState(null, '', url.toString());
 })();
-
-populateQuestions();
 </script>

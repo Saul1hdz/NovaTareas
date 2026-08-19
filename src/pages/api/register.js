@@ -58,35 +58,18 @@ export async function POST({ request }) {
     telefono,
     password,
     user_type,
-    q1_index,
-    q1_answer,
-    q2_index,
-    q2_answer,
   } = body;
 
-  if ([full_name, email, telefono, password, user_type, q1_answer, q2_answer]
+  if ([full_name, email, telefono, password, user_type]
     .some(value => typeof value !== 'string')) {
     return json({ error: 'Los campos de texto no son válidos.' }, 400);
   }
   if (!full_name.trim() || !email.trim() || !telefono.trim() || !password || !user_type) {
     return json({ error: 'Todos los campos obligatorios deben completarse.' }, 400);
   }
-  if (q1_index === undefined || !q1_answer.trim() ||
-      q2_index === undefined || !q2_answer.trim()) {
-    return json({ error: 'Debes responder las 2 preguntas de seguridad.' }, 400);
-  }
   if (full_name.trim().length > 120 || email.trim().length > 254 ||
-      telefono.trim().length > 16 || password.length > 128 ||
-      q1_answer.trim().length > 200 || q2_answer.trim().length > 200) {
+      telefono.trim().length > 16 || password.length > 128) {
     return json({ error: 'Uno o más campos superan el tamaño permitido.' }, 400);
-  }
-
-  const q1Index = Number(q1_index);
-  const q2Index = Number(q2_index);
-  if (!Number.isInteger(q1Index) || !Number.isInteger(q2Index) ||
-      q1Index < 0 || q1Index > 9 || q2Index < 0 || q2Index > 9 ||
-      q1Index === q2Index) {
-    return json({ error: 'Las preguntas de seguridad no son válidas.' }, 400);
   }
 
   const normalizedEmail = email.toLowerCase().trim();
@@ -110,8 +93,6 @@ export async function POST({ request }) {
 
   try {
     const passwordHash = await bcrypt.hash(password, 10);
-    const q1Hash = await bcrypt.hash(q1_answer.toLowerCase().trim(), 10);
-    const q2Hash = await bcrypt.hash(q2_answer.toLowerCase().trim(), 10);
     const username = full_name.trim();
 
     const userId = await withTransaction(async (tx) => {
@@ -128,10 +109,6 @@ export async function POST({ request }) {
         user_type
       );
 
-      await tx.prepare(`
-        INSERT INTO security_questions (user_id, q1_index, q1_answer, q2_index, q2_answer)
-        VALUES ($1, $2, $3, $4, $5)
-      `).run(created.id, q1Index, q1Hash, q2Index, q2Hash);
       return created.id;
     }, db);
 

@@ -32,7 +32,7 @@ async function registerUser(email, name) {
     request: request('/api/register', 'POST', {
       full_name: name,
       email,
-      telefono: '+50370000000',
+      telefono: '+50361234567',
       password: 'Clave1234',
       user_type: 'estudiante',
       q1_index: 0,
