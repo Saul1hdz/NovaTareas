@@ -14,14 +14,6 @@ export default defineConfig({
     host: true,
     port: Number(process.env.PORT) || 4321,
   },
-  // El chequeo de origen de Astro está activado por defecto, pero solo cubre
-  // las peticiones de formulario. Se declara aquí para que sea visible y no
-  // dependa de un valor por defecto que podría cambiar de versión; el control
-  // fail-closed de las mutaciones con cookie está en src/middleware.js.
-  security: {
-    checkOrigin: true,
-  },
-
   vite: {
     ssr: {
       external: ['node:fs', 'node:path', 'node:crypto'],
