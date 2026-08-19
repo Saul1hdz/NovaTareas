@@ -96,7 +96,9 @@ la misma lógica de negocio:
   ([modo colaborativo](docs/MODO_COLABORATIVO.md)).
 - **El bot de Telegram**, que permite crear tareas conversando, pedir
   recomendaciones de IA y recibir avisos automáticos cuando una tarea se crea, se
-  completa, se vuelve urgente, está por vencer o ya venció.
+  completa, se vuelve urgente, está por vencer o ya venció. Puede además insistir
+  cada cierto tiempo mientras la tarea siga pendiente, con una frecuencia que
+  depende de su prioridad.
 - **Una API externa protegida**, que expone la capacidad inteligente como
   servicio REST para clientes autorizados mediante una API key propia.
 
@@ -302,31 +304,43 @@ npm run lint          # revisar tipos y sintaxis del proyecto
 
 ### Qué se prueba
 
-| Archivo | Pruebas | Qué cubre |
-|---|---|---|
-| `tests/aiEngine.test.js` | 14 | Validación de entrada: títulos vacíos o larguísimos, descripciones fuera de límite, prioridades inventadas, fechas mal escritas y cuerpos que ni siquiera son un objeto |
-| `tests/api.test.js` | 13 | Los endpoints `/api/v1/health`, `/api/v1/metadata` y `/api/v1/recommend`, incluida la autenticación de la API externa |
-| `tests/appFlows.test.js` | 14 | Registro, login, logout, cambio de contraseña, ciclo de vida de una tarea, ownership, subtareas, historial, comentarios y vinculación con Telegram |
-| `tests/security.test.js` | 8 | Sesiones, cookies, límites de intentos persistidos, secretos, logs seguros y el `state` de Google OAuth |
-| `tests/taskValidation.test.js` | 3 | Validación de tareas, fechas, estados, etiquetas y comentarios |
-| `tests/integrationSecurity.test.js` | 8 | Cron, webhook de Telegram simulado y subida de avatares válidos, falsificados o con MIME incorrecto |
-| `tests/postgresSchema.test.js` | 7 | Esquema, restricciones y reejecución de las migraciones de PostgreSQL usando PGlite |
-| `tests/tokenEncryption.test.js` | 3 | Cifrado, descifrado y rechazo de tokens alterados |
-| `tests/reminders.test.js` | 7 | Zona horaria, avisos que no se repiten, ausencia de marcación cuando Telegram falla y programación de `reminder_at` |
-| `tests/aiProviders.test.js` | 3 | z.ai, Ollama y el respaldo local, con la red simulada |
-| `tests/aiPrompt.test.js` | 3 | Que el prompt no invente antecedentes y trate el RAG como evidencia opcional |
-| `tests/aiRecommendations.test.js` | 4 | Que las recomendaciones no borren subtareas, se guarden aparte y dejen registrado su origen |
-| `tests/googleIntegration.test.js` | 4 | OAuth, eventos, renovación y guardado cifrado de tokens, con Google simulado |
-| `tests/telegramSessions.test.js` | 5 | Que el estado de la conversación del bot persista, caduque y no se quede con las tareas del usuario |
-| `tests/dashboardStats.test.js` | 4 | Conteos del panel, tipos numéricos y etiquetas visibles |
-| `tests/noSqliteDialect.test.js` | 3 | Que nadie vuelva a introducir dialecto SQLite en el código |
+| Archivo | Qué cubre |
+|---|---|
+| `tests/aiEngine.test.js` | Validación de entrada: títulos vacíos o larguísimos, descripciones fuera de límite, prioridades inventadas, fechas mal escritas y cuerpos que ni siquiera son un objeto |
+| `tests/aiPrompt.test.js` | Que el prompt no invente antecedentes y trate el RAG como evidencia opcional |
+| `tests/aiProviders.test.js` | La cascada z.ai → Ollama → respaldo local, con la red simulada |
+| `tests/aiRateLimits.test.js` | Cuotas de IA persistidas en la base, no en memoria del proceso |
+| `tests/aiRecommendations.test.js` | Que las recomendaciones no borren subtareas, se guarden aparte y dejen registrado su origen |
+| `tests/api.test.js` | Los endpoints `/api/v1/health`, `/api/v1/metadata` y `/api/v1/recommend`, incluida la autenticación de la API externa |
+| `tests/appFlows.test.js` | Registro, login, logout, cambio de contraseña, ciclo de vida de una tarea, ownership, subtareas, historial, comentarios y vinculación con Telegram |
+| `tests/collaboration.test.js` | Niveles de acceso, invitaciones por enlace y canje del enlace |
+| `tests/collaborationSecurity.test.js` | Los bloqueos del modo colaborativo: mutaciones de origen cruzado, volver privada una tarea compartida y quién puede pedir IA |
+| `tests/csrf.test.js` | Que la protección CSRF no rechace peticiones legítimas detrás de un proxy que termina el HTTPS |
+| `tests/dashboardAiRequest.test.js` | Cómo el dashboard pide la recomendación al servidor |
+| `tests/dashboardStats.test.js` | Conteos del panel, tipos numéricos y etiquetas visibles |
+| `tests/deploymentContract.test.js` | Que la imagen de producción cumpla el contrato del runtime |
+| `tests/emailVerification.test.js` | Confirmación de correo en el registro, bloqueo del login hasta confirmar, tokens de un solo uso y recuperación de contraseña por correo |
+| `tests/googleIntegration.test.js` | OAuth, eventos, renovación y guardado cifrado de tokens, con Google simulado |
+| `tests/integrationSecurity.test.js` | Cron, webhook de Telegram simulado y subida de avatares válidos, falsificados o con MIME incorrecto |
+| `tests/noSqliteDialect.test.js` | Que nadie vuelva a introducir dialecto SQLite en el código |
+| `tests/postgresSchema.test.js` | Esquema, restricciones y reejecución de las migraciones de PostgreSQL usando PGlite |
+| `tests/profileTelegramRequest.test.js` | La solicitud de vinculación de Telegram desde el perfil |
+| `tests/recommendationFeedback.test.js` | La valoración 👍/👎: validación, integridad y cómo entra en el prompt |
+| `tests/registerSecurity.test.js` | Protecciones del registro público |
+| `tests/reminders.test.js` | Zona horaria, avisos que no se repiten, ausencia de marcación cuando Telegram falla y programación de `reminder_at` |
+| `tests/security.test.js` | Sesiones, cookies, límites de intentos persistidos, secretos, logs seguros y el `state` de Google OAuth |
+| `tests/taskNudges.test.js` | Recordatorios recurrentes: interruptor, frecuencia por prioridad, horas de silencio y a qué tareas les toca |
+| `tests/taskValidation.test.js` | Validación de tareas, fechas, estados, etiquetas y comentarios |
+| `tests/telegramSessions.test.js` | Que el estado de la conversación del bot persista, caduque y no se quede con las tareas del usuario |
+| `tests/tokenEncryption.test.js` | Cifrado, descifrado y rechazo de tokens alterados |
+| `tests/zaiThinking.test.js` | La forma del payload que se le manda a z.ai |
 
-**En total son 103 pruebas**, todas contra **PostgreSQL 16 real**, el mismo motor
-que se despliega. Al arrancar, la suite recrea el esquema desde las migraciones
-en la base que indique `TEST_DATABASE_URL`, y ese nombre tiene que terminar en
-`_test`. Por eso `npm test` necesita el contenedor de base de datos encendido. El
-esquema se verifica además con PGlite, y en CI se levanta un PostgreSQL 16
-efímero.
+**En total son 185 pruebas repartidas en 28 archivos**, todas contra
+**PostgreSQL 16 real**, el mismo motor que se despliega. Al arrancar, la suite
+recrea el esquema desde las migraciones en la base que indique
+`TEST_DATABASE_URL`, y ese nombre tiene que terminar en `_test`. Por eso
+`npm test` necesita el contenedor de base de datos encendido. El esquema se
+verifica además con PGlite, y en CI se levanta un PostgreSQL 16 efímero.
 
 ### Cómo están hechas
 
@@ -364,7 +378,7 @@ Cada `push` y cada `pull request` disparan el workflow de
 3. Instala dependencias con `npm ci`, reproducible desde `package-lock.json`.
 4. Revisa tipos y sintaxis con `npm run lint`.
 5. Levanta un PostgreSQL 16 efímero, migra y comprueba el esquema.
-6. Corre las 103 pruebas con cobertura (`npm run test:coverage`).
+6. Corre las 185 pruebas con cobertura (`npm run test:coverage`).
 7. Guarda el reporte de cobertura como artefacto durante 14 días.
 8. Compila el proyecto (`npm run build`).
 
@@ -565,6 +579,20 @@ API externa de recomendaciones, Ollama o Google Calendar. `GEMINI_API_KEY` es
 herencia de unas herramientas manuales de embeddings; no la necesitas para nada
 del flujo actual.
 
+Si vas a tocar el registro o la confirmación por correo, estas cuatro mandan:
+
+- **`REGISTRATION_ENABLED`** abre o cierra el registro público. En `false`, el
+  formulario responde «El registro público está deshabilitado», así que si
+  invitas a alguien por enlace tiene que estar en `true`.
+- **`EMAIL_VERIFICATION_REQUIRED`** obliga a confirmar el correo antes del primer
+  login. Con esto encendido, el registro no crea sesión: devuelve
+  `pending_verification` y manda un enlace de un solo uso.
+- **`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`** son el
+  servidor de correo que envía esos enlaces y los de recuperación de contraseña.
+  Sin ellos, la confirmación no puede llegar a ninguna parte.
+- **`TASK_NUDGES_ENABLED`** enciende los recordatorios recurrentes por prioridad,
+  descritos en la sección 10.
+
 Dos variables merecen atención especial:
 
 - **`DATABASE_URL` es obligatoria.** PostgreSQL es el único motor soportado y sin
@@ -609,17 +637,27 @@ novatareas-pro/
 │       ├── rag.js             # embeddings y recuperación semántica
 │       ├── db.js              # helpers de dominio sobre PostgreSQL
 │       ├── auth.js            # JWT por cookie o Bearer token
+│       ├── csrf.js            # origen de confianza detrás de un proxy HTTPS
+│       ├── env.js             # lectura y validación de la configuración
 │       ├── appTime.js         # criterio único de fecha y zona horaria
 │       ├── dashboardStats.js  # consultas del panel, con pruebas propias
 │       ├── collaboration.js   # niveles, invitaciones y canje de enlaces
+│       ├── recommendationFeedback.js  # la valoración 👍/👎 de la IA
+│       ├── taskNudges.js      # recordatorios recurrentes según la prioridad
+│       ├── taskValidation.js  # reglas de validación de tareas y comentarios
+│       ├── emailVerification.js  # confirmación de correo y restablecimiento
+│       ├── mailer.js          # envío por SMTP
+│       ├── avatarValidation.js   # verifica la imagen por contenido, no por MIME
+│       ├── tokenEncryption.js    # cifrado de los tokens de Google
 │       ├── routeParams.js     # normaliza los identificadores de la ruta
 │       ├── security.js        # límites de intentos persistidos en PostgreSQL
 │       ├── telegramBot.js
+│       ├── telegramLink.js    # códigos de vinculación de un solo uso
 │       └── telegramNotify.js
 ├── src/db/
 │   ├── client.js            # envoltorio fino sobre pg, no traduce el SQL
 │   └── postgres/            # esquema, cliente y repositorios de Drizzle
-├── tests/                   # 23 archivos, 129 pruebas contra PostgreSQL real
+├── tests/                   # 28 archivos, 185 pruebas contra PostgreSQL real
 ├── telegram/                # bot.js y scheduler.js, procesos aparte
 ├── migrations/postgresql/   # migraciones versionadas generadas con Drizzle
 ├── scripts/                 # migrar, verificar, sembrar y smoke test
@@ -631,6 +669,7 @@ novatareas-pro/
 ├── docs/
 │   ├── DESPLIEGUE.md                # runbook del servidor
 │   ├── ENTORNO_WINDOWS.md           # Docker Desktop en Windows
+│   ├── MODO_COLABORATIVO.md         # niveles, invitaciones y endpoints
 │   ├── CIERRE_MIGRACION_POSTGRESQL.md
 │   └── pruebas-semana-3.md          # mapa de pruebas
 ├── .env.example
@@ -696,7 +735,7 @@ Preferimos decirlas de frente antes de que sorprendan a alguien:
    túnel se cae el bot deja de responder. Por eso en desarrollo usamos polling.
 5. **La cuota de z.ai es limitada.** Cuando se agota el saldo, el sistema cae al
    respaldo local u offline en lugar de fallar.
-6. **La cobertura de pruebas todavía tiene huecos.** Las 103 pruebas ya cubren
+6. **La cobertura de pruebas todavía tiene huecos.** Las 185 pruebas ya cubren
    autenticación, recuperación, ownership, tareas, migraciones de PostgreSQL,
    cifrado de tokens, recordatorios, cron, webhook, avatares, códigos de
    vinculación de Telegram, proveedores de IA y las rutas principales de Google
@@ -704,8 +743,10 @@ Preferimos decirlas de frente antes de que sorprendan a alguien:
    visual de Google en el dashboard.
 7. **El RAG está conectado solo a medias.** Los embeddings existen en la base de
    datos, pero no todas las rutas del código los consumen todavía.
-8. **No hay métrica formal de calidad.** Falta un sistema de feedback que mida si
-   las recomendaciones realmente sirven.
+8. **La métrica de calidad recién empieza.** Ya se puede valorar cada
+   recomendación con 👍/👎 y esa valoración entra en el prompt siguiente, pero
+   todavía no hay un informe que agregue esos votos y diga si la calidad sube o
+   baja con el tiempo.
 9. **No hay logging estructurado.** Las llamadas al modelo no registran qué modelo
    se usó, cuántos tokens consumió ni cuánto tardó.
 10. **Una sola instancia de web y una de bot.** Los límites de intentos, los
@@ -713,15 +754,16 @@ Preferimos decirlas de frente antes de que sorprendan a alguien:
     PostgreSQL, así que la web podría escalar; el bot no, porque usa polling y
     dos procesos con el mismo token se roban los mensajes.
 11. **El dashboard sigue siendo un archivo monolítico.**
-    `src/pages/dashboard.astro` pasa de las 2.800 líneas. Su acceso a datos ya se
+    `src/pages/dashboard.astro` pasa de las 3.900 líneas. Su acceso a datos ya se
     extrajo a `src/lib/dashboardStats.js`, pero el CSS y el JavaScript de cliente
-    siguen sin separar.
+    siguen sin separar, y el rediseño visual lo hizo crecer más.
 12. **Google Calendar está a medio camino.** Los archivos existen en
     `/api/google/`, pero la integración aún no está conectada al dashboard.
-13. **La recuperación de cuenta se basa en preguntas de seguridad.** Ya funciona
-    bien: no revela si una cuenta existe, limita intentos y usa tokens de un solo
-    uso. Aun así, para un servicio público habría que sustituirla por enlaces
-    enviados a un canal verificado.
+13. **La recuperación de cuenta ya va por correo verificado.** Las preguntas de
+    seguridad se retiraron: ahora el registro puede exigir confirmar el correo y
+    el restablecimiento de contraseña llega por SMTP con un token de un solo uso.
+    No revela si una cuenta existe y limita los intentos. La contrapartida es que
+    ahora depende de un servidor de correo que funcione.
 14. **Todavía no hay despliegue público.** El proyecto corre en local; Netcup,
     dominio, HTTPS y operación continua quedan para el final. El runbook ya está
     escrito en [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md).
@@ -746,9 +788,10 @@ Preferimos decirlas de frente antes de que sorprendan a alguien:
 
 ### Semana 3 — Calidad y automatización
 
-- ✅ **Pruebas automatizadas** con Vitest: 103 casos sobre API, autenticación,
-  tareas, seguridad, migraciones, cifrado, cron, webhook, recordatorios,
-  proveedores de IA, Google simulado, avatares y vinculación de Telegram.
+- ✅ **Pruebas automatizadas** con Vitest: 103 casos al cerrar la semana sobre
+  API, autenticación, tareas, seguridad, migraciones, cifrado, cron, webhook,
+  recordatorios, proveedores de IA, Google simulado, avatares y vinculación de
+  Telegram. Hoy la suite va por 185 (sección 8).
 - ✅ **Pipeline de CI/CD** en GitHub Actions con PostgreSQL 16 efímero,
   migración, comprobación transaccional, cobertura y build. Confirmado en verde
   en una ejecución remota.
@@ -756,8 +799,8 @@ Preferimos decirlas de frente antes de que sorprendan a alguien:
   versionado con Drizzle.
 - ⬜ **Logging estructurado** de cada llamada a z.ai: modelo, tokens, latencia y
   si entró el respaldo.
-- ⬜ **Sistema de feedback** (👍/👎) en las recomendaciones, para medir si de
-  verdad sirven.
+- ✅ **Sistema de feedback** (👍/👎) en las recomendaciones: se guarda en su
+  propia tabla y la siguiente recomendación lo tiene en cuenta.
 
 > El plan original mencionaba Jest. Nos pasamos a **Vitest** porque entiende ESM
 > y Astro de forma nativa.
@@ -776,13 +819,20 @@ Preferimos decirlas de frente antes de que sorprendan a alguien:
 
 ### Semana 5 — Colaboración, limpieza y mejoras visuales
 
-- ⬜ Espacios de equipo: varios usuarios compartiendo un mismo conjunto de
-  tareas.
+- ✅ **Modo colaborativo**: una tarea privada puede compartirse con un enlace de
+  invitación, y cada persona entra con un nivel (lector, comentarista, editor).
+  Detalle en [`docs/MODO_COLABORATIVO.md`](docs/MODO_COLABORATIVO.md).
+- ✅ **Recordatorios recurrentes por Telegram** según la prioridad: urgente cada
+  hora, alta cada 3, media cada 5 y baja cada 6, con horas de silencio.
+- ✅ **Mejoras visuales del dashboard**: menú lateral plegable que devuelve el
+  ancho a la página al cerrarse, barra superior con el buscador centrado, tarjeta
+  de tarea de una sola superficie en vez de tres marcos anidados, y la
+  recomendación de la IA plegable con una flecha (en móvil nace plegada, porque
+  era el bloque que empujaba todo fuera de pantalla).
 - ⬜ Asignar tareas a miembros del equipo.
 - ⬜ Avisar por Telegram cuando alguien modifica una tarea asignada.
 - ⬜ Limpiar código muerto: los módulos de Supabase sin uso y los scripts de
   diagnóstico sueltos.
-- ⬜ Mejoras visuales del dashboard.
 
 ### Semana 6 — Despliegue y producción
 
