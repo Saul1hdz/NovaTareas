@@ -426,6 +426,30 @@ docker compose -f compose.dev.yml --profile telegram up -d bot
 docker compose -f compose.dev.yml --profile scheduler run --rm scheduler
 ```
 
+### Recordatorios recurrentes por prioridad
+
+El planificador envía tres cosas distintas por Telegram:
+
+| Aviso | Cuándo | Cuántas veces |
+|---|---|---|
+| Recordatorio de vencimiento | Antes de `reminder_at` | Una |
+| Alerta de vencida | Al pasar la fecha límite | Una |
+| **Recordatorio recurrente** | Mientras la tarea siga sin completarse | Repetido, según prioridad |
+
+El recurrente insiste cada 1 h en las urgentes, 3 h en las altas, 5 h en las
+medias y 6 h en las bajas. Deja de escribir cuando la tarea se completa o se
+archiva, y no molesta entre las 22:00 y las 07:00.
+
+**Viene apagado.** Se enciende con `TASK_NUDGES_ENABLED=true`, y los intervalos
+y la franja de silencio se ajustan con las variables de `.env.example`. Está
+apagado a propósito: el bot de producción escribe a personas reales y activarlo
+es una decisión que debe tomar alguien, no un efecto de desplegar.
+
+Como el planificador se ejecuta una vez y termina, para que los avisos horarios
+funcionen hay que dispararlo al menos cada hora: con `cron` llamando al perfil
+de Compose, o con una petición a `/api/cron/reminders` autenticada con
+`CRON_SECRET`.
+
 Para apagar todo sin perder datos:
 
 ```bash

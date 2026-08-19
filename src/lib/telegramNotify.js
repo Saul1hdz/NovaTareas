@@ -226,3 +226,55 @@ export async function notifyOverdueTasks(db) {
 
   return sent;
 }
+
+// ─── 6. Recordatorios recurrentes según la prioridad ─────────────────────────
+
+/**
+ * Insiste con las tareas vivas: cuanto más urgente, más seguido.
+ *
+ * Se apoya en `src/lib/taskNudges.js`, que decide a quién le toca y si es hora
+ * de callarse. Aquí solo se redacta y se envía, y se marca el envío únicamente
+ * cuando Telegram confirma la entrega: si falla, la tarea sigue pendiente y se
+ * reintenta en el siguiente barrido en vez de perder el aviso.
+ */
+export async function notifyTaskNudges(db) {
+  const {
+    getTasksNeedingNudge,
+    isQuietHour,
+    markNudgeSent,
+    nudgeHours,
+    nudgesEnabled,
+  } = await import('./taskNudges.js');
+
+  if (!nudgesEnabled()) return { sent: 0, skipped: 'desactivado' };
+  if (isQuietHour()) return { sent: 0, skipped: 'horas de silencio' };
+
+  const pendientes = await getTasksNeedingNudge(db);
+  const horas = nudgeHours();
+  let sent = 0;
+
+  for (const row of pendientes) {
+    const emoji = PRIORITY_EMOJI[row.priority] || '⚪';
+    const cadaCuanto = horas[row.priority] || horas.baja;
+    const vence = row.due_date ? `\n🗓️ Vence: <b>${formatDate(row.due_date)}</b>` : '';
+
+    try {
+      const entregado = await sendMessage(
+        row.telegram_chat_id,
+        `🔔 <b>Sigue pendiente</b>\n\n` +
+        `${emoji} <b>${escapeTelegramHtml(row.title)}</b>\n` +
+        `Prioridad: <b>${row.priority}</b>${vence}\n\n` +
+        `Te aviso cada ${cadaCuanto} h mientras siga sin completarse. ` +
+        `Márcala como terminada o archívala para dejar de recibir este aviso.`
+      );
+      if (entregado) {
+        await markNudgeSent(db, row.task_id);
+        sent += 1;
+      }
+    } catch (err) {
+      console.error('[telegramNotify] Error recordatorio recurrente:', safeErrorSummary(err));
+    }
+  }
+
+  return { sent, candidates: pendientes.length };
+}

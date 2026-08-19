@@ -1,7 +1,11 @@
 export const prerender = false;
 
 import { db, getUsersWithDueTasks, markReminderSent } from '../../../lib/db.js';
-import { notifyReminders, notifyOverdueTasks } from '../../../lib/telegramNotify.js';
+import {
+  notifyOverdueTasks,
+  notifyReminders,
+  notifyTaskNudges,
+} from '../../../lib/telegramNotify.js';
 import { safeEqualStrings, safeErrorSummary } from '../../../lib/security.js';
 
 const CRON_SECRET = process.env.CRON_SECRET?.trim();
@@ -25,12 +29,18 @@ export async function GET({ request }) {
       REMINDER_WINDOW_MIN
     );
     const alerted = await notifyOverdueTasks(db);
+    const nudges = await notifyTaskNudges(db);
 
-    console.log(`[cron/reminders] Recordatorios: ${reminded} | Vencidas: ${alerted}`);
+    console.log(
+      `[cron/reminders] Recordatorios: ${reminded} | Vencidas: ${alerted} | `
+      + `Recurrentes: ${nudges.sent}${nudges.skipped ? ` (omitidos: ${nudges.skipped})` : ''}`
+    );
     return json({
       ok: true,
       reminders_sent: reminded,
       overdue_alerts: alerted,
+      recurring_nudges_sent: nudges.sent,
+      recurring_nudges_skipped: nudges.skipped || null,
       window_minutes: REMINDER_WINDOW_MIN,
       timestamp: new Date().toISOString(),
     }, 200);

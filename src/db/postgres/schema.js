@@ -159,6 +159,10 @@ export const tasks = pgTable('tasks', {
   completed: boolean('completed').notNull().default(false),
   reminderSent: boolean('reminder_sent').notNull().default(false),
   overdueNotified: boolean('overdue_notified').notNull().default(false),
+  // Último recordatorio recurrente enviado por Telegram. `reminder_sent` marca
+  // el aviso único previo al vencimiento; este es el que se repite según la
+  // prioridad, así que necesita un instante y no un booleano.
+  lastNudgeAt: timestamp('last_nudge_at', { withTimezone: true }),
   archived: boolean('archived').notNull().default(false),
   visibility: taskVisibilityEnum('visibility').notNull().default('privada'),
   observations: text('observations'),
@@ -175,6 +179,9 @@ export const tasks = pgTable('tasks', {
   index('tasks_user_priority_idx').on(table.userId, table.priority),
   index('tasks_user_due_date_idx').on(table.userId, table.dueDate),
   index('tasks_reminder_at_idx').on(table.reminderAt, table.reminderSent),
+  // El barrido de recordatorios recurrentes filtra por tarea viva y ordena por
+  // cuándo se avisó la última vez.
+  index('tasks_last_nudge_idx').on(table.archived, table.completed, table.lastNudgeAt),
   index('tasks_category_id_idx').on(table.categoryId),
   check(
     'tasks_title_length',
