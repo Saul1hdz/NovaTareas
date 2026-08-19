@@ -345,6 +345,13 @@ function switchTab(tab: 'login' | 'register' | 'recover') {
     if (form) form.classList.toggle('active', t === tab);
   });
 
+  // Al cambiar de pestaña, oculta el mensaje de verificación pendiente si estaba visible.
+  const pending = document.getElementById('register-pending');
+  if (pending) {
+    pending.classList.remove('active');
+    pending.style.display = 'none';
+  }
+
   const tabs = document.getElementById('main-tabs');
   if (tabs) tabs.style.display = tab === 'recover' ? 'none' : '';
 }
@@ -436,7 +443,12 @@ async function handleRegister(e: SubmitEvent) {
     if (data.ok && data.pending_verification) {
       // El registro exige confirmar el correo: ocultar formulario y avisar.
       form.style.display = 'none';
-      document.getElementById('register-pending').style.display = '';
+      form.classList.remove('active');
+      const pending = document.getElementById('register-pending');
+      if (pending) {
+        pending.classList.add('active');
+        pending.style.display = '';
+      }
       return;
     }
     if (data.ok) { window.location.href = nextDestination(); }
