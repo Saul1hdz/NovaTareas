@@ -40,7 +40,7 @@ function registerUser(email) {
     request: request('/api/register', 'POST', {
       full_name: 'Usuario Correo',
       email,
-      telefono: '+503****0000',
+      telefono: '+50361234567',
       password: 'Clave1234',
       user_type: 'estudiante',
       q1_index: 0,
