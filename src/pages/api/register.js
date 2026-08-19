@@ -8,6 +8,14 @@ import {
   getClientIp,
   safeErrorSummary,
 } from '../../lib/security.js';
+import {
+  createEmailVerificationToken,
+} from '../../lib/emailVerification.js';
+import {
+  emailVerificationRequired,
+  sendVerificationEmail,
+  smtpConfigured,
+} from '../../lib/mailer.js';
 
 const PHONE_REGEX = /^\+?[1-9]\d{6,14}$/;
 const PASSWORD_REGEX = /^(?=.*[a-zA-Z])(?=.*\d).{8,}$/;
@@ -128,6 +136,28 @@ export async function POST({ request }) {
     }, db);
 
     const token = await createToken(userId, username, 0);
+
+    // Política de verificación de correo: si está activa, la cuenta nace sin
+    // sesión y el usuario debe confirmar su correo antes de entrar.
+    if (emailVerificationRequired()) {
+      if (!smtpConfigured()) {
+        return json(
+          { error: 'El registro requiere verificación de correo, pero el envío SMTP no está configurado.' },
+          503
+        );
+      }
+      const verifyToken = await createEmailVerificationToken(db, userId);
+      const mail = await sendVerificationEmail({
+        to: normalizedEmail,
+        token: verifyToken,
+        name: full_name.trim(),
+      });
+      if (!mail.sent) {
+        return json({ error: 'No se pudo enviar el correo de verificación. Intenta nuevamente.' }, 502);
+      }
+      return json({ ok: true, pending_verification: true }, 201);
+    }
+
     return json(
       { ok: true },
       201,

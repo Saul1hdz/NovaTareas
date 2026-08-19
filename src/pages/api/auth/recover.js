@@ -9,6 +9,7 @@ import {
   resetRateLimit,
   safeEqualStrings,
 } from '../../../lib/security.js';
+import { sendPasswordResetEmail, smtpConfigured } from '../../../lib/mailer.js';
 
 const SECURITY_QUESTIONS = [
   '¿Cuál fue el nombre de tu primera mascota?',
@@ -200,6 +201,33 @@ export const POST = async ({ request }) => {
     `).run(hash, recoveredUserId);
 
     return json({ ok: true, message: 'Contraseña restablecida exitosamente.' }, 200);
+  }
+
+  if (action === 'request_email_reset') {
+    if (typeof email !== 'string' || !email || email.length > 254) {
+      return json({ error: 'Correo requerido.' }, 400);
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const ipLimit = await consumeRateLimit('recovery-email-ip', ip, 5, LOCK_WINDOW_MS);
+    if (!ipLimit.allowed) return rateLimitResponse(ipLimit.retryAfterSeconds);
+
+    // Respuesta genérica aunque el correo no exista, para no revelar cuentas.
+    if (!smtpConfigured()) {
+      return json({ ok: true, via_email: false }, 200);
+    }
+
+    const user = await db.prepare('SELECT id, full_name FROM users WHERE email = $1')
+      .get(normalizedEmail);
+    if (user) {
+      const token = await createRecoveryToken(db, user.id);
+      await sendPasswordResetEmail({
+        to: normalizedEmail,
+        token,
+        name: user.full_name,
+      });
+    }
+    return json({ ok: true, via_email: true }, 200);
   }
 
   return json({ error: 'Acción no válida.' }, 400);

@@ -101,18 +101,29 @@ if (user) return Astro.redirect('/dashboard');
         <button type="submit" class="btn-primary">Crear cuenta →</button>
       </form>
 
+      <!-- Mensaje cuando el registro exige verificación de correo -->
+      <div id="register-pending" class="auth-form" style="display:none">
+        <div class="verify-box">
+          <div class="verify-icon">📬</div>
+          <h3>Revisa tu correo</h3>
+          <p id="register-pending-text">Te enviamos un enlace de confirmación. Ábrelo para activar tu cuenta y poder iniciar sesión.</p>
+          <button type="button" class="btn-primary" onclick="switchTab('login')">Ir a iniciar sesión</button>
+        </div>
+      </div>
+
       <!-- ══ RECUPERAR CONTRASEÑA ══ -->
       <div id="form-recover" class="auth-form">
 
         <!-- Paso 1: ingresar correo -->
         <div id="recover-step-email">
-          <p class="recover-info">Ingresa tu correo y responde tus preguntas de seguridad para restablecer tu contraseña.</p>
+          <p class="recover-info">Ingresa tu correo para restablecer tu contraseña.</p>
           <div class="field">
             <label>Correo electrónico</label>
             <input type="email" id="recover-email" placeholder="correo@ejemplo.com" required />
           </div>
           <div id="recover-error-email" class="error-msg"></div>
           <button class="btn-primary" onclick="startRecovery()">Continuar →</button>
+          <button type="button" class="btn-secondary" onclick="requestEmailReset()" style="margin-top:0.5rem">Enviar enlace por correo</button>
           <button type="button" class="btn-link" onclick="cancelRecovery()">← Volver al login</button>
         </div>
 
@@ -235,6 +246,21 @@ if (user) return Astro.redirect('/dashboard');
   cursor: pointer; transition: opacity 0.2s, transform 0.1s; margin-top: 0.25rem;
 }
 .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+.btn-secondary {
+  background: var(--bg3) !important; color: var(--text) !important;
+  border: 1px solid var(--border) !important; border-radius: 10px !important;
+  padding: 0.8rem !important; font-weight: 600; font-size: 0.95rem;
+  cursor: pointer; transition: opacity 0.2s; width: 100%;
+}
+.btn-secondary:hover { opacity: 0.85; }
+.verify-box {
+  background: var(--bg3); border: 1px solid var(--accent);
+  border-radius: 12px; padding: 1.25rem; text-align: center;
+  display: flex; flex-direction: column; gap: 0.75rem; align-items: center;
+}
+.verify-icon { font-size: 2rem; }
+.verify-box h3 { margin: 0; color: var(--text); }
+.verify-box p { margin: 0; font-size: 0.9rem; color: var(--text2); line-height: 1.5; }
 .btn-link {
   background: none !important; border: none !important;
   color: var(--accent) !important; font-size: 0.85rem;
@@ -407,6 +433,12 @@ async function handleRegister(e: SubmitEvent) {
       })
     });
     const data = await res.json();
+    if (data.ok && data.pending_verification) {
+      // El registro exige confirmar el correo: ocultar formulario y avisar.
+      form.style.display = 'none';
+      document.getElementById('register-pending').style.display = '';
+      return;
+    }
     if (data.ok) { window.location.href = nextDestination(); }
     else { err.textContent = data.error || 'Error al registrarse'; }
   } catch { err.textContent = 'Error de red'; }
@@ -456,6 +488,33 @@ async function startRecovery() {
   document.getElementById('recover-attempts').textContent = `Intentos restantes: ${data.attempts_left}`;
   document.getElementById('recover-step-email').style.display = 'none';
   document.getElementById('recover-step-question').style.display = '';
+}
+
+// Recuperación por correo: envía un enlace de un solo uso al buzón.
+async function requestEmailReset() {
+  const email = (document.getElementById('recover-email') as HTMLInputElement).value.trim();
+  const err = document.getElementById('recover-error-email');
+  err.textContent = '';
+  const btn = document.querySelector('#recover-step-email .btn-secondary') as HTMLButtonElement;
+
+  if (!email) { err.textContent = 'Ingresa tu correo.'; return; }
+  btn.disabled = true; btn.textContent = 'Enviando...';
+
+  try {
+    const res = await fetch('/api/auth/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'request_email_reset', email })
+    });
+    const data = await res.json();
+    if (!data.ok) { err.textContent = data.error || 'Error al enviar el enlace.'; return; }
+    if (data.via_email === false) {
+      err.textContent = 'El envío de correo no está configurado en este servidor.';
+      return;
+    }
+    err.textContent = '📬 Si existe una cuenta con ese correo, te enviamos un enlace de recuperación.';
+  } catch { err.textContent = 'Error de red'; }
+  btn.disabled = false; btn.textContent = 'Enviar enlace por correo';
 }
 
 async function checkAnswer() {
@@ -525,6 +584,7 @@ declare global {
   interface Window {
     switchTab: (tab: 'login' | 'register' | 'recover') => void;
     startRecovery: () => void;
+    requestEmailReset: () => void;
     checkAnswer: () => void;
     resetPassword: () => void;
     cancelRecovery: () => void;
@@ -537,11 +597,29 @@ window.switchTab = switchTab;
 document.getElementById('form-login')?.addEventListener('submit', handleLogin);
 document.getElementById('form-register')?.addEventListener('submit', handleRegister);
 window.startRecovery = startRecovery;
+window.requestEmailReset = requestEmailReset;
 window.checkAnswer = checkAnswer;
 window.resetPassword = resetPassword;
 window.cancelRecovery = cancelRecovery;
 window.filterQ1 = filterQ1;
 window.filterQ2 = filterQ2;
+
+// Enlace de recuperación por correo: salta directo al paso de nueva contraseña.
+(function initRecoveryToken() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('recovery_token');
+  if (!token) return;
+  recoverToken = token;
+  recoverEmail = '';
+  document.getElementById('recover-step-email').style.display = 'none';
+  document.getElementById('recover-step-question').style.display = 'none';
+  document.getElementById('recover-step-password').style.display = '';
+  switchTab('recover');
+  // Limpia el token de la URL sin recargar.
+  const url = new URL(window.location.href);
+  url.searchParams.delete('recovery_token');
+  history.replaceState(null, '', url.toString());
+})();
 
 populateQuestions();
 </script>
