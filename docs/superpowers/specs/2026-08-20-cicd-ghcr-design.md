@@ -81,9 +81,14 @@ artefacto de cobertura y `npm run build`. Mantiene el servicio PostgreSQL 16
 efímero y las variables de entorno ficticias.
 
 **Trabajo 2 — imagen.** Depende del anterior. Construye el target `runtime`,
-arranca el contenedor y espera respuesta de `/api/v1/health/ready` (el smoke que
-ya existe), pasa Trivy sobre esa misma imagen y, **solo si la rama es `main`**,
-la publica en GHCR. En cualquier otra rama hace todo menos publicar: así un PR
+**aplica las migraciones ejecutándolas desde la propia imagen**, arranca el
+contenedor y espera respuesta de `/api/v1/health/ready`, pasa Trivy sobre esa
+misma imagen y, **solo si la rama es `main`**, la publica en GHCR.
+
+Migrar desde dentro de la imagen es una mejora sobre el pipeline actual, que
+migra con el Node del runner: así nunca se comprobaba que la imagen publicada
+supiera migrar por su cuenta, que es exactamente lo que hace el servicio
+`migrate` de `compose.prod.yml` en producción. En cualquier otra rama hace todo menos publicar: así un PR
 informa de si la imagen sigue siendo desplegable sin ensuciar el registro.
 
 Construir una única vez es el motivo de que esto no sea un workflow aparte. Con
