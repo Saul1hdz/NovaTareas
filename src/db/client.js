@@ -4,6 +4,7 @@
 // esta carga no hace nada.
 import 'dotenv/config';
 import pg from 'pg';
+import { recordDbQuery } from '../lib/observability.js';
 
 // ─── Parseo de tipos ─────────────────────────────────────────────────────────
 //
@@ -35,7 +36,16 @@ class Database {
   }
 
   async query(text, values = []) {
-    return (this.client || this.pool).query(text, values);
+    // Toda consulta pasa por aquí, así que es el único punto donde hay que
+    // instrumentar para saber cuánto de una solicitud se va en PostgreSQL.
+    // Se mide el tiempo, no el SQL ni los parámetros: esos llevan datos del
+    // usuario y no deben acabar en un log.
+    const startedAt = performance.now();
+    try {
+      return await (this.client || this.pool).query(text, values);
+    } finally {
+      recordDbQuery(performance.now() - startedAt);
+    }
   }
 
   prepare(sql) {

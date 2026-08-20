@@ -51,6 +51,7 @@ Docente: Ing. Marco Arévalo Zambrano
 17. [Plan de mejora por semana](#17-plan-de-mejora-por-semana)
 18. [Documentación adicional](#18-documentación-adicional)
 19. [Stack tecnológico](#19-stack-tecnológico)
+20. [Observabilidad y medición de rendimiento](#20-observabilidad-y-medición-de-rendimiento)
 
 ---
 
@@ -783,23 +784,20 @@ Esto sí hay que pagarlo. Está ordenado por lo que más estorba hoy.
    datos ya se extrajo a `src/lib/dashboardStats.js`, pero el CSS y el JavaScript
    de cliente siguen dentro. Es el archivo donde más cuesta cambiar algo sin
    romper otra cosa.
-2. **No hay logging estructurado.** Las llamadas al modelo no registran qué
-   modelo se usó, cuántos tokens consumió ni cuánto tardó, así que no se puede
-   medir ni el coste ni la latencia.
-3. **El RAG está conectado solo a medias.** Los embeddings existen en la base de
+2. **El RAG está conectado solo a medias.** Los embeddings existen en la base de
    datos, pero no todas las rutas del código los consumen todavía.
-4. **La métrica de calidad recién empieza.** Ya se puede valorar cada
+3. **La métrica de calidad recién empieza.** Ya se puede valorar cada
    recomendación con 👍/👎 y esa valoración entra en el prompt siguiente, pero
    falta un informe que agregue los votos y diga si la calidad sube o baja.
-5. **Google Calendar está a medio camino.** Los archivos existen en
+4. **Google Calendar está a medio camino.** Los archivos existen en
    `/api/google/`, con OAuth y tokens cifrados probados, pero la integración aún
    no está conectada al dashboard.
-6. **La cobertura de pruebas todavía tiene huecos.** Las 185 pruebas ya cubren
+5. **La cobertura de pruebas todavía tiene huecos.** Las 185 pruebas ya cubren
    autenticación, correo, ownership, tareas, colaboración, migraciones, cifrado,
    recordatorios, cron, webhook, avatares, CSRF, proveedores de IA y las rutas
    principales de Google simuladas. Falta cubrir a fondo la conversación del bot
    y el RAG.
-7. **Todavía no hay despliegue público.** El proyecto corre en local; Netcup,
+6. **Todavía no hay despliegue público.** El proyecto corre en local; Netcup,
    dominio, HTTPS y operación continua quedan pendientes. El runbook ya está
    escrito en [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md).
 
@@ -823,6 +821,7 @@ semana viene en la sección 17.
 | Avisos de Telegram | Solo por eventos | Además recordatorios recurrentes según la prioridad, con horas de silencio |
 | Ejecución | Solo en local, a mano | Docker Compose para desarrollo y `compose.prod.yml` con runbook de despliegue |
 | Seguridad | Avisos de dependencias sin resolver | `npm audit` limpio, CSRF detrás de proxy, tokens de Google cifrados |
+| Observabilidad | Sin logs ni forma de medir | Un evento JSON por solicitud con `request_id`, estado y duración, más p50 / p95 / máximo y tasa de error medidos (sección 20) |
 
 ---
 
@@ -885,6 +884,11 @@ semana viene en la sección 17.
   de tarea de una sola superficie en vez de tres marcos anidados, y la
   recomendación de la IA plegable con una flecha (en móvil nace plegada, porque
   era el bloque que empujaba todo fuera de pantalla).
+- ✅ **Observabilidad, línea base de rendimiento y plan de escalabilidad**:
+  correlación por solicitud, duración y versión en cada evento, medición
+  repetible con p50 / p95 / máximo y tasa de error, cuello de botella
+  identificado y plan de crecimiento
+  ([`docs/OBSERVABILIDAD_SEMANA_5.md`](docs/OBSERVABILIDAD_SEMANA_5.md)).
 - ⬜ Asignar tareas a miembros del equipo.
 - ⬜ Avisar por Telegram cuando alguien modifica una tarea asignada.
 - ⬜ Limpiar código muerto: los módulos de Supabase sin uso y los scripts de
@@ -962,6 +966,68 @@ Si necesitas entrar en detalle, cada documento cubre una parte distinta:
 | CI/CD | GitHub Actions |
 | Runtime | Node.js 22.12 o posterior, dentro de la línea 22 |
 | Contenedores | Docker Compose (web, migraciones, PostgreSQL, bot y planificador) |
+
+---
+
+## 20. Observabilidad y medición de rendimiento
+
+Cada solicitud emite **un evento JSON** por línea en la salida del contenedor,
+con identificador de correlación, ruta, estado, duración, coste de PostgreSQL y
+—cuando interviene— el componente de IA que respondió.
+
+```json
+{"ts":"2026-08-14T02:52:35.328Z","level":"info","event":"http_request",
+ "request_id":"a361aae4-3edf-4469-94d3-bcb645de4800","method":"GET",
+ "route":"/api/tasks","status":200,"outcome":"success","duration_ms":24,
+ "app_version":"dev","db_queries":2,"db_duration_ms":18.93}
+```
+
+El mismo `request_id` viaja al cliente en la cabecera `x-request-id`, así que un
+fallo reportado se localiza en el log sin buscar por hora.
+
+Los campos publicables son una lista blanca en `src/lib/observability.js`: nunca
+salen cuerpos, cabeceras, contraseñas, correos ni el *query string*. Las rutas se
+normalizan (`/api/tasks/:id`, `/unirse/:token`) para no filtrar identificadores
+ni tokens. `tests/observability.test.js` lo verifica.
+
+### Ver los eventos
+
+```bash
+docker compose -f compose.dev.yml logs web | grep http_request
+```
+
+### Medir el rendimiento
+
+`scripts/measure-endpoint.mjs` ejecuta un escenario repetible y publica p50, p95,
+máximo y tasa de error. Exige un mínimo de 20 solicitudes.
+
+```bash
+# Flujo crítico: listado de tareas del dashboard (necesita sesión)
+MEASURE_USER_EMAIL=ana.demo@example.test MEASURE_USER_PASSWORD=tu-clave \
+  node scripts/measure-endpoint.mjs --scenario=tasks --requests=30
+
+# Bajo carga
+node scripts/measure-endpoint.mjs --scenario=tasks --requests=40 --concurrency=8
+
+# Control sin base de datos ni sesión
+node scripts/measure-endpoint.mjs --scenario=health --requests=40
+
+# API pública de IA (requiere AI_API_KEY)
+node scripts/measure-endpoint.mjs --scenario=recommend --requests=30
+```
+
+| Opción | Por defecto | Para qué |
+|---|---|---|
+| `--scenario` | `recommend` | `recommend`, `recommend-invalid`, `tasks`, `health` |
+| `--requests` | 30 | Tamaño de la muestra (mínimo 20) |
+| `--concurrency` | 1 | Solicitudes simultáneas |
+| `--warmup` | 3 | Solicitudes descartadas antes de medir |
+| `--url` | `http://127.0.0.1:4321` | Destino |
+| `--out` | `docs/mediciones` | Carpeta de resultados |
+
+Cada ejecución guarda el detalle en `docs/mediciones/`. El análisis completo —
+línea base, cuello de botella, mejora aplicada y plan de escalabilidad— está en
+[`docs/OBSERVABILIDAD_SEMANA_5.md`](docs/OBSERVABILIDAD_SEMANA_5.md).
 
 ---
 

@@ -4,6 +4,17 @@ import { notifyTaskCreated, notifyTaskUrgent } from '../../lib/telegramNotify.js
 import { validateTaskInput } from '../../lib/taskValidation.js';
 import { defaultReminderFor } from '../../lib/appTime.js';
 import { safeErrorSummary } from '../../lib/security.js';
+import { annotate } from '../../lib/observability.js';
+
+/**
+ * Rechazo controlado: además de la respuesta, deja en el evento el tipo de
+ * fallo. Sin esto un 400 en el log es indistinguible de otro y no se puede
+ * contar cuántos vienen de un filtro mal formado.
+ */
+function rejected(errorType, message, status) {
+  annotate({ error_type: errorType });
+  return json({ error: message }, status);
+}
 
 export const GET = async ({ request }) => {
   const user = await getUser(request);
@@ -18,17 +29,17 @@ export const GET = async ({ request }) => {
   const to       = url.searchParams.get('to')       || '';
   const archived = url.searchParams.get('archived') === '1';
   if (search.length > 200 || label.length > 80) {
-    return json({ error: 'Filtro demasiado largo' }, 400);
+    return rejected('filtro_demasiado_largo', 'Filtro demasiado largo', 400);
   }
   if (priority && !['baja', 'media', 'alta', 'urgente'].includes(priority)) {
-    return json({ error: 'Prioridad inválida' }, 400);
+    return rejected('prioridad_invalida', 'Prioridad inválida', 400);
   }
   for (const value of [date, from, to].filter(Boolean)) {
     const validation = validateTaskInput({ title: 'filtro', due_date: value });
-    if (validation.error) return json({ error: validation.error }, 400);
+    if (validation.error) return rejected('fecha_invalida', validation.error, 400);
   }
   if (from && to && from > to) {
-    return json({ error: 'Rango de fechas inválido' }, 400);
+    return rejected('rango_de_fechas_invalido', 'Rango de fechas inválido', 400);
   }
 
   const db = getDb();
@@ -114,10 +125,10 @@ export const POST = async ({ request }) => {
   try {
     body = await request.json();
   } catch {
-    return json({ error: 'JSON inválido' }, 400);
+    return rejected('json_invalido', 'JSON inválido', 400);
   }
   const validation = validateTaskInput(body);
-  if (validation.error) return json({ error: validation.error }, 400);
+  if (validation.error) return rejected('validacion_entrada', validation.error, 400);
   const {
     title,
     description = '',
