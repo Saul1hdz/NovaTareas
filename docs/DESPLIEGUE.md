@@ -39,6 +39,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 | `POSTGRES_PASSWORD` | El compose se niega a iniciar. |
 | `DATABASE_URL` | La define `compose.prod.yml` a partir de `POSTGRES_PASSWORD`. |
 | `CRON_SECRET` | El endpoint de recordatorios responde 503 y no se envía ningún aviso. |
+| `NOVATAREAS_TAG` | El compose **aborta**: es la etiqueta de la imagen a desplegar y no tiene valor por defecto. Usa siempre `sha-<commit-corto>`, nunca `latest`. |
 
 El registro público está cerrado por defecto. Define
 `REGISTRATION_ENABLED=true` solo si deseas aceptar cuentas nuevas; el endpoint
@@ -72,8 +73,13 @@ cp .env.example .env
 
 ```bash
 export NOVATAREAS_TAG=sha-<commit-corto>
-docker compose -f compose.prod.yml up -d web
+docker compose -f compose.prod.yml -f compose.server.yml up -d web
 ```
+
+**`compose.server.yml` no es opcional.** Vive solo en el servidor y aporta los
+límites de memoria y CPU, `no-new-privileges` y la configuración de registro;
+un servicio arrancado sin él queda sin ninguna de esas protecciones. Ver la
+sección 10.
 
 Ese comando, en orden: levanta PostgreSQL, espera a que esté sano, ejecuta las
 migraciones en un contenedor de un solo uso con la imagen publicada y solo
@@ -230,9 +236,10 @@ curl -fsS https://novatareas.polarzero.dev/api/v1/health/ready
 ```
 
 **`NOVATAREAS_TAG` debe estar definida** y valer `sha-<commit-corto>` en todas
-esas llamadas. Su valor por defecto es `latest`, que se mueve con cada push a
-`main`: sin fijarla, la migración podría aplicarse con una imagen y el servicio
-arrancar con otra. El helper la exporta y aborta si no coincide.
+esas llamadas. No tiene valor por defecto: el compose aborta si falta, en vez de
+caer a `latest`, que se mueve con cada push a `main` y haría que la migración se
+aplicara con una imagen y el servicio arrancara con otra. El helper la exporta y
+aborta si no coincide.
 
 `compose.server.yml` vive solo en el servidor y aporta los límites de memoria y
 CPU, `no-new-privileges` y la configuración de registro. **No está en el
@@ -270,6 +277,10 @@ Para retrocesos manuales, las copias de cada versión quedan en
 > **El VPS es compartido.** Nunca ejecutes `docker system prune` ni
 > `docker image prune -a`: se llevarían imágenes y volúmenes de otros
 > servicios, incluidas las imágenes de rollback de NovaTareas.
+>
+> `NOVATAREAS_TAG` hace falta incluso para `ps` y `logs`: compose interpola el
+> fichero entero antes de ejecutar cualquier subcomando. Basta con que esté en
+> el `.env` del directorio del stack, que es donde debe vivir.
 
 ```bash
 docker compose -f compose.prod.yml ps

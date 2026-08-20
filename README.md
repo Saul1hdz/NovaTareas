@@ -679,7 +679,7 @@ novatareas-pro/
 ├── migrations/postgresql/   # migraciones versionadas generadas con Drizzle
 ├── scripts/                 # migrar, verificar, sembrar y smoke test
 ├── compose.dev.yml          # web, migraciones, PostgreSQL y perfiles del bot
-├── compose.prod.yml         # despliegue: target runtime, sin puertos abiertos
+├── compose.prod.yml         # despliegue: consume la imagen de GHCR, no construye
 ├── Dockerfile               # targets development y runtime, sobre Node 22
 ├── data/tareas_ejemplo.csv
 ├── api.md                   # contratos de la API
@@ -948,15 +948,20 @@ prompt, migraciones, imagen y conjunto de pruebas— está declarado en
 ### Volver atrás
 
 ```bash
-git checkout v1.0.0
-docker compose -f compose.prod.yml up -d --build web
+sudo /usr/local/sbin/novatareas-release deploy-<sha40-anterior>
 ```
+
+Producción ya no construye nada: despliega la imagen que CI publicó, y volver
+atrás es volver a desplegar la imagen anterior, que sigue en la caché local del
+servidor. Por eso el retroceso no depende de que GHCR esté disponible. Las
+copias de cada versión quedan en
+`/opt/stacks/novatareas/backups/releases/<marca>-<sha>/`.
 
 Con una advertencia que conviene no aprender por las malas: **volver el código no
 revierte las migraciones**. Si la versión nueva tocó el esquema, primero se
 restaura la copia de `pg_dump` anterior a la migración y después se despliega la
-versión vieja. El procedimiento completo está en
-[`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md), sección 9.
+versión vieja; el helper distingue los dos casos por su cuenta. El procedimiento
+completo está en [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md), sección 9.
 
 ### En local
 

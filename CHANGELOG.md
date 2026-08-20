@@ -115,9 +115,11 @@ El detalle está en el README (sección 15) y en
 ### Volver a esta versión
 
 ```bash
-git checkout v1.0.0
-docker compose -f compose.prod.yml up -d --build web
+sudo /usr/local/sbin/novatareas-release deploy-<sha40-de-esta-version>
 ```
+
+Producción no construye: despliega la imagen que CI publicó en GHCR, así que
+volver a una versión es volver a desplegar su imagen.
 
 Con una advertencia: **volver el código no revierte el esquema**. Si una versión
 posterior aplicó migraciones, primero se restaura la copia de `pg_dump` previa.

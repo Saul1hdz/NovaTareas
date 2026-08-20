@@ -229,6 +229,10 @@ verificacion:
       - build del proyecto
       - construcción de la imagen de producción
       - arranque real de la imagen y curl a /api/v1/health/ready
+      - escaneo de vulnerabilidades de la imagen con Trivy (HIGH y CRITICAL)
+      - npm audit, Gitleaks sobre el historial y análisis con CodeQL
+      - publicación en ghcr.io/saul1hdz/novatareas, solo desde main y solo
+        después de que pasen las pruebas y las guardias de seguridad
   manual_tras_publicar: docs/DESPLIEGUE.md (sección 12, siete comprobaciones)
   comandos_rapidos:
     - curl https://novatareas.polarzero.dev/api/v1/health/ready
@@ -238,8 +242,11 @@ verificacion:
 rollback:
   procedimiento: docs/DESPLIEGUE.md (sección 9)
   comandos:
-    - git checkout v1.0.0
-    - docker compose -f compose.prod.yml up -d --build web
+    - sudo /usr/local/sbin/novatareas-release deploy-<sha40-anterior>
+  nota: >-
+    Producción no construye: despliega la imagen publicada en GHCR. Volver
+    atrás es volver a desplegar la imagen anterior, que sigue en la caché local
+    del servidor, así que no depende de que el registro esté disponible.
   version_anterior: null   # 1.0.0 es la primera etiquetada
   limite: >-
     Si la versión aplicó migraciones, restaurar antes la copia de pg_dump previa.
