@@ -143,6 +143,35 @@ El endpoint es idempotente: cada tarea se avisa una sola vez gracias a los
 indicadores `reminder_sent` y `overdue_notified`. Ejecutarlo de más no duplica
 mensajes.
 
+### 5.1 Comprobar que el cron existe de verdad
+
+Esta línea de cron estuvo **meses documentada aquí y sin instalar** en el
+servidor, y nadie se enteró: los recordatorios no salieron nunca y la aplicación
+estuvo en verde todo ese tiempo, porque un trabajo programado muerto no produce
+errores, produce silencio.
+
+`GET /api/v1/health/jobs` convierte ese silencio en una señal. Publica cuándo
+corrió por última vez cada trabajo y responde **503** si alguno lleva más de 45
+minutos sin hacerlo —tres ciclos perdidos— o si **no se ha ejecutado nunca**:
+
+```bash
+curl -fsS https://novatareas.ejemplo.test/api/v1/health/jobs
+```
+
+Con el cron recién instalado y antes del primer barrido la respuesta es `503`
+con `"stale": true` y `"last_run_at": null`. Debe pasar a `200` como muy tarde
+15 minutos después; si no, el cron no está corriendo.
+
+**El aviso lo da un vigilante externo a este servidor**, no la aplicación: quien
+avisa no puede ser quien está caído. Basta una entrada de cron en otra máquina
+que llame a la ruta con `curl -f` y notifique cuando el código no sea 0. Igual
+que el resto de sondas, tiene que usar `curl`: ver el aviso sobre Cloudflare al
+final de este documento.
+
+La ruta **no** entra en el `HEALTHCHECK` del contenedor ni en el balanceador: un
+cron parado no es motivo para sacar la web de servicio. Para eso está
+`/api/v1/health/ready`, que sigue mirando solo la base de datos.
+
 ## 6. Bot de Telegram
 
 ```bash
@@ -355,3 +384,6 @@ Recorre esta lista tras cada publicación:
 5. Se sube un avatar y **sigue visible tras reiniciar el contenedor**.
 6. El cron de recordatorios responde 200 con el `CRON_SECRET` y 401 sin él.
 7. `docker compose -f compose.prod.yml ps` no muestra reinicios en bucle.
+8. `/api/v1/health/jobs` responde 200 (sección 5.1). Que el endpoint del punto 6
+   conteste solo dice que *puede* ejecutarse; este dice que *se está*
+   ejecutando, que es la pregunta que nadie hizo durante meses.

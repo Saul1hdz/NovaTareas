@@ -481,6 +481,35 @@ export const telegramSessions = pgTable('telegram_sessions', {
   index('telegram_sessions_expiry_idx').on(table.expiresAt),
 ]);
 
+/**
+ * Última ejecución de cada trabajo programado.
+ *
+ * Nace de un fallo real: el cron que llama a `/api/cron/reminders` nunca se
+ * instaló en el servidor y los recordatorios de Telegram estuvieron meses sin
+ * ejecutarse sin que nada avisara. `/api/v1/health/ready` respondía 200 todo
+ * ese tiempo porque comprueba que el servicio responde, no que haga su trabajo.
+ *
+ * Una fila por trabajo, sobrescrita en cada barrido: no es un historial, es la
+ * marca que permite a `/api/v1/health/jobs` distinguir "trabajando" de
+ * "callado". El silencio no dispara nada por sí solo; esta tabla lo convierte
+ * en una fecha que envejece.
+ */
+export const jobRuns = pgTable('job_runs', {
+  job: varchar('job', { length: 60 }).primaryKey(),
+  lastRunAt: timestamp('last_run_at', { withTimezone: true }).notNull().defaultNow(),
+  // Un barrido que revienta también deja marca. Si solo se registrara el éxito,
+  // un cron que falla siempre se vería igual que uno que no existe.
+  lastOk: boolean('last_ok').notNull(),
+  // Los contadores del barrido. `jsonb` como en `task_recommendations`: el
+  // resumen cambia cuando cambia el trabajo y no merece una columna por dato.
+  lastSummary: jsonb('last_summary').notNull().default(sql`'{}'::jsonb`),
+}, (table) => [
+  check(
+    'job_runs_job_length',
+    sql`char_length(btrim(${table.job})) BETWEEN 1 AND 60`,
+  ),
+]);
+
 export const postgresSchema = {
   users,
   securityQuestions,
@@ -498,4 +527,5 @@ export const postgresSchema = {
   rateLimitHits,
   recoveryTokens,
   telegramSessions,
+  jobRuns,
 };

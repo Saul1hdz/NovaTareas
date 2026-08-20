@@ -41,7 +41,7 @@ codigo:
 api:
   version_contrato: "1.0.0"  # la publica el propio servicio en /api/v1/metadata
   documentacion: api.md
-  documentacion_sha256_prefijo: d6cfb45d6b6eda00
+  documentacion_sha256_prefijo: f2baeebbad23174c
   autenticacion_externa: "Authorization: Bearer <AI_API_KEY>"
   endpoints_publicos:
     - metodo: GET
@@ -55,6 +55,14 @@ api:
       ruta: /api/v1/health/ready
       autenticacion: ninguna
       nota: Sonda de despliegue; consulta la base de datos, no solo el proceso.
+    - metodo: GET
+      ruta: /api/v1/health/jobs
+      autenticacion: ninguna
+      nota: >-
+        Sonda de los trabajos programados: 503 si alguno lleva más de 45 minutos
+        sin ejecutarse, y también si no se ha ejecutado nunca. Deliberadamente
+        fuera del healthcheck del contenedor: un cron parado no debe sacar la
+        web del balanceador.
     - metodo: GET
       ruta: /api/v1/metadata
       autenticacion: ninguna
@@ -132,12 +140,12 @@ datos:
   orm: "Drizzle ORM 0.45.2 (migraciones con drizzle-kit)"
   migraciones:
     directorio: migrations/postgresql/
-    total: 7
-    ultima: 0006_sad_infant_terrible.sql
-    ultima_sha256_prefijo: 2e330ebf9aa5c6d9
+    total: 8
+    ultima: 0007_mean_black_widow.sql
+    ultima_sha256_prefijo: 747fd1aed8b749bc
     idempotentes: true
     registro: tabla drizzle.__drizzle_migrations
-  tablas: 17
+  tablas: 18
   datos_cifrados:
     - "Tokens de Google (AES-256-GCM); el esquema rechaza guardarlos en claro"
   datos_en_claro:
@@ -187,8 +195,8 @@ ambiente:
 # ── CONJUNTO DE PRUEBAS ───────────────────────────────────────────────────────
 pruebas:
   runner: "Vitest 4.1.10"
-  archivos: 30
-  casos: 202
+  archivos: 31
+  casos: 211
   motor_de_pruebas: PostgreSQL 16 real
   aislamiento: >-
     TEST_DATABASE_URL debe terminar en `_test`; la suite recrea el esquema
@@ -225,7 +233,7 @@ verificacion:
       - astro check
       - migración sobre PostgreSQL 16 efímero
       - comprobación transaccional
-      - 202 pruebas con cobertura
+      - 211 pruebas con cobertura
       - build del proyecto
       - construcción de la imagen de producción
       - arranque real de la imagen y curl a /api/v1/health/ready
