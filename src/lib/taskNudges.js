@@ -123,3 +123,62 @@ export async function markNudgeSent(db, taskId) {
     'UPDATE tasks SET last_nudge_at = CURRENT_TIMESTAMP WHERE id = $1'
   ).run(taskId);
 }
+
+/** Reclama una tarea atómicamente antes de llamar a Telegram. */
+export async function claimTaskNudge(db, taskId, expectedChatId) {
+  const horas = nudgeHours();
+  return db.prepare(`
+    WITH candidate AS (
+      SELECT t.id, t.last_nudge_at AS previous_nudge_at
+      FROM tasks t
+      JOIN users u ON u.id = t.user_id
+      WHERE t.id = $1
+        AND u.telegram_chat_id = $2
+        AND u.telegram_chat_id IS NOT NULL
+        AND NOT t.archived
+        AND NOT t.completed
+        AND COALESCE(t.last_nudge_at, t.created_at) <= CURRENT_TIMESTAMP - (
+          CASE t.priority
+            WHEN 'urgente' THEN $3::int
+            WHEN 'alta'    THEN $4::int
+            WHEN 'media'   THEN $5::int
+            ELSE                $6::int
+          END * INTERVAL '1 hour'
+        )
+      FOR UPDATE OF t
+    ), updated AS (
+      UPDATE tasks t
+      -- pg convierte TIMESTAMPTZ a Date de JavaScript con precisión de
+      -- milisegundos. Guardar con la misma precisión permite liberar luego
+      -- exactamente esta reserva sin tocar una reserva más nueva.
+      SET last_nudge_at = date_trunc('milliseconds', CURRENT_TIMESTAMP)
+      FROM candidate c
+      WHERE t.id = c.id
+      RETURNING t.id AS task_id, t.title, t.priority, t.due_date,
+                t.last_nudge_at AS claimed_at, c.previous_nudge_at,
+                t.user_id
+    )
+    SELECT updated.*, u.telegram_chat_id
+    FROM updated
+    JOIN users u ON u.id = updated.user_id
+    WHERE u.telegram_chat_id = $2
+  `).get(
+    taskId,
+    expectedChatId,
+    horas.urgente,
+    horas.alta,
+    horas.media,
+    horas.baja
+  );
+}
+
+/** Libera únicamente nuestra reserva si el envío no se confirmó. */
+export async function releaseTaskNudgeClaim(db, claim) {
+  if (!claim) return;
+  await db.prepare(`
+    UPDATE tasks
+    SET last_nudge_at = $2
+    WHERE id = $1
+      AND last_nudge_at = $3
+  `).run(claim.task_id, claim.previous_nudge_at, claim.claimed_at);
+}
