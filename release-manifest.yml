@@ -1,0 +1,256 @@
+# Manifiesto de release — NovaTareas Pro
+#
+# Qué se publicó exactamente: código, contrato de API, modelos, prompt, datos,
+# imagen y conjunto de pruebas. Existe para responder tres preguntas cuando algo
+# se tuerce: qué está corriendo ahí fuera, con qué se probó, y a qué se vuelve.
+#
+# Cómo mantenerlo: se actualiza en el mismo commit que crea la etiqueta, nunca
+# después. Un manifiesto que se rellena a posteriori describe lo que creíamos
+# haber publicado, no lo que publicamos.
+
+release:
+  version: "1.0.0"
+  tag: v1.0.0
+  fecha: "2026-08-19"
+  estado: en produccion
+  url_publica: https://novatareas.polarzero.dev
+  repositorio: https://github.com/Saul1hdz/NovaTareas
+
+# ── CÓDIGO ────────────────────────────────────────────────────────────────────
+codigo:
+  rama: main
+  etiqueta: v1.0.0
+  # El commit exacto se obtiene con: git rev-list -n 1 v1.0.0
+  runtime:
+    node: "22.23.1"          # fijado en el Dockerfile
+    node_soportado: ">=22.12.0 <23.0.0"
+    framework: "Astro 7.1.3 (SSR con @astrojs/node, modo standalone)"
+  procesos:
+    - nombre: web
+      comando: node dist/server/entry.mjs
+      escalable: true        # no guarda estado en memoria
+    - nombre: bot
+      comando: node telegram/bot.js
+      perfil: telegram       # opcional
+      escalable: false       # polling: dos procesos se roban los mensajes
+    - nombre: migrate
+      comando: npm run db:pg:migrate
+      naturaleza: se ejecuta y termina
+
+# ── API ───────────────────────────────────────────────────────────────────────
+api:
+  version_contrato: "1.0.0"  # la publica el propio servicio en /api/v1/metadata
+  documentacion: api.md
+  documentacion_sha256_prefijo: d6cfb45d6b6eda00
+  autenticacion_externa: "Authorization: Bearer <AI_API_KEY>"
+  endpoints_publicos:
+    - metodo: GET
+      ruta: /api/v1/health
+      autenticacion: ninguna
+      nota: >-
+        Devuelve 200 aunque z.ai y Ollama estén caídos: el respaldo de reglas
+        locales garantiza respuesta. Un 503 aquí sería algo peor que quedarse
+        sin cuota.
+    - metodo: GET
+      ruta: /api/v1/health/ready
+      autenticacion: ninguna
+      nota: Sonda de despliegue; consulta la base de datos, no solo el proceso.
+    - metodo: GET
+      ruta: /api/v1/metadata
+      autenticacion: ninguna
+      nota: Publica el contrato de entrada y salida y la versión en curso.
+    - metodo: POST
+      ruta: /api/v1/recommend
+      autenticacion: Bearer AI_API_KEY
+  contrato_entrada:
+    titulo: "string, obligatorio, máx 200 caracteres"
+    descripcion: "string, opcional, máx 1000 caracteres"
+    prioridad: "baja | media | alta | urgente (por defecto media)"
+    tipo_usuario: "comun | estudiante | empleado (por defecto comun)"
+    fecha_limite: "string opcional, formato YYYY-MM-DD"
+  contrato_salida:
+    recomendacion: "string — el texto generado"
+    fuente: "zai | ollama | rules — qué motor lo produjo"
+    tarea: "object — eco de los datos normalizados de entrada"
+  compatibilidad: >-
+    Primera versión publicada; no hay versiones anteriores que romper. Un cambio
+    incompatible en el contrato exige subir a /api/v2 y mantener v1 mientras haya
+    clientes.
+
+# ── MODELO ────────────────────────────────────────────────────────────────────
+# El servicio no entrena ni aloja modelos: los consume. Lo que se fija aquí es
+# qué modelo se llamó y en qué orden entran los respaldos.
+modelo:
+  primario:
+    proveedor: z.ai
+    modelo: glm-4.5-flash    # configurable con ZAI_MODEL
+    hospedaje: externo
+  cascada_de_respaldo:
+    - orden: 1
+      fuente: zai
+      modelo: glm-4.5-flash
+    - orden: 2
+      fuente: ollama
+      modelo: "llama3.2:3b"  # configurable con OLLAMA_MODEL
+      estado_en_produccion: no configurado
+    - orden: 3
+      fuente: history
+      tecnica: recuperación semántica sobre tareas archivadas del usuario
+    - orden: 4
+      fuente: rules
+      tecnica: heurísticas locales deterministas, sin red
+  embeddings:
+    modelo: nomic-embed-text   # OLLAMA_EMB_MODEL
+    estado: parcial            # los vectores existen; no todas las rutas los usan
+  trazabilidad: >-
+    Cada recomendación guarda de qué fuente salió, así que una caída de calidad
+    se puede atribuir al escalón que la produjo y no al sistema entero.
+
+# ── PROMPT ────────────────────────────────────────────────────────────────────
+prompt:
+  version: recommend-v1        # PROMPT_VERSION en src/lib/aiEngine.js
+  plantilla: "src/lib/aiEngine.js → buildPrompt()"
+  archivo_sha256_prefijo: e5f0526fc4beb798
+  idioma: es
+  variantes_por_tipo_de_usuario: [comun, estudiante, empleado]
+  entradas_del_contexto:
+    - datos normalizados de la tarea
+    - evidencia opcional recuperada del historial (RAG)
+    - valoración previa del usuario sobre recomendaciones anteriores
+  garantias_probadas:
+    - "No inventa antecedentes cuando no hay historial (tests/aiPrompt.test.js)"
+    - "Trata el RAG como evidencia opcional, no obligatoria (tests/aiPrompt.test.js)"
+  nota: >-
+    La versión se registra en cada evento del log (ai_prompt_version). Sin eso,
+    comparar dos mediciones separadas por un cambio de prompt sería comparar
+    cosas distintas sin saberlo.
+
+# ── DATOS ─────────────────────────────────────────────────────────────────────
+datos:
+  motor: PostgreSQL 16
+  motor_unico: true            # SQLite retirado; tests/noSqliteDialect.test.js lo impide
+  orm: "Drizzle ORM 0.45.2 (migraciones con drizzle-kit)"
+  migraciones:
+    directorio: migrations/postgresql/
+    total: 7
+    ultima: 0006_sad_infant_terrible.sql
+    ultima_sha256_prefijo: 2e330ebf9aa5c6d9
+    idempotentes: true
+    registro: tabla drizzle.__drizzle_migrations
+  tablas: 17
+  datos_cifrados:
+    - "Tokens de Google (AES-256-GCM); el esquema rechaza guardarlos en claro"
+  datos_en_claro:
+    - "Contenido de tareas y comentarios"   # límite declarado en docs/SEGURIDAD.md
+  respaldo:
+    metodo: pg_dump
+    procedimiento: docs/DESPLIEGUE.md
+  advertencia_rollback: >-
+    Volver el código NO revierte el esquema. Si la versión aplicó migraciones,
+    primero se restaura la copia previa y después se despliega la versión
+    anterior.
+
+# ── IMAGEN Y AMBIENTE ─────────────────────────────────────────────────────────
+imagen:
+  dockerfile: Dockerfile
+  base: node:22.23.1-bookworm-slim
+  targets:
+    - development   # servidor de desarrollo
+    - build         # compilación
+    - runtime       # el que se despliega
+  target_publicado: runtime
+  construccion_verificada_en_ci: true   # se construye y se arranca en cada push
+
+ambiente:
+  manifiesto: compose.prod.yml
+  servicios: [db, migrate, web, bot]
+  imagen_base_datos: postgres:16-alpine
+  volumenes: [novatareas_prod_pgdata, novatareas_prod_avatars]
+  puertos_publicados:
+    web: detrás de proxy inverso con HTTPS
+    db: ninguno            # solo accesible desde la red interna de Docker
+  sondas:
+    web: /api/v1/health/ready
+    bot: deshabilitada     # el healthcheck consulta la web, no un proceso de polling
+  variables_obligatorias: [DATABASE_URL, SECRET_KEY]
+  variables_por_funcion:
+    correo: [SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, PUBLIC_APP_URL, EMAIL_VERIFICATION_REQUIRED]
+    ia: [ZAI_API_KEY, ZAI_MODEL, AI_API_KEY, AI_RATE_LIMIT_MAX, AI_RATE_LIMIT_WINDOW]
+    telegram: [TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, TASK_NUDGES_ENABLED]
+    google: [GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, TOKEN_ENCRYPTION_KEY]
+    cron: [CRON_SECRET]
+    observabilidad: [APP_VERSION]
+  nota_version: >-
+    APP_VERSION viaja en cada evento del log. En despliegue conviene fijarlo al
+    SHA corto del commit para poder atribuir un problema a una versión concreta.
+
+# ── CONJUNTO DE PRUEBAS ───────────────────────────────────────────────────────
+pruebas:
+  runner: "Vitest 4.1.10"
+  archivos: 30
+  casos: 202
+  motor_de_pruebas: PostgreSQL 16 real
+  aislamiento: >-
+    TEST_DATABASE_URL debe terminar en `_test`; la suite recrea el esquema
+    completo en cada ejecución y se niega a apuntar a otra base.
+  servicios_externos: simulados   # z.ai vacío y Ollama a un puerto cerrado
+  cobertura:
+    se_genera: true
+    artefacto_ci: cobertura-vitest (14 días)
+    umbral_exigido: null          # se mide, no se exige
+  areas_cubiertas:
+    - autenticación, verificación de correo y recuperación
+    - autorización, ownership y niveles del modo colaborativo
+    - protección CSRF, incluida la de detrás de un proxy HTTPS
+    - cascada de IA, prompt, cuotas, recomendaciones y valoración
+    - API pública v1 y sus errores controlados
+    - integraciones: Google simulado, webhook de Telegram, cron
+    - recordatorios por vencimiento y recurrentes por prioridad
+    - observabilidad: lista blanca de campos y normalización de rutas
+    - esquema, migraciones y cifrado de tokens
+  areas_no_cubiertas:
+    - conversación completa del bot de Telegram
+    - RAG de extremo a extremo
+    - flujo visual del dashboard en navegador
+  conocidas_inestables:
+    - archivo: tests/telegramSessions.test.js
+      causa: desfase de reloj entre el contenedor de PostgreSQL y el host
+      efecto: fallo intermitente, pasa al repetir
+
+# ── VERIFICACIÓN DEL RELEASE ──────────────────────────────────────────────────
+verificacion:
+  automatica:
+    workflow: .github/workflows/ci.yml
+    pasos:
+      - astro check
+      - migración sobre PostgreSQL 16 efímero
+      - comprobación transaccional
+      - 202 pruebas con cobertura
+      - build del proyecto
+      - construcción de la imagen de producción
+      - arranque real de la imagen y curl a /api/v1/health/ready
+  manual_tras_publicar: docs/DESPLIEGUE.md (sección 12, siete comprobaciones)
+  comandos_rapidos:
+    - curl https://novatareas.polarzero.dev/api/v1/health/ready
+    - curl https://novatareas.polarzero.dev/api/v1/metadata
+
+# ── VUELTA ATRÁS ──────────────────────────────────────────────────────────────
+rollback:
+  procedimiento: docs/DESPLIEGUE.md (sección 9)
+  comandos:
+    - git checkout v1.0.0
+    - docker compose -f compose.prod.yml up -d --build web
+  version_anterior: null   # 1.0.0 es la primera etiquetada
+  limite: >-
+    Si la versión aplicó migraciones, restaurar antes la copia de pg_dump previa.
+    El código vuelve; el esquema no.
+
+# ── LÍMITES DECLARADOS ────────────────────────────────────────────────────────
+limites:
+  conocidos:
+    - "La publicación es manual: el pipeline construye y arranca la imagen, pero no despliega"
+    - "Una sola instancia de bot: el polling impide duplicarlo"
+    - "Sin segundo factor de autenticación"
+    - "Contenido de tareas sin cifrar en reposo"
+    - "Cobertura medida pero sin umbral que rompa el pipeline"
+  detalle: "docs/SEGURIDAD.md y README sección 15"

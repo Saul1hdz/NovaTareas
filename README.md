@@ -940,6 +940,10 @@ subir un avatar y que **siga ahí tras reiniciar el contenedor**, el cron
 respondiendo 200 con `CRON_SECRET` y 401 sin él, y ningún contenedor
 reiniciándose en bucle.
 
+Qué se publicó exactamente en esta versión —código, contrato de API, modelo,
+prompt, migraciones, imagen y conjunto de pruebas— está declarado en
+[`release-manifest.yml`](release-manifest.yml).
+
 ### Volver atrás
 
 ```bash
