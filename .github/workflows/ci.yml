@@ -6,10 +6,22 @@ on:
   pull_request:
     branches: [main, master]
 
+# Solo lectura por defecto. El trabajo que publica la imagen amplía sus
+# permisos en su propio bloque; ningún otro puede escribir en el repositorio.
+permissions:
+  contents: read
+
+# Dos pushes seguidos a la misma rama cancelan la ejecución anterior en vez de
+# competir por los runners.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  calidad:
     name: Pruebas, PostgreSQL y build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -41,10 +53,10 @@ jobs:
 
     steps:
       - name: Descargar el código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Configurar Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7.0.0
         with:
           # Misma versión que fija el Dockerfile, para que un fallo por versión
           # aparezca en CI y no al construir la imagen.
@@ -69,7 +81,7 @@ jobs:
         run: npm run test:coverage
 
       - name: Guardar reporte de cobertura
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: cobertura-vitest
           path: coverage/
@@ -92,7 +104,7 @@ jobs:
             -e SECRET_KEY="$SECRET_KEY" \
             -e CRON_SECRET="$CRON_SECRET" \
             novatareas:ci
-          for intento in $(seq 1 20); do
+          for _intento in $(seq 1 20); do
             if curl -fsS http://127.0.0.1:4321/api/v1/health/ready; then
               echo "La imagen responde correctamente."
               exit 0
