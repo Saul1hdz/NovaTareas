@@ -34,6 +34,18 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
+# El contenedor solo ejecuta `node`: el arranque, el healthcheck, las
+# migraciones y el bot. El CLI de npm que trae la imagen base no se usa en
+# ejecución y aporta 8 vulnerabilidades con parche (7 HIGH + 1 CRITICAL, entre
+# ellas la gzip bomb CVE-2026-59873 de tar). Actualizar Node no las corrige:
+# la última de la línea 22 trae el mismo npm 10.9.8. Se elimina el software
+# vulnerable en lugar de silenciar el escaneo.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx \
+           /usr/local/bin/corepack
+
 COPY --from=build /app/dist ./dist
 # `migrations` y `scripts` permiten ejecutar db:pg:migrate y db:seed dentro del
 # contenedor; `src` es su dependencia (esquema y capa de datos). No se copia
