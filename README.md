@@ -299,7 +299,7 @@ que puede ser `zai`, `ollama` o `rules`. Es la forma de saber si la IA respondi�
 o si entró el respaldo.
 
 El contrato completo, con todas las validaciones, códigos de error y evidencia de
-prueba, está en **[`/api.md`](/api.md)**.
+prueba, está en **[`api.md`](api.md)**.
 
 ---
 
@@ -1086,8 +1086,15 @@ Si necesitas entrar en detalle, cada documento cubre una parte distinta:
 - [`AGENTS.md`](AGENTS.md) — reglas de trabajo, verificación mínima y criterios
   de cierre.
 
+> La carpeta tiene su propio índice en [`docs/README.md`](docs/README.md), que
+> separa lo vigente de las actas históricas.
+
 **Para entender decisiones técnicas**
 
+- [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) — capas, puertas de entrada,
+  cascada de IA, procesos desplegados y cuándo tocaría partir el monolito.
+- [`docs/SEGURIDAD.md`](docs/SEGURIDAD.md) — qué se protege, con qué control, qué
+  prueba lo respalda y qué queda fuera del alcance.
 - [`docs/CIERRE_MIGRACION_POSTGRESQL.md`](docs/CIERRE_MIGRACION_POSTGRESQL.md) —
   cómo se retiró SQLite y qué implicó.
 - [`docs/POSTGRESQL_DISENO_BLOQUE_2.md`](docs/POSTGRESQL_DISENO_BLOQUE_2.md) —
