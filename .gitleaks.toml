@@ -18,6 +18,14 @@ regexes = [
   # la regla dejaría pasar la siguiente clave, que sí podría ser real.
   '''MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY''',
 
+  # La misma clave de prueba en su forma hexadecimal, que es lo que se
+  # decodifica del valor de arriba. Vivió así en `vitest.config.js` y en el
+  # workflow, y los documentos de `docs/superpowers/` la citan al describirlos,
+  # así que sigue apareciendo en el historial aunque el árbol actual ya no la
+  # use tal cual. Se exime el valor exacto y no la ruta: eximir el fichero
+  # apagaría el escaneo sobre todo lo demás que ese documento pegue.
+  '''0123456789abcdef0123456789abcdef''',
+
   # Secretos de prueba declarados como tales en vitest.config.js y en el
   # workflow. El sufijo es literal y no aparece en ningún valor real.
   '''[a-z-]+-solo-para-pruebas(-de-ci)?''',
@@ -28,7 +36,10 @@ paths = [
   # propio fichero avisa de que el .env real nunca se versiona.
   '''\.env\.example$''',
 
-  # Los documentos de diseño y plan citan los valores ficticios del workflow
-  # al describirlo.
-  '''docs/superpowers/.*\.md$''',
+  # Aquí NO se eximen árboles de documentación. `docs/superpowers/` estuvo
+  # exento entero porque sus documentos citan los valores ficticios del
+  # workflow, pero esos valores ya los cubren los dos regexes de arriba y la
+  # convención del proyecto manda pegar ahí salidas reales: cadenas de
+  # conexión, journal del servidor y respuestas de API. Eximir la ruta apagaba
+  # el escaneo justo donde más probable es que aparezca un secreto de verdad.
 ]

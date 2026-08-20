@@ -12,10 +12,13 @@ permissions:
   contents: read
 
 # Dos pushes seguidos a la misma rama cancelan la ejecución anterior en vez de
-# competir por los runners.
+# competir por los runners. En `main` no: ahí la ejecución publica en GHCR, y
+# cancelarla a mitad del `docker push` puede dejar `sha-…` subida y `latest`
+# apuntando todavía a la anterior. Un registro incoherente cuesta más que unos
+# minutos de runner.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   calidad:
@@ -93,7 +96,12 @@ jobs:
 
   imagen:
     name: Imagen de produccion
-    needs: calidad
+    # También espera a `seguridad`, aunque serialice el pipeline y lo alargue
+    # algo más de un minuto: sin esa dependencia, un commit que colara un
+    # secreto en `src/` publicaba ese `src/` dentro de la imagen en `sha-…`, en
+    # la etiqueta de versión y en `latest` mientras Gitleaks se ponía rojo al
+    # lado. Publicar una imagen con un secreto dentro no se deshace borrándola.
+    needs: [calidad, seguridad]
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -128,10 +136,13 @@ jobs:
       - name: Descargar el código
         uses: actions/checkout@v7.0.1
         with:
-          # `fetch-depth: 2` y no el 1 por defecto: el resumen para Argus de la
-          # tarea 4 compara `HEAD~1` con `HEAD` para detectar migraciones
-          # nuevas, y con un solo commit descargado ese `HEAD~1` no existe.
-          fetch-depth: 2
+          # Historial completo y no el commit suelto por defecto: el resumen
+          # para Argus compara el rango del push (`github.event.before` hasta
+          # `github.sha`) para detectar migraciones, y el cálculo de etiquetas
+          # lee `release-manifest.yml` en el commit anterior. Con `fetch-depth`
+          # acotado, en un push de varios commits el `before` ni siquiera está
+          # descargado y esas comparaciones fallarían.
+          fetch-depth: 0
 
       # El target de producción nunca se construía en CI, así que un fallo solo
       # se descubría al desplegar.
@@ -183,16 +194,50 @@ jobs:
       - name: Calcular las etiquetas
         if: github.ref == 'refs/heads/main'
         id: etiquetas
+        env:
+          ANTES: ${{ github.event.before }}
         run: |
+          CERO=0000000000000000000000000000000000000000
+          leer_version() {
+            git show "$1:release-manifest.yml" 2>/dev/null \
+              | awk '/^release:/{f=1} f && /^  version:/{gsub(/["[:space:]]/,"",$2); print $2; exit}'
+          }
+
           SHA_CORTO=$(git rev-parse --short=7 HEAD)
-          VERSION=$(awk '/^release:/{f=1} f && /^  version:/{gsub(/["[:space:]]/,"",$2); print $2; exit}' release-manifest.yml)
+          VERSION=$(leer_version HEAD)
           if [ -z "$VERSION" ]; then
             echo "No se pudo leer release.version de release-manifest.yml"
             exit 1
           fi
-          echo "sha_corto=$SHA_CORTO" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Etiquetas: sha-$SHA_CORTO, $VERSION, latest"
+
+          # La etiqueta de versión solo se mueve cuando ESTE push cambia
+          # `release.version`. Publicarla en cada push a `main` hacía que
+          # `1.0.0` apuntara siempre al último commit: prometía inmutabilidad
+          # sin darla, y quien pidiera "vuelve a la 1.0.0" recibiría el `main`
+          # de hoy. `sha-…` y `latest` sí se publican siempre.
+          PUBLICAR_VERSION=no
+          if [ "$ANTES" = "$CERO" ] || ! git cat-file -e "$ANTES^{commit}" 2>/dev/null; then
+            echo "Sin commit anterior utilizable ('$ANTES'): no se puede saber si release.version cambió, así que la etiqueta de versión NO se publica."
+          else
+            VERSION_ANTERIOR=$(leer_version "$ANTES")
+            if [ "$VERSION_ANTERIOR" = "$VERSION" ]; then
+              echo "release.version sigue en '$VERSION': se omite esa etiqueta para no moverla sobre una imagen distinta."
+            else
+              PUBLICAR_VERSION=si
+              echo "release.version pasa de '${VERSION_ANTERIOR:-ninguna}' a '$VERSION': se publica esa etiqueta."
+            fi
+          fi
+
+          {
+            echo "sha_corto=$SHA_CORTO"
+            echo "version=$VERSION"
+            echo "publicar_version=$PUBLICAR_VERSION"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$PUBLICAR_VERSION" = si ]; then
+            echo "Etiquetas: sha-$SHA_CORTO, $VERSION, latest"
+          else
+            echo "Etiquetas: sha-$SHA_CORTO, latest"
+          fi
 
       - name: Entrar en GHCR
         if: github.ref == 'refs/heads/main'
@@ -200,10 +245,18 @@ jobs:
 
       - name: Publicar la imagen
         if: github.ref == 'refs/heads/main'
+        env:
+          SHA_CORTO: ${{ steps.etiquetas.outputs.sha_corto }}
+          VERSION: ${{ steps.etiquetas.outputs.version }}
+          PUBLICAR_VERSION: ${{ steps.etiquetas.outputs.publicar_version }}
         run: |
-          SHA_CORTO=${{ steps.etiquetas.outputs.sha_corto }}
-          VERSION=${{ steps.etiquetas.outputs.version }}
-          for etiqueta in "sha-$SHA_CORTO" "$VERSION" latest; do
+          ETIQUETAS="sha-$SHA_CORTO latest"
+          if [ "$PUBLICAR_VERSION" = si ]; then
+            ETIQUETAS="$ETIQUETAS $VERSION"
+          else
+            echo "Se OMITE la etiqueta '$VERSION': este push no cambia release.version, y reescribirla la convertiría en una etiqueta móvil más."
+          fi
+          for etiqueta in $ETIQUETAS; do
             docker tag novatareas:ci "$IMAGEN:$etiqueta"
             docker push "$IMAGEN:$etiqueta"
           done
@@ -212,16 +265,46 @@ jobs:
       # deducir si el despliegue toca el esquema: se lo dice el pipeline.
       - name: Preparar el bloque de despliegue para Argus
         if: github.ref == 'refs/heads/main'
+        env:
+          SHA_CORTO: ${{ steps.etiquetas.outputs.sha_corto }}
+          ANTES: ${{ github.event.before }}
+          AHORA: ${{ github.sha }}
         run: |
-          SHA_CORTO=${{ steps.etiquetas.outputs.sha_corto }}
-          MIGRACIONES=$(git diff --name-only HEAD~1 HEAD -- migrations/postgresql/ | grep '\.sql$' || true)
+          CERO=0000000000000000000000000000000000000000
+
+          # El rango es el del push entero, no `HEAD~1..HEAD`. Comparando solo
+          # el último commit, un push de tres commits con la migración en el
+          # primero anunciaba "sin migraciones" y el operador se saltaba la
+          # copia de seguridad antes de un despliegue que sí migraba.
+          ESTADO=ok
+          MIGRACIONES=
+          if [ "$ANTES" = "$CERO" ] || ! git cat-file -e "$ANTES^{commit}" 2>/dev/null; then
+            ESTADO=sin-rango
+          elif CAMBIADOS=$(git diff --name-only "$ANTES" "$AHORA" -- migrations/postgresql/); then
+            MIGRACIONES=$(echo "$CAMBIADOS" | grep '\.sql$' || true)
+          else
+            # Un fallo de git NO puede acabar en "sin migraciones": ese mensaje
+            # es exactamente el que hace que nadie respalde la base.
+            ESTADO=error-git
+          fi
+
           {
             echo "## Despliegue para Argus"
             echo
             echo "Imagen: \`ghcr.io/saul1hdz/novatareas:sha-$SHA_CORTO\`"
             echo
-            if [ -n "$MIGRACIONES" ]; then
-              echo "### ATENCION: este commit trae migraciones nuevas"
+            if [ "$ESTADO" = sin-rango ]; then
+              echo "### NO SE PUDO DETERMINAR si hay migraciones nuevas"
+              echo
+              echo "Este push no trae un commit anterior utilizable (\`$ANTES\`), asi que no hay rango que comparar."
+              echo "**Comprobar \`migrations/postgresql/\` a mano y respaldar la base ANTES de desplegar.**"
+            elif [ "$ESTADO" = error-git ]; then
+              echo "### NO SE PUDO DETERMINAR si hay migraciones nuevas"
+              echo
+              echo "\`git diff $ANTES $AHORA\` fallo en el runner."
+              echo "**Comprobar \`migrations/postgresql/\` a mano y respaldar la base ANTES de desplegar.**"
+            elif [ -n "$MIGRACIONES" ]; then
+              echo "### ATENCION: este push trae migraciones nuevas"
               # awk y no `sed 's/^/- /'`: shellcheck marca ese sed (SC2001) y la
               # puerta de actionlint es de aviso cero.
               echo "$MIGRACIONES" | awk '{ print "- " $0 }'
@@ -229,7 +312,7 @@ jobs:
               echo "Revisar si alguna es destructiva ANTES de desplegar."
               echo "Volver el codigo NO revierte el esquema."
             else
-              echo "Sin migraciones nuevas: el esquema no cambia."
+              echo "Sin migraciones nuevas entre \`$ANTES\` y \`$AHORA\`: el esquema no cambia."
             fi
             echo
             echo "### VPS compartido"
@@ -243,8 +326,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    # Sin `needs`: no depende de las pruebas, así que corre en paralelo y no
-    # alarga el reloj del pipeline.
+    # Sin `needs`: arranca a la vez que `calidad`, porque no depende de las
+    # pruebas. Lo que sí depende de este trabajo es `imagen`, que no publica
+    # nada hasta que estas guardias pasan.
     permissions:
       contents: read
       security-events: write   # publicar hallazgos de CodeQL
