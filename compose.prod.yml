@@ -31,8 +31,15 @@ x-app-environment: &app-environment
 # pruebas, el arranque real y el escaneo de vulnerabilidades. Así lo que corre
 # aquí es el artefacto exacto que se validó, no una reconstrucción hecha en
 # otra máquina y en otro momento.
+#
+# Sin valor por defecto, y a propósito: `latest` se mueve con cada push a
+# `main`, así que un despliegue que olvidara definir la variable arrancaría un
+# código distinto del que se quiso desplegar —y un rollback traería de vuelta
+# justo la versión que se intentaba abandonar—. La etiqueta decide qué código
+# corre, así que se comporta como los demás valores críticos del fichero:
+# aborta si no está definida en vez de adivinar.
 x-app-image: &app-image
-  image: ghcr.io/saul1hdz/novatareas:${NOVATAREAS_TAG:-latest}
+  image: ghcr.io/saul1hdz/novatareas:${NOVATAREAS_TAG:?define NOVATAREAS_TAG con la etiqueta sha-<commit-corto> de la imagen publicada}
 
 services:
   db:
