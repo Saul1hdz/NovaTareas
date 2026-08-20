@@ -335,6 +335,16 @@ Cosas que conviene saber antes de que sorprendan:
 
 ## 12. Comprobación posterior al despliegue
 
+> **Las sondas externas deben usar `curl`.** El dominio está detrás de
+> Cloudflare con protección de bots activa, y esta filtra por huella TLS, no por
+> user-agent: `wget` y `busybox wget` reciben `403` incluso en
+> `/api/v1/health/ready`, que no pide autenticación. Una sonda que use `wget`
+> informará de que el servicio está caído cuando está perfectamente sano. La
+> regla vive en el panel de Cloudflare (zona `polarzero.dev`, Security → Bots),
+> no en la configuración del servidor ni en este repositorio. El cron de
+> recordatorios de la sección 5 ya usa `curl` y no le afecta.
+
+
 Recorre esta lista tras cada publicación:
 
 1. `/api/v1/health/ready` responde 200.
