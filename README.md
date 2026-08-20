@@ -942,7 +942,8 @@ reiniciándose en bucle.
 
 Qué se publicó exactamente en esta versión —código, contrato de API, modelo,
 prompt, migraciones, imagen y conjunto de pruebas— está declarado en
-[`release-manifest.yml`](release-manifest.yml).
+[`release-manifest.yml`](release-manifest.yml), y las notas de cada versión en
+[`CHANGELOG.md`](CHANGELOG.md).
 
 ### Volver atrás
 
