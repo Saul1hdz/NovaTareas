@@ -5,6 +5,16 @@
 Universidad Gerardo Barrios — Módulo 4: Desarrollo de Aplicaciones con IA
 Docente: Ing. Marco Arévalo Zambrano
 
+| | |
+|---|---|
+| **En línea** | **<https://novatareas.polarzero.dev>** |
+| **Versión** | 1.0.0 — la publica el propio servicio en [`/api/v1/metadata`](https://novatareas.polarzero.dev/api/v1/metadata) |
+| **Estado** | [`/api/v1/health/ready`](https://novatareas.polarzero.dev/api/v1/health/ready) responde 200 si la base de datos contesta |
+| **Repositorio** | <https://github.com/Saul1hdz/NovaTareas> |
+
+Cómo comprobar que está vivo, qué mirar tras cada publicación y cómo volver
+atrás: sección 18.
+
 > **Lee esto antes de instalar nada.** PostgreSQL 16 es el único motor de base de
 > datos del proyecto. SQLite se retiró por completo: ya no queda driver,
 > migraciones, importador ni capa de compatibilidad. Como las pruebas corren
@@ -48,10 +58,12 @@ Docente: Ing. Marco Arévalo Zambrano
 14. [Riesgos iniciales y cómo están hoy](#14-riesgos-iniciales-y-cómo-están-hoy)
 15. [Limitaciones y deuda técnica](#15-limitaciones-y-deuda-técnica)
 16. [Evolución lograda](#16-evolución-lograda)
-17. [Plan de mejora por semana](#17-plan-de-mejora-por-semana)
-18. [Documentación adicional](#18-documentación-adicional)
-19. [Stack tecnológico](#19-stack-tecnológico)
-20. [Observabilidad y medición de rendimiento](#20-observabilidad-y-medición-de-rendimiento)
+17. [Observabilidad y medición de rendimiento](#17-observabilidad-y-medición-de-rendimiento)
+18. [Verificación del despliegue](#18-verificación-del-despliegue)
+19. [Plan de mejora por semana](#19-plan-de-mejora-por-semana)
+20. [Siguientes pasos](#20-siguientes-pasos)
+21. [Documentación adicional](#21-documentación-adicional)
+22. [Stack tecnológico](#22-stack-tecnológico)
 
 ---
 
@@ -325,7 +337,9 @@ npm run lint          # revisar tipos y sintaxis del proyecto
 | `tests/emailVerification.test.js` | Confirmación de correo en el registro, bloqueo del login hasta confirmar, tokens de un solo uso y recuperación de contraseña por correo |
 | `tests/googleIntegration.test.js` | OAuth, eventos, renovación y guardado cifrado de tokens, con Google simulado |
 | `tests/integrationSecurity.test.js` | Cron, webhook de Telegram simulado y subida de avatares válidos, falsificados o con MIME incorrecto |
+| `tests/measureEndpoint.test.js` | El resumen estadístico de la medición: percentiles, tasa de error y el mínimo de muestras |
 | `tests/noSqliteDialect.test.js` | Que nadie vuelva a introducir dialecto SQLite en el código |
+| `tests/observability.test.js` | Que el log solo publique campos de la lista blanca, normalice las rutas y no filtre cuerpos, cabeceras ni tokens |
 | `tests/postgresSchema.test.js` | Esquema, restricciones y reejecución de las migraciones de PostgreSQL usando PGlite |
 | `tests/profileTelegramRequest.test.js` | La solicitud de vinculación de Telegram desde el perfil |
 | `tests/recommendationFeedback.test.js` | La valoración 👍/👎: validación, integridad y cómo entra en el prompt |
@@ -338,7 +352,7 @@ npm run lint          # revisar tipos y sintaxis del proyecto
 | `tests/tokenEncryption.test.js` | Cifrado, descifrado y rechazo de tokens alterados |
 | `tests/zaiThinking.test.js` | La forma del payload que se le manda a z.ai |
 
-**En total son 185 pruebas repartidas en 28 archivos**, todas contra
+**En total son 202 pruebas repartidas en 30 archivos**, todas contra
 **PostgreSQL 16 real**, el mismo motor que se despliega. Al arrancar, la suite
 recrea el esquema desde las migraciones en la base que indique
 `TEST_DATABASE_URL`, y ese nombre tiene que terminar en `_test`. Por eso
@@ -381,7 +395,7 @@ Cada `push` y cada `pull request` disparan el workflow de
 3. Instala dependencias con `npm ci`, reproducible desde `package-lock.json`.
 4. Revisa tipos y sintaxis con `npm run lint`.
 5. Levanta un PostgreSQL 16 efímero, migra y comprueba el esquema.
-6. Corre las 185 pruebas con cobertura (`npm run test:coverage`).
+6. Corre las 202 pruebas con cobertura (`npm run test:coverage`).
 7. Guarda el reporte de cobertura como artefacto durante 14 días.
 8. Compila el proyecto (`npm run build`).
 
@@ -660,7 +674,7 @@ novatareas-pro/
 ├── src/db/
 │   ├── client.js            # envoltorio fino sobre pg, no traduce el SQL
 │   └── postgres/            # esquema, cliente y repositorios de Drizzle
-├── tests/                   # 28 archivos, 185 pruebas contra PostgreSQL real
+├── tests/                   # 30 archivos, 202 pruebas contra PostgreSQL real
 ├── telegram/                # bot.js y scheduler.js, procesos aparte
 ├── migrations/postgresql/   # migraciones versionadas generadas con Drizzle
 ├── scripts/                 # migrar, verificar, sembrar y smoke test
@@ -739,7 +753,7 @@ le sirve de nada a quien llega después. El detalle original está en
 | La recuperación por preguntas de seguridad no sirve para un servicio público | ✅ Cerrado | Se retiraron; ahora la confirmación y el restablecimiento van por correo con token de un solo uso |
 | Bloques grandes de `innerHTML` en el dashboard | ✅ Cerrado | No queda ninguno: el listado se construye con nodos del DOM |
 | Faltaba cobertura de subtareas, recordatorios, cron, bot y Google Calendar | 🟡 Casi | Ya hay pruebas de recordatorios, cron, webhook, sesiones del bot y Google simulado; falta la conversación completa del bot y el RAG |
-| Netcup sin preparar ni autorizar | 🟡 Casi | `compose.prod.yml` y el runbook están listos; el servidor todavía no |
+| Netcup sin preparar ni autorizar | ✅ Cerrado | Publicado en <https://novatareas.polarzero.dev> con HTTPS; `/api/v1/health/ready` responde 200 |
 | El dashboard sigue siendo monolítico con handlers inline | ❌ Abierto | `src/pages/dashboard.astro` pasa de 3.900 líneas y conserva atributos `onclick` |
 
 ---
@@ -792,26 +806,27 @@ Esto sí hay que pagarlo. Está ordenado por lo que más estorba hoy.
 4. **Google Calendar está a medio camino.** Los archivos existen en
    `/api/google/`, con OAuth y tokens cifrados probados, pero la integración aún
    no está conectada al dashboard.
-5. **La cobertura de pruebas todavía tiene huecos.** Las 185 pruebas ya cubren
+5. **La cobertura de pruebas todavía tiene huecos.** Las 202 pruebas ya cubren
    autenticación, correo, ownership, tareas, colaboración, migraciones, cifrado,
    recordatorios, cron, webhook, avatares, CSRF, proveedores de IA y las rutas
    principales de Google simuladas. Falta cubrir a fondo la conversación del bot
    y el RAG.
-6. **Todavía no hay despliegue público.** El proyecto corre en local; Netcup,
-   dominio, HTTPS y operación continua quedan pendientes. El runbook ya está
-   escrito en [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md).
+6. **La publicación sigue siendo manual.** El proyecto ya está en línea con
+   dominio y HTTPS, pero cada versión se despliega a mano siguiendo el runbook de
+   [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md). Falta el tramo de despliegue
+   automático en el pipeline.
 
 ---
 
 ## 16. Evolución lograda
 
 Resumen de dónde arrancó el proyecto y dónde está ahora. El detalle semana por
-semana viene en la sección 17.
+semana viene en la sección 19.
 
 | | Al inicio | Hoy |
 |---|---|---|
 | Base de datos | SQLite, pensada como provisional | PostgreSQL 16 como motor único, con migraciones versionadas y una prueba que impide volver atrás |
-| Pruebas | 55 en 7 archivos | **185 en 28 archivos**, todas contra PostgreSQL real |
+| Pruebas | 55 en 7 archivos | **202 en 30 archivos**, todas contra PostgreSQL real |
 | Integración continua | No había | GitHub Actions con PostgreSQL 16 efímero, migración, cobertura y build |
 | Capacidad de IA | Acoplada al dashboard | `aiEngine.js` desacoplado y expuesto como API en `/api/v1/*`, con cascada z.ai → Ollama → historial → reglas |
 | Calidad de las recomendaciones | Sin forma de medirla | Valoración 👍/👎 guardada en su tabla, que realimenta el prompt siguiente |
@@ -819,157 +834,14 @@ semana viene en la sección 17.
 | Recuperación de cuenta | Preguntas de seguridad | Correo verificado con token de un solo uso |
 | Tareas | Individuales | Modo colaborativo con enlace de invitación y tres niveles de acceso |
 | Avisos de Telegram | Solo por eventos | Además recordatorios recurrentes según la prioridad, con horas de silencio |
-| Ejecución | Solo en local, a mano | Docker Compose para desarrollo y `compose.prod.yml` con runbook de despliegue |
+| Ejecución | Solo en local, a mano | Docker Compose para desarrollo y `compose.prod.yml` en el servidor |
+| Disponibilidad | Nada publicado | En línea en <https://novatareas.polarzero.dev>, versión 1.0.0, con HTTPS y sonda de salud |
 | Seguridad | Avisos de dependencias sin resolver | `npm audit` limpio, CSRF detrás de proxy, tokens de Google cifrados |
-| Observabilidad | Sin logs ni forma de medir | Un evento JSON por solicitud con `request_id`, estado y duración, más p50 / p95 / máximo y tasa de error medidos (sección 20) |
+| Observabilidad | Sin logs ni forma de medir | Un evento JSON por solicitud con `request_id`, estado y duración, más p50 / p95 / máximo y tasa de error medidos (sección 17) |
 
 ---
 
-## 17. Plan de mejora por semana
-
-### Semana 1 — Diagnóstico y arquitectura ✅
-
-- Diagnóstico técnico del estado real del proyecto.
-- Diagramas de la arquitectura actual y de la objetivo.
-- Registro de riesgos y deuda técnica.
-
-### Semana 2 — API inteligente y contratos ✅
-
-- Capacidad de IA expuesta como API consumible (`/api/v1/health`,
-  `/api/v1/metadata`, `/api/v1/recommend`).
-- Contrato de entrada y salida documentado, con validación y manejo controlado de
-  errores.
-- Motor de IA (`aiEngine.js`) desacoplado de la base de datos y de la sesión.
-
-### Semana 3 — Calidad y automatización
-
-- ✅ **Pruebas automatizadas** con Vitest: 103 casos al cerrar la semana sobre
-  API, autenticación, tareas, seguridad, migraciones, cifrado, cron, webhook,
-  recordatorios, proveedores de IA, Google simulado, avatares y vinculación de
-  Telegram. Hoy la suite va por 185 (sección 8).
-- ✅ **Pipeline de CI/CD** en GitHub Actions con PostgreSQL 16 efímero,
-  migración, comprobación transaccional, cobertura y build. Confirmado en verde
-  en una ejecución remota.
-- ✅ **Esquema de PostgreSQL reproducible** con `npm run db:pg:migrate`,
-  versionado con Drizzle.
-- ⬜ **Logging estructurado** de cada llamada a z.ai: modelo, tokens, latencia y
-  si entró el respaldo.
-- ✅ **Sistema de feedback** (👍/👎) en las recomendaciones: se guarda en su
-  propia tabla y la siguiente recomendación lo tiene en cuenta.
-
-> El plan original mencionaba Jest. Nos pasamos a **Vitest** porque entiende ESM
-> y Astro de forma nativa.
-
-### Semana 4 — PostgreSQL y contenedores ✅
-
-- ✅ Contenedor Docker con Node 22 para web, PostgreSQL y migraciones.
-- ✅ Perfiles separados para el bot de Telegram y el planificador.
-- ✅ Migración completa a PostgreSQL, verificada con conteos, login y ownership.
-- ⬜ Conectar Google Calendar al dashboard e importar eventos como tareas con
-  fecha límite.
-- ⬜ Reforzar la recuperación de cuenta con un canal verificado antes de pensar
-  en uso público.
-- ⬜ Cachear recomendaciones para no volver a llamar a z.ai si la tarea no
-  cambió.
-
-### Semana 5 — Colaboración, limpieza y mejoras visuales
-
-- ✅ **Modo colaborativo**: una tarea privada puede compartirse con un enlace de
-  invitación, y cada persona entra con un nivel (lector, comentarista, editor).
-  Detalle en [`docs/MODO_COLABORATIVO.md`](docs/MODO_COLABORATIVO.md).
-- ✅ **Recordatorios recurrentes por Telegram** según la prioridad: urgente cada
-  hora, alta cada 3, media cada 5 y baja cada 6, con horas de silencio.
-- ✅ **Mejoras visuales del dashboard**: menú lateral plegable que devuelve el
-  ancho a la página al cerrarse, barra superior con el buscador centrado, tarjeta
-  de tarea de una sola superficie en vez de tres marcos anidados, y la
-  recomendación de la IA plegable con una flecha (en móvil nace plegada, porque
-  era el bloque que empujaba todo fuera de pantalla).
-- ✅ **Observabilidad, línea base de rendimiento y plan de escalabilidad**:
-  correlación por solicitud, duración y versión en cada evento, medición
-  repetible con p50 / p95 / máximo y tasa de error, cuello de botella
-  identificado y plan de crecimiento
-  ([`docs/OBSERVABILIDAD_SEMANA_5.md`](docs/OBSERVABILIDAD_SEMANA_5.md)).
-- ⬜ Asignar tareas a miembros del equipo.
-- ⬜ Avisar por Telegram cuando alguien modifica una tarea asignada.
-- ⬜ Limpiar código muerto: los módulos de Supabase sin uso y los scripts de
-  diagnóstico sueltos.
-
-### Semana 6 — Despliegue y producción
-
-- ✅ Migrar a PostgreSQL para soportar concurrencia. **Cerrado:** es el motor
-  único del proyecto.
-- ✅ Preparar el despliegue: `compose.prod.yml` y el runbook de
-  [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md).
-- ⬜ Publicar en Netcup con dominio y HTTPS propios.
-- ⬜ Extender el pipeline con despliegue automático.
-- ⬜ Versionar el prompt del sistema para poder rastrear cambios de calidad.
-
----
-
-## 18. Documentación adicional
-
-Si necesitas entrar en detalle, cada documento cubre una parte distinta:
-
-**Para trabajar en el proyecto**
-
-- [`docs/ENTORNO_WINDOWS.md`](docs/ENTORNO_WINDOWS.md) — Docker Desktop en
-  Windows: dónde clonar, memoria de WSL2, puertos ocupados y los errores que
-  parecen bugs pero no lo son.
-- [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md) — runbook del servidor: variables,
-  proxy inverso, respaldos, actualización y vuelta atrás.
-- [`docs/TODO_DESARROLLO.md`](docs/TODO_DESARROLLO.md) — el backlog por bloques,
-  con lo hecho y lo pendiente.
-- [`AGENTS.md`](AGENTS.md) — reglas de trabajo, verificación mínima y criterios
-  de cierre.
-
-**Para entender decisiones técnicas**
-
-- [`docs/CIERRE_MIGRACION_POSTGRESQL.md`](docs/CIERRE_MIGRACION_POSTGRESQL.md) —
-  cómo se retiró SQLite y qué implicó.
-- [`docs/POSTGRESQL_DISENO_BLOQUE_2.md`](docs/POSTGRESQL_DISENO_BLOQUE_2.md) —
-  diseño, diccionario de datos, comandos y límites del esquema.
-- [`docs/MODO_COLABORATIVO.md`](docs/MODO_COLABORATIVO.md) — niveles de acceso,
-  enlaces de invitación, endpoints y esquema del trabajo en equipo.
-- [`api.md`](api.md) — contratos completos de la API inteligente.
-
-**Registros y evidencia**
-
-| Documento | Contenido |
-|---|---|
-| [`docs/pruebas-semana-3.md`](docs/pruebas-semana-3.md) | Mapa de pruebas: qué valida cada una, por qué aporta y con qué datos |
-| [`docs/registro-pruebas-semana-3.md`](docs/registro-pruebas-semana-3.md) | Errores detectados, correcciones aplicadas y bloqueos abiertos |
-| [`docs/QA_IA_LOCAL.md`](docs/QA_IA_LOCAL.md) | Prueba real de z.ai, hallazgos de calidad y correcciones de RAG |
-| [`docs/QA_TELEGRAM_LOCAL.md`](docs/QA_TELEGRAM_LOCAL.md) | QA del bot con usuarios ficticios |
-| [`docs/QA_ESTABILIZACION_LOCAL.md`](docs/QA_ESTABILIZACION_LOCAL.md) | Estabilización del entorno local |
-| [`docs/Evidencia_Semana3.pdf`](docs/Evidencia_Semana3.pdf) | Evidencia de entrega de la semana 3 |
-| `docs/CIERRE_BLOQUE_1..4.md` | Actas de cierre de cada bloque: resultados, QA y límites |
-
-> Los `docs/CIERRE_BLOQUE_*.md` y las líneas base son **documentos históricos**.
-> Describen cómo estaba el proyecto al cerrar cada bloque y contienen comandos
-> que ya no existen. Cuando haya discrepancia, mandan el código, las migraciones
-> y este README.
-
----
-
-## 19. Stack tecnológico
-
-| Capa | Tecnología |
-|---|---|
-| Framework web | Astro 7.x (SSR con adaptador Node) |
-| Base de datos | PostgreSQL 16 (único motor, también en pruebas) |
-| ORM y migraciones | Drizzle ORM + drizzle-kit |
-| IA generativa | z.ai — GLM (`glm-4.5-flash`) |
-| IA local (respaldo) | Ollama + Llama 3.2 |
-| Bot | Telegram Bot API |
-| Autenticación | bcryptjs + JWT (jose) |
-| Pruebas | Vitest 4 + @vitest/coverage-v8 |
-| CI/CD | GitHub Actions |
-| Runtime | Node.js 22.12 o posterior, dentro de la línea 22 |
-| Contenedores | Docker Compose (web, migraciones, PostgreSQL, bot y planificador) |
-
----
-
-## 20. Observabilidad y medición de rendimiento
+## 17. Observabilidad y medición de rendimiento
 
 Cada solicitud emite **un evento JSON** por línea en la salida del contenedor,
 con identificador de correlación, ruta, estado, duración, coste de PostgreSQL y
@@ -1028,6 +900,236 @@ node scripts/measure-endpoint.mjs --scenario=recommend --requests=30
 Cada ejecución guarda el detalle en `docs/mediciones/`. El análisis completo —
 línea base, cuello de botella, mejora aplicada y plan de escalabilidad— está en
 [`docs/OBSERVABILIDAD_SEMANA_5.md`](docs/OBSERVABILIDAD_SEMANA_5.md).
+
+---
+
+## 18. Verificación del despliegue
+
+El proyecto está publicado en **<https://novatareas.polarzero.dev>** con
+certificado válido. Estas tres llamadas dicen en segundos si sigue sano:
+
+```bash
+# 1. ¿Responde la aplicación y contesta la base de datos?
+curl https://novatareas.polarzero.dev/api/v1/health/ready
+
+# 2. ¿Qué versión está sirviendo y con qué contrato?
+curl https://novatareas.polarzero.dev/api/v1/metadata
+
+# 3. ¿Qué proveedores de IA tiene configurados?
+curl https://novatareas.polarzero.dev/api/v1/health
+```
+
+Lo que se espera de cada una:
+
+| Llamada | Respuesta sana | Si falla |
+|---|---|---|
+| `/api/v1/health/ready` | `200` con `{"status":"ok","checks":{"database":true}}` | La web está arriba pero sin base de datos: mira los logs del contenedor `db` |
+| `/api/v1/metadata` | `200` con `"version": "1.0.0"` | Si la versión no es la que publicaste, el contenedor no se reconstruyó |
+| `/api/v1/health` | `200` con `zai_configured: true` | Con `false`, las recomendaciones seguirán saliendo, pero por el respaldo de reglas locales |
+
+`/api/v1/health` responde `200` incluso con z.ai y Ollama caídos, a propósito: el
+servicio siempre puede contestar gracias al respaldo local, así que un `503` ahí
+significaría algo bastante peor que quedarse sin cuota.
+
+### Tras cada publicación
+
+La lista completa está en
+[`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md) (sección 12) y son siete puntos:
+`/health/ready` en 200, la portada por HTTPS, iniciar sesión, crear una tarea,
+subir un avatar y que **siga ahí tras reiniciar el contenedor**, el cron
+respondiendo 200 con `CRON_SECRET` y 401 sin él, y ningún contenedor
+reiniciándose en bucle.
+
+### Volver atrás
+
+```bash
+git checkout v1.0.0
+docker compose -f compose.prod.yml up -d --build web
+```
+
+Con una advertencia que conviene no aprender por las malas: **volver el código no
+revierte las migraciones**. Si la versión nueva tocó el esquema, primero se
+restaura la copia de `pg_dump` anterior a la migración y después se despliega la
+versión vieja. El procedimiento completo está en
+[`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md), sección 9.
+
+### En local
+
+```bash
+docker compose -f compose.dev.yml exec web npm run db:pg:smoke   # prueba de humo
+npm test                                                          # 202 pruebas
+npm run lint                                                      # tipos y sintaxis
+```
+
+En CI todo esto corre solo, y además se construye la imagen de producción y se
+arranca de verdad para comprobar que responde antes de dar el pipeline por bueno.
+
+---
+
+## 19. Plan de mejora por semana
+
+### Semana 1 — Diagnóstico y arquitectura ✅
+
+- Diagnóstico técnico del estado real del proyecto.
+- Diagramas de la arquitectura actual y de la objetivo.
+- Registro de riesgos y deuda técnica.
+
+### Semana 2 — API inteligente y contratos ✅
+
+- Capacidad de IA expuesta como API consumible (`/api/v1/health`,
+  `/api/v1/metadata`, `/api/v1/recommend`).
+- Contrato de entrada y salida documentado, con validación y manejo controlado de
+  errores.
+- Motor de IA (`aiEngine.js`) desacoplado de la base de datos y de la sesión.
+
+### Semana 3 — Calidad y automatización
+
+- ✅ **Pruebas automatizadas** con Vitest: 103 casos al cerrar la semana sobre
+  API, autenticación, tareas, seguridad, migraciones, cifrado, cron, webhook,
+  recordatorios, proveedores de IA, Google simulado, avatares y vinculación de
+  Telegram. Hoy la suite va por 202 (sección 8).
+- ✅ **Pipeline de CI/CD** en GitHub Actions con PostgreSQL 16 efímero,
+  migración, comprobación transaccional, cobertura y build. Confirmado en verde
+  en una ejecución remota.
+- ✅ **Esquema de PostgreSQL reproducible** con `npm run db:pg:migrate`,
+  versionado con Drizzle.
+- ⬜ **Logging estructurado** de cada llamada a z.ai: modelo, tokens, latencia y
+  si entró el respaldo.
+- ✅ **Sistema de feedback** (👍/👎) en las recomendaciones: se guarda en su
+  propia tabla y la siguiente recomendación lo tiene en cuenta.
+
+> El plan original mencionaba Jest. Nos pasamos a **Vitest** porque entiende ESM
+> y Astro de forma nativa.
+
+### Semana 4 — PostgreSQL y contenedores ✅
+
+- ✅ Contenedor Docker con Node 22 para web, PostgreSQL y migraciones.
+- ✅ Perfiles separados para el bot de Telegram y el planificador.
+- ✅ Migración completa a PostgreSQL, verificada con conteos, login y ownership.
+- ⬜ Conectar Google Calendar al dashboard e importar eventos como tareas con
+  fecha límite.
+- ⬜ Reforzar la recuperación de cuenta con un canal verificado antes de pensar
+  en uso público.
+- ⬜ Cachear recomendaciones para no volver a llamar a z.ai si la tarea no
+  cambió.
+
+### Semana 5 — Colaboración, limpieza y mejoras visuales
+
+- ✅ **Modo colaborativo**: una tarea privada puede compartirse con un enlace de
+  invitación, y cada persona entra con un nivel (lector, comentarista, editor).
+  Detalle en [`docs/MODO_COLABORATIVO.md`](docs/MODO_COLABORATIVO.md).
+- ✅ **Recordatorios recurrentes por Telegram** según la prioridad: urgente cada
+  hora, alta cada 3, media cada 5 y baja cada 6, con horas de silencio.
+- ✅ **Mejoras visuales del dashboard**: menú lateral plegable que devuelve el
+  ancho a la página al cerrarse, barra superior con el buscador centrado, tarjeta
+  de tarea de una sola superficie en vez de tres marcos anidados, y la
+  recomendación de la IA plegable con una flecha (en móvil nace plegada, porque
+  era el bloque que empujaba todo fuera de pantalla).
+- ✅ **Observabilidad, línea base de rendimiento y plan de escalabilidad**:
+  correlación por solicitud, duración y versión en cada evento, medición
+  repetible con p50 / p95 / máximo y tasa de error, cuello de botella
+  identificado y plan de crecimiento
+  ([`docs/OBSERVABILIDAD_SEMANA_5.md`](docs/OBSERVABILIDAD_SEMANA_5.md)).
+- ⬜ Asignar tareas a miembros del equipo.
+- ⬜ Avisar por Telegram cuando alguien modifica una tarea asignada.
+- ⬜ Limpiar código muerto: los módulos de Supabase sin uso y los scripts de
+  diagnóstico sueltos.
+
+### Semana 6 — Despliegue y producción
+
+- ✅ Migrar a PostgreSQL para soportar concurrencia. **Cerrado:** es el motor
+  único del proyecto.
+- ✅ Preparar el despliegue: `compose.prod.yml` y el runbook de
+  [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md).
+- ✅ Publicar con dominio y HTTPS propios: <https://novatareas.polarzero.dev>.
+- ⬜ Extender el pipeline con despliegue automático.
+- ⬜ Versionar el prompt del sistema para poder rastrear cambios de calidad.
+
+---
+
+## 20. Siguientes pasos
+
+Lo que sigue, en el orden en que lo haríamos:
+
+1. **Extender el pipeline con despliegue automático.** Hoy la publicación es
+   manual siguiendo el runbook; el pipeline ya construye y arranca la imagen de
+   producción, así que falta el último tramo.
+2. **Partir `dashboard.astro`.** Es la deuda que más estorba: casi 4.000 líneas
+   con el CSS y el JavaScript de cliente dentro. Sacar primero el JavaScript, que
+   es lo que más se toca.
+3. **Conectar Google Calendar al dashboard.** El OAuth, los tokens cifrados y la
+   lectura de eventos ya están probados; falta la parte visual.
+4. **Agregar las valoraciones 👍/👎 en un informe** que diga si la calidad de las
+   recomendaciones sube o baja con el tiempo. Los datos ya se están guardando.
+5. **Terminar de conectar el RAG**: los embeddings existen, pero no todas las
+   rutas los consumen.
+6. **Asignar tareas a miembros del equipo** y avisar por Telegram cuando alguien
+   modifica una tarea asignada, cerrando el modo colaborativo.
+7. **Versionar el prompt del sistema** para poder rastrear a qué cambio se debe
+   una subida o bajada de calidad.
+
+---
+
+## 21. Documentación adicional
+
+Si necesitas entrar en detalle, cada documento cubre una parte distinta:
+
+**Para trabajar en el proyecto**
+
+- [`docs/ENTORNO_WINDOWS.md`](docs/ENTORNO_WINDOWS.md) — Docker Desktop en
+  Windows: dónde clonar, memoria de WSL2, puertos ocupados y los errores que
+  parecen bugs pero no lo son.
+- [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md) — runbook del servidor: variables,
+  proxy inverso, respaldos, actualización y vuelta atrás.
+- [`docs/TODO_DESARROLLO.md`](docs/TODO_DESARROLLO.md) — el backlog por bloques,
+  con lo hecho y lo pendiente.
+- [`AGENTS.md`](AGENTS.md) — reglas de trabajo, verificación mínima y criterios
+  de cierre.
+
+**Para entender decisiones técnicas**
+
+- [`docs/CIERRE_MIGRACION_POSTGRESQL.md`](docs/CIERRE_MIGRACION_POSTGRESQL.md) —
+  cómo se retiró SQLite y qué implicó.
+- [`docs/POSTGRESQL_DISENO_BLOQUE_2.md`](docs/POSTGRESQL_DISENO_BLOQUE_2.md) —
+  diseño, diccionario de datos, comandos y límites del esquema.
+- [`docs/MODO_COLABORATIVO.md`](docs/MODO_COLABORATIVO.md) — niveles de acceso,
+  enlaces de invitación, endpoints y esquema del trabajo en equipo.
+- [`api.md`](api.md) — contratos completos de la API inteligente.
+
+**Registros y evidencia**
+
+| Documento | Contenido |
+|---|---|
+| [`docs/pruebas-semana-3.md`](docs/pruebas-semana-3.md) | Mapa de pruebas: qué valida cada una, por qué aporta y con qué datos |
+| [`docs/registro-pruebas-semana-3.md`](docs/registro-pruebas-semana-3.md) | Errores detectados, correcciones aplicadas y bloqueos abiertos |
+| [`docs/QA_IA_LOCAL.md`](docs/QA_IA_LOCAL.md) | Prueba real de z.ai, hallazgos de calidad y correcciones de RAG |
+| [`docs/QA_TELEGRAM_LOCAL.md`](docs/QA_TELEGRAM_LOCAL.md) | QA del bot con usuarios ficticios |
+| [`docs/QA_ESTABILIZACION_LOCAL.md`](docs/QA_ESTABILIZACION_LOCAL.md) | Estabilización del entorno local |
+| [`docs/Evidencia_Semana3.pdf`](docs/Evidencia_Semana3.pdf) | Evidencia de entrega de la semana 3 |
+| `docs/CIERRE_BLOQUE_1..4.md` | Actas de cierre de cada bloque: resultados, QA y límites |
+
+> Los `docs/CIERRE_BLOQUE_*.md` y las líneas base son **documentos históricos**.
+> Describen cómo estaba el proyecto al cerrar cada bloque y contienen comandos
+> que ya no existen. Cuando haya discrepancia, mandan el código, las migraciones
+> y este README.
+
+---
+
+## 22. Stack tecnológico
+
+| Capa | Tecnología |
+|---|---|
+| Framework web | Astro 7.x (SSR con adaptador Node) |
+| Base de datos | PostgreSQL 16 (único motor, también en pruebas) |
+| ORM y migraciones | Drizzle ORM + drizzle-kit |
+| IA generativa | z.ai — GLM (`glm-4.5-flash`) |
+| IA local (respaldo) | Ollama + Llama 3.2 |
+| Bot | Telegram Bot API |
+| Autenticación | bcryptjs + JWT (jose) |
+| Pruebas | Vitest 4 + @vitest/coverage-v8 |
+| CI/CD | GitHub Actions |
+| Runtime | Node.js 22.12 o posterior, dentro de la línea 22 |
+| Contenedores | Docker Compose (web, migraciones, PostgreSQL, bot y planificador) |
 
 ---
 
