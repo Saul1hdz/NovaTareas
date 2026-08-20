@@ -184,6 +184,19 @@ completo en una base desechable antes de confiar en él.
 contra una base real y escanearla con Trivy. Lo que corre en producción es ese
 artefacto exacto, no una reconstrucción.
 
+### Despliegue automático
+
+Un detector vigila `main` y despliega **solo cuando el commit no toca
+`migrations/postgresql/`**. Si lo toca, se detiene y avisa: un cambio de esquema
+lo revisa una persona antes de aplicarse, porque volver el código no lo revierte.
+
+La detección se hace por duplicado —el resumen del pipeline y el cálculo propio
+del detector— y una discrepancia entre ambas fuentes también detiene el
+despliegue. Cada decisión queda registrada en el servidor con el commit y el
+motivo, para poder reconstruirla después.
+
+Un cambio con migraciones se despliega a mano con el procedimiento de abajo.
+
 ### Procedimiento normal
 
 ```bash
