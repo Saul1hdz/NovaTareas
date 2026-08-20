@@ -1,0 +1,34 @@
+# Configuración de Gitleaks para NovaTareas.
+#
+# Hereda todas las reglas por defecto y añade excepciones acotadas. Cada una
+# está justificada: una lista de excepciones sin motivo escrito acaba creciendo
+# hasta que la herramienta no detecta nada.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Valores ficticios que existen a propósito en el repositorio"
+
+regexes = [
+  # Clave de cifrado de las pruebas: base64url de
+  # `0123456789abcdef0123456789abcdef`. La usan vitest.config.js y el workflow
+  # para que la suite no dependa de una credencial real ni consuma cuota.
+  # Se exime este valor exacto, no la regla `generic-api-key` entera: silenciar
+  # la regla dejaría pasar la siguiente clave, que sí podría ser real.
+  '''MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY''',
+
+  # Secretos de prueba declarados como tales en vitest.config.js y en el
+  # workflow. El sufijo es literal y no aparece en ningún valor real.
+  '''[a-z-]+-solo-para-pruebas(-de-ci)?''',
+]
+
+paths = [
+  # Plantilla de entorno: por definición no contiene valores reales, y el
+  # propio fichero avisa de que el .env real nunca se versiona.
+  '''\.env\.example$''',
+
+  # Los documentos de diseño y plan citan los valores ficticios del workflow
+  # al describirlo.
+  '''docs/superpowers/.*\.md$''',
+]
