@@ -18,10 +18,13 @@ migraciones, imagen y pruebas— está declarado en
 
 - **Sonda de trabajos programados: `GET /api/v1/health/jobs`.** Publica cuándo
   se ejecutó por última vez cada trabajo, si terminó bien y con qué contadores.
-  Responde **503** cuando alguno lleva más de 45 minutos sin correr —tres ciclos
-  del cron de 15— y **200** cuando todos están al día, para que un vigilante
-  externo lo detecte con `curl -f`. No requiere autenticación, igual que
-  `/api/v1/health/ready`.
+  Responde **503** cuando alguno no está sano y **200** solo cuando todos lo
+  están, para que un vigilante externo lo detecte con `curl -f`. El campo
+  `reason` separa los dos motivos, que se investigan en sitios distintos:
+  `stale` —lleva más de 45 minutos sin correr, tres ciclos del cron de 15, o no
+  ha corrido nunca— manda a mirar el crontab del servidor, y `failing` —corre
+  puntual pero el último intento reventó— los logs de la aplicación. No requiere
+  autenticación, igual que `/api/v1/health/ready`.
 - **Tabla `job_runs`** (migración `0007`) y `src/lib/jobRuns.js`: una fila por
   trabajo con `last_run_at`, `last_ok` y `last_summary`. `/api/cron/reminders`
   deja su marca tanto al terminar bien como al reventar.
@@ -29,8 +32,10 @@ migraciones, imagen y pruebas— está declarado en
 Sale de un fallo real: el cron de recordatorios nunca se instaló en el servidor
 y estuvo meses sin ejecutarse con la aplicación en verde, porque un trabajo
 programado muerto no produce errores, produce silencio. **Un trabajo que nunca
-se ha ejecutado cuenta como atrasado, no como correcto**: darlo por bueno
-convertiría la sonda en una copia del fallo que existe para detectar.
+se ha ejecutado cuenta como atrasado, no como correcto**, y **uno que corre y
+revienta cada ciclo tampoco está sano**: en los dos casos nadie recibe sus
+avisos, así que darlos por buenos convertiría la sonda en una copia del fallo
+que existe para detectar.
 
 `/api/v1/health/ready` no cambia y esta ruta no entra en el `HEALTHCHECK` del
 contenedor: un cron parado no debe sacar la web del balanceador.

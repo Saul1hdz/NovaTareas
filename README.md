@@ -337,7 +337,7 @@ npm run lint          # revisar tipos y sintaxis del proyecto
 | `tests/emailVerification.test.js` | Confirmación de correo en el registro, bloqueo del login hasta confirmar, tokens de un solo uso y recuperación de contraseña por correo |
 | `tests/googleIntegration.test.js` | OAuth, eventos, renovación y guardado cifrado de tokens, con Google simulado |
 | `tests/integrationSecurity.test.js` | Cron, webhook de Telegram simulado y subida de avatares válidos, falsificados o con MIME incorrecto |
-| `tests/jobHealth.test.js` | Que `/api/v1/health/jobs` detecte un cron parado, incluido el caso que lo motivó: un trabajo que **nunca** se ha ejecutado cuenta como atrasado, no como correcto |
+| `tests/jobHealth.test.js` | Que `/api/v1/health/jobs` detecte un cron que no hace su trabajo, tanto si no corre —incluido el caso que lo motivó: **nunca** ejecutado cuenta como atrasado, no como correcto— como si corre y revienta |
 | `tests/measureEndpoint.test.js` | El resumen estadístico de la medición: percentiles, tasa de error y el mínimo de muestras |
 | `tests/noSqliteDialect.test.js` | Que nadie vuelva a introducir dialecto SQLite en el código |
 | `tests/observability.test.js` | Que el log solo publique campos de la lista blanca, normalice las rutas y no filtre cuerpos, cabeceras ni tokens |
@@ -930,7 +930,7 @@ Lo que se espera de cada una:
 |---|---|---|
 | `/api/v1/health/ready` | `200` con `{"status":"ok","checks":{"database":true}}` | La web está arriba pero sin base de datos: mira los logs del contenedor `db` |
 | `/api/v1/metadata` | `200` con `"version": "1.0.0"` | Si la versión no es la que publicaste, el contenedor no se reconstruyó |
-| `/api/v1/health/jobs` | `200` con `"status":"ok"` | `503` con `"stale":true`: el cron de recordatorios lleva más de 45 minutos sin correr —o no se ha instalado nunca— y nadie está recibiendo avisos |
+| `/api/v1/health/jobs` | `200` con `"status":"ok"` | `503`: nadie está recibiendo avisos. `"reason":"stale"` es que el cron no corre —lleva más de 45 minutos o no se instaló nunca— y `"reason":"failing"` que corre pero revienta |
 | `/api/v1/health` | `200` con `zai_configured: true` | Con `false`, las recomendaciones seguirán saliendo, pero por el respaldo de reglas locales |
 
 `/api/v1/health` responde `200` incluso con z.ai y Ollama caídos, a propósito: el

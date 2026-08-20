@@ -151,12 +151,19 @@ estuvo en verde todo ese tiempo, porque un trabajo programado muerto no produce
 errores, produce silencio.
 
 `GET /api/v1/health/jobs` convierte ese silencio en una señal. Publica cuándo
-corrió por última vez cada trabajo y responde **503** si alguno lleva más de 45
-minutos sin hacerlo —tres ciclos perdidos— o si **no se ha ejecutado nunca**:
+corrió por última vez cada trabajo y responde **503** si alguno no está sano:
 
 ```bash
 curl -fsS https://novatareas.ejemplo.test/api/v1/health/jobs
 ```
+
+El campo `reason` de cada trabajo dice qué mirar, que no es lo mismo en los dos
+casos:
+
+| `reason` | Qué pasa | Dónde se busca |
+|---|---|---|
+| `stale` | Lleva más de 45 minutos sin ejecutarse —tres ciclos perdidos— o no lo ha hecho nunca | `crontab -l` en este servidor: la línea de la sección 5 |
+| `failing` | El cron corre puntual, pero el último barrido reventó | `docker compose -f compose.prod.yml logs web \| grep cron/reminders` |
 
 Con el cron recién instalado y antes del primer barrido la respuesta es `503`
 con `"stale": true` y `"last_run_at": null`. Debe pasar a `200` como muy tarde

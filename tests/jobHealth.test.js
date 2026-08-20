@@ -51,6 +51,7 @@ describe('sonda de trabajos programados', { sequential: true }, () => {
     expect(response.status).toBe(503);
     expect(body.status).toBe('stale');
     expect(body.jobs.cron_reminders.stale).toBe(true);
+    expect(body.jobs.cron_reminders.reason).toBe('stale');
     expect(body.jobs.cron_reminders.last_run_at).toBeNull();
     expect(body.jobs.cron_reminders.minutes_ago).toBeNull();
     expect(body.jobs.cron_reminders.last_ok).toBeNull();
@@ -85,15 +86,47 @@ describe('sonda de trabajos programados', { sequential: true }, () => {
     expect(response.status).toBe(503);
     expect(body.status).toBe('stale');
     expect(body.jobs.cron_reminders.stale).toBe(true);
+    expect(body.jobs.cron_reminders.reason).toBe('stale');
     expect(body.jobs.cron_reminders.minutes_ago).toBeGreaterThanOrEqual(46);
   });
 
-  it('informa de un barrido que reventó sin ocultarlo', async () => {
+  it('responde 503 cuando el último intento falló, aunque sea reciente', async () => {
+    // Un barrido que revienta cada quince minutos tampoco está haciendo su
+    // trabajo: los usuarios no reciben nada, igual que si el cron no existiera.
+    // Es el mismo fallo que motiva esta sonda, con otra cara, así que una marca
+    // fresca no basta para dar verde.
     await marcar({ minutosAtras: 2, ok: false, resumen: { error: 'telegram_no_responde' } });
 
-    const body = await (await jobsHealth(contexto())).json();
+    const response = await jobsHealth(contexto());
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.status).toBe('failing');
+    expect(body.jobs.cron_reminders.stale).toBe(false);
     expect(body.jobs.cron_reminders.last_ok).toBe(false);
+    expect(body.jobs.cron_reminders.reason).toBe('failing');
     expect(body.jobs.cron_reminders.last_summary).toEqual({ error: 'telegram_no_responde' });
+  });
+
+  it('distingue el trabajo que no corre del que corre y peta', async () => {
+    // Los dos son 503, pero se investigan de forma distinta: uno se busca en el
+    // crontab del servidor y el otro en los logs de la aplicación. Quien lea la
+    // alerta tiene que poder decirlo sin abrir nada.
+    await marcar({ minutosAtras: 3, ok: true });
+    const sano = await (await jobsHealth(contexto())).json();
+    expect(sano.jobs.cron_reminders.reason).toBeNull();
+
+    await marcar({ minutosAtras: 60, ok: true });
+    const atrasado = await (await jobsHealth(contexto())).json();
+    expect(atrasado.status).toBe('stale');
+    expect(atrasado.jobs.cron_reminders.reason).toBe('stale');
+
+    // Cuando se dan los dos a la vez manda el que no corre: si lleva una hora
+    // sin ejecutarse, que su último intento fallara es historia vieja.
+    await marcar({ minutosAtras: 60, ok: false });
+    const ambos = await (await jobsHealth(contexto())).json();
+    expect(ambos.status).toBe('stale');
+    expect(ambos.jobs.cron_reminders.reason).toBe('stale');
   });
 });
 
@@ -149,8 +182,9 @@ describe('el barrido deja su marca', { sequential: true }, () => {
     expect(marca.last_ok).toBe(false);
 
     const respuesta = await jobsHealth(contexto());
-    expect(respuesta.status).toBe(200);
+    expect(respuesta.status).toBe(503);
     const body = await respuesta.json();
     expect(body.jobs.cron_reminders.last_ok).toBe(false);
+    expect(body.jobs.cron_reminders.reason).toBe('failing');
   });
 });

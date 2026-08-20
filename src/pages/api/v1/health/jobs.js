@@ -11,10 +11,18 @@ export const prerender = false;
  * de recordatorios estuvo meses sin ejecutarse con la aplicación en verde,
  * porque un trabajo programado muerto no produce errores, produce silencio.
  *
- * Responde 503 en cuanto un trabajo se queda atrás, para que un vigilante
- * externo lo detecte con `curl -f` sin necesidad de leer el JSON. El aviso lo
- * da ese vigilante y no la propia aplicación: quien avisa no puede ser quien
- * está caído.
+ * Responde 503 en cuanto un trabajo deja de estar sano —porque se quedó atrás o
+ * porque su último intento reventó—, para que un vigilante externo lo detecte
+ * con `curl -f` sin necesidad de leer el JSON. El aviso lo da ese vigilante y
+ * no la propia aplicación: quien avisa no puede ser quien está caído.
+ *
+ * `status` y el `reason` de cada trabajo separan los dos motivos, que se
+ * investigan en sitios distintos: `stale` manda a mirar el crontab del
+ * servidor y `failing` los logs de la aplicación. Un fallo pasajero —un
+ * timeout de Telegram— pondrá esto en rojo durante un ciclo y se resolverá
+ * solo quince minutos después; ese ruido es el precio aceptado por no ser
+ * ciego ante un fallo permanente, y por eso no hay contador de intentos
+ * consecutivos que lo suavice.
  *
  * No requiere autenticación, igual que `/api/v1/health/ready`: solo publica
  * marcas de tiempo y contadores, nunca datos de usuarios.
@@ -32,13 +40,18 @@ export async function GET() {
     }, 503);
   }
 
-  const stale = Object.values(jobs).some(job => job.stale);
+  const motivos = Object.values(jobs).map(job => job.reason);
+  // El orden importa: un trabajo que no corre tapa a uno que corre y falla,
+  // porque es el que hay que investigar primero.
+  const status = motivos.includes('stale')
+    ? 'stale'
+    : (motivos.includes('failing') ? 'failing' : 'ok');
 
   return json({
-    status: stale ? 'stale' : 'ok',
+    status,
     jobs,
     timestamp: new Date().toISOString(),
-  }, stale ? 503 : 200);
+  }, status === 'ok' ? 200 : 503);
 }
 
 function json(body, status) {

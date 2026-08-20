@@ -41,7 +41,7 @@ codigo:
 api:
   version_contrato: "1.0.0"  # la publica el propio servicio en /api/v1/metadata
   documentacion: api.md
-  documentacion_sha256_prefijo: f2baeebbad23174c
+  documentacion_sha256_prefijo: 41b15e1adf4b565c
   autenticacion_externa: "Authorization: Bearer <AI_API_KEY>"
   endpoints_publicos:
     - metodo: GET
@@ -60,9 +60,10 @@ api:
       autenticacion: ninguna
       nota: >-
         Sonda de los trabajos programados: 503 si alguno lleva más de 45 minutos
-        sin ejecutarse, y también si no se ha ejecutado nunca. Deliberadamente
-        fuera del healthcheck del contenedor: un cron parado no debe sacar la
-        web del balanceador.
+        sin ejecutarse —incluido no haberlo hecho nunca— o si su último intento
+        falló. El campo `reason` distingue `stale` de `failing`, que se
+        investigan en sitios distintos. Deliberadamente fuera del healthcheck
+        del contenedor: un cron parado no debe sacar la web del balanceador.
     - metodo: GET
       ruta: /api/v1/metadata
       autenticacion: ninguna
@@ -196,7 +197,7 @@ ambiente:
 pruebas:
   runner: "Vitest 4.1.10"
   archivos: 31
-  casos: 211
+  casos: 212
   motor_de_pruebas: PostgreSQL 16 real
   aislamiento: >-
     TEST_DATABASE_URL debe terminar en `_test`; la suite recrea el esquema
@@ -233,7 +234,7 @@ verificacion:
       - astro check
       - migración sobre PostgreSQL 16 efímero
       - comprobación transaccional
-      - 211 pruebas con cobertura
+      - 212 pruebas con cobertura
       - build del proyecto
       - construcción de la imagen de producción
       - arranque real de la imagen y curl a /api/v1/health/ready

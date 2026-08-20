@@ -106,6 +106,7 @@ de tiempo y contadores, nunca datos de usuarios.
       "minutes_ago": 7,
       "expected_every_minutes": 15,
       "stale": false,
+      "reason": null,
       "last_ok": true,
       "last_summary": {
         "reminders_sent": 0,
@@ -120,7 +121,9 @@ de tiempo y contadores, nunca datos de usuarios.
 }
 ```
 
-**Respuesta cuando algún trabajo se quedó atrás — HTTP 503**
+**Respuesta cuando algún trabajo no está sano — HTTP 503**
+
+En este ejemplo el trabajo no se ha ejecutado nunca:
 
 ```json
 {
@@ -131,6 +134,7 @@ de tiempo y contadores, nunca datos de usuarios.
       "minutes_ago": null,
       "expected_every_minutes": 15,
       "stale": true,
+      "reason": "stale",
       "last_ok": null,
       "last_summary": null
     }
@@ -139,14 +143,32 @@ de tiempo y contadores, nunca datos de usuarios.
 }
 ```
 
+### Por qué un trabajo no está sano
+
+`reason` separa los dos motivos, que **se investigan en sitios distintos**. Un
+vigilante puede ponerlo tal cual en el mensaje de la alerta y quien lo lea ya
+sabe dónde mirar:
+
+| `reason` | Qué pasa | Dónde se mira |
+|---|---|---|
+| `"stale"` | Lleva más de 45 minutos sin ejecutarse, o no lo ha hecho nunca | El crontab del servidor |
+| `"failing"` | Se ejecuta puntual, pero el último intento reventó | Los logs de la aplicación |
+| `null` | Corrió hace poco y terminó bien | Nada que hacer |
+
+El `status` de arriba toma el motivo que predomina: `"stale"` tapa a
+`"failing"`, porque un trabajo que no corre se investiga antes que uno que corre
+mal. Los valores posibles son `"ok"`, `"stale"` y `"failing"`.
+
 ### Reglas
 
 | Regla | Valor y por qué |
 |---|---|
 | Umbral de `stale` | **45 minutos**: tres ciclos del cron de 15. Con uno solo, cualquier reinicio del contenedor produciría una alerta falsa. |
-| Código de estado | **503** si algún trabajo está `stale`, **200** si todos están frescos. Así un vigilante con `curl -f` lo detecta sin saber leer JSON. |
+| Código de estado | **503** si algún trabajo tiene `reason`, **200** solo si todos están sanos. Así un vigilante con `curl -f` lo detecta sin saber leer JSON. |
 | **Nunca ejecutado** | Cuenta como `stale`, **no** como `ok`. Ese era exactamente el caso real: cero ejecuciones en toda la historia del despliegue. Si diera verde, la sonda reproduciría el fallo que pretende detectar. |
-| Barrido fallido | Queda registrado con `last_ok: false` y la clase del error en `last_summary`. Si solo se registrara el éxito, un cron que falla siempre se vería igual que uno que no existe. |
+| **Último intento fallido** | Cuenta como `failing`, aunque la marca sea de hace dos minutos. Un barrido que revienta cada ciclo tampoco está avisando a nadie: es el mismo fallo con otra cara. |
+| Barrido fallido | Queda registrado con `last_ok: false` y la clase del error en `last_summary` —nunca su mensaje, que puede llevar datos de un usuario. |
+| Sin contador de reintentos | Un fallo pasajero pone la sonda en rojo un ciclo y se resuelve solo quince minutos después. Ese ruido se acepta a cambio de no ser ciego ante un fallo permanente; un contador de intentos consecutivos complicaría el estado para poco. |
 
 ### Lo que esta ruta **no** hace
 

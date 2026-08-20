@@ -62,6 +62,22 @@ export async function getJobRuns(database = db) {
  * ha ejecutado está `stale`, no `ok`. Ese era el caso real —cero ejecuciones en
  * toda la historia del despliegue—, así que darlo por bueno construiría una
  * sonda que reproduce el fallo que pretende detectar.
+ *
+ * `reason` dice por qué un trabajo no está sano, y son dos cosas distintas que
+ * se investigan en sitios distintos:
+ *
+ * | `reason`  | Qué pasa | Dónde se mira |
+ * |---|---|---|
+ * | `stale`   | Lleva demasiado sin ejecutarse, o no lo ha hecho nunca | El crontab del servidor |
+ * | `failing` | Se ejecuta puntual, pero el último intento reventó | Los logs de la aplicación |
+ * | `null`    | Corrió hace poco y terminó bien | Nada que hacer |
+ *
+ * Un trabajo que revienta cada ciclo tampoco está haciendo su trabajo: nadie
+ * recibe sus avisos, igual que si no existiera. Por eso `failing` también
+ * cuenta como no sano, aunque la marca sea de hace dos minutos.
+ *
+ * Cuando se dan los dos a la vez manda `stale`: si lleva una hora sin
+ * ejecutarse, que su último intento fallara es historia vieja.
  */
 export function summarizeJobs(marcas, ahora = new Date()) {
   const jobs = {};
@@ -75,6 +91,7 @@ export function summarizeJobs(marcas, ahora = new Date()) {
         minutes_ago: null,
         expected_every_minutes: config.expectedEveryMinutes,
         stale: true,
+        reason: 'stale',
         last_ok: null,
         last_summary: null,
       };
@@ -83,12 +100,14 @@ export function summarizeJobs(marcas, ahora = new Date()) {
 
     const lastRunAt = new Date(marca.last_run_at);
     const edadMs = ahora.getTime() - lastRunAt.getTime();
+    const stale = edadMs > config.staleAfterMinutes * 60_000;
 
     jobs[job] = {
       last_run_at: lastRunAt.toISOString(),
       minutes_ago: Math.floor(edadMs / 60_000),
       expected_every_minutes: config.expectedEveryMinutes,
-      stale: edadMs > config.staleAfterMinutes * 60_000,
+      stale,
+      reason: stale ? 'stale' : (marca.last_ok === false ? 'failing' : null),
       last_ok: marca.last_ok,
       last_summary: marca.last_summary ?? null,
     };
