@@ -208,6 +208,36 @@ jobs:
             docker push "$IMAGEN:$etiqueta"
           done
 
+      # El resumen aparece en la página de la ejecución. Argus no tiene que
+      # deducir si el despliegue toca el esquema: se lo dice el pipeline.
+      - name: Preparar el bloque de despliegue para Argus
+        if: github.ref == 'refs/heads/main'
+        run: |
+          SHA_CORTO=${{ steps.etiquetas.outputs.sha_corto }}
+          MIGRACIONES=$(git diff --name-only HEAD~1 HEAD -- migrations/postgresql/ | grep '\.sql$' || true)
+          {
+            echo "## Despliegue para Argus"
+            echo
+            echo "Imagen: \`ghcr.io/saul1hdz/novatareas:sha-$SHA_CORTO\`"
+            echo
+            if [ -n "$MIGRACIONES" ]; then
+              echo "### ATENCION: este commit trae migraciones nuevas"
+              # awk y no `sed 's/^/- /'`: shellcheck marca ese sed (SC2001) y la
+              # puerta de actionlint es de aviso cero.
+              echo "$MIGRACIONES" | awk '{ print "- " $0 }'
+              echo
+              echo "Revisar si alguna es destructiva ANTES de desplegar."
+              echo "Volver el codigo NO revierte el esquema."
+            else
+              echo "Sin migraciones nuevas: el esquema no cambia."
+            fi
+            echo
+            echo "### VPS compartido"
+            echo "- Usar siempre \`-p novatareas-prod\`."
+            echo "- Nunca \`docker system prune\` ni \`docker image prune -a\`."
+            echo "- No exponer el puerto 5432."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   seguridad:
     name: Cadena de suministro
     runs-on: ubuntu-latest
