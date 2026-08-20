@@ -239,11 +239,12 @@ export async function notifyOverdueTasks(db) {
  */
 export async function notifyTaskNudges(db) {
   const {
+    claimTaskNudge,
     getTasksNeedingNudge,
     isQuietHour,
-    markNudgeSent,
     nudgeHours,
     nudgesEnabled,
+    releaseTaskNudgeClaim,
   } = await import('./taskNudges.js');
 
   if (!nudgesEnabled()) return { sent: 0, skipped: 'desactivado' };
@@ -254,24 +255,29 @@ export async function notifyTaskNudges(db) {
   let sent = 0;
 
   for (const row of pendientes) {
-    const emoji = PRIORITY_EMOJI[row.priority] || '⚪';
-    const cadaCuanto = horas[row.priority] || horas.baja;
-    const vence = row.due_date ? `\n🗓️ Vence: <b>${formatDate(row.due_date)}</b>` : '';
+    const claim = await claimTaskNudge(db, row.task_id, row.telegram_chat_id);
+    if (!claim) continue;
+
+    const emoji = PRIORITY_EMOJI[claim.priority] || '⚪';
+    const cadaCuanto = horas[claim.priority] || horas.baja;
+    const vence = claim.due_date ? `\n🗓️ Vence: <b>${formatDate(claim.due_date)}</b>` : '';
 
     try {
       const entregado = await sendMessage(
-        row.telegram_chat_id,
+        claim.telegram_chat_id,
         `🔔 <b>Sigue pendiente</b>\n\n` +
-        `${emoji} <b>${escapeTelegramHtml(row.title)}</b>\n` +
-        `Prioridad: <b>${row.priority}</b>${vence}\n\n` +
+        `${emoji} <b>${escapeTelegramHtml(claim.title)}</b>\n` +
+        `Prioridad: <b>${claim.priority}</b>${vence}\n\n` +
         `Te aviso cada ${cadaCuanto} h mientras siga sin completarse. ` +
         `Márcala como terminada o archívala para dejar de recibir este aviso.`
       );
       if (entregado) {
-        await markNudgeSent(db, row.task_id);
         sent += 1;
+      } else {
+        await releaseTaskNudgeClaim(db, claim);
       }
     } catch (err) {
+      await releaseTaskNudgeClaim(db, claim).catch(() => {});
       console.error('[telegramNotify] Error recordatorio recurrente:', safeErrorSummary(err));
     }
   }

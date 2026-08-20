@@ -1,9 +1,14 @@
-// Fuente única de la conexión de pruebas.
-//
-// Deliberadamente NO cae a DATABASE_URL: esa variable apunta a la base de
-// desarrollo (`novatareas`), y el setup de pruebas borra el esquema completo.
-// Para apuntar a otra base —por ejemplo en CI— se define TEST_DATABASE_URL.
+// Fuente única de la conexión de pruebas. Nunca reutiliza DATABASE_URL porque
+// el setup destruye y recrea el esquema completo.
+const configured = process.env.TEST_DATABASE_URL?.trim();
 
-export const TEST_DATABASE_URL =
-  process.env.TEST_DATABASE_URL?.trim()
-  || 'postgresql://novatareas:devpassword@127.0.0.1:5434/novatareas_test';
+if (!configured) {
+  throw new Error('TEST_DATABASE_URL es obligatoria para ejecutar la suite PostgreSQL.');
+}
+
+const parsed = new URL(configured);
+if (!parsed.pathname.slice(1).endsWith('_test')) {
+  throw new Error('TEST_DATABASE_URL debe apuntar a una base cuyo nombre termine en _test.');
+}
+
+export const TEST_DATABASE_URL = configured;
