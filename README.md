@@ -45,10 +45,12 @@ Docente: Ing. Marco Arévalo Zambrano
 11. [Variables de entorno](#11-variables-de-entorno)
 12. [Estructura del repositorio](#12-estructura-del-repositorio)
 13. [Arquitectura](#13-arquitectura)
-14. [Limitaciones conocidas](#14-limitaciones-conocidas)
-15. [Plan de mejora por semana](#15-plan-de-mejora-por-semana)
-16. [Documentación adicional](#16-documentación-adicional)
-17. [Stack tecnológico](#17-stack-tecnológico)
+14. [Riesgos iniciales y cómo están hoy](#14-riesgos-iniciales-y-cómo-están-hoy)
+15. [Limitaciones y deuda técnica](#15-limitaciones-y-deuda-técnica)
+16. [Evolución lograda](#16-evolución-lograda)
+17. [Plan de mejora por semana](#17-plan-de-mejora-por-semana)
+18. [Documentación adicional](#18-documentación-adicional)
+19. [Stack tecnológico](#19-stack-tecnológico)
 
 ---
 
@@ -720,12 +722,41 @@ API Gateway
 
 ---
 
-## 14. Limitaciones conocidas
+## 14. Riesgos iniciales y cómo están hoy
 
-Preferimos decirlas de frente antes de que sorprendan a alguien:
+Al cerrar el primer bloque anotamos los riesgos que veíamos entonces. Los
+dejamos aquí con su estado actual, porque un riesgo que se cerró en silencio no
+le sirve de nada a quien llega después. El detalle original está en
+[`docs/CIERRE_BLOQUE_1.md`](docs/CIERRE_BLOQUE_1.md) y
+[`docs/QA_ESTABILIZACION_LOCAL.md`](docs/QA_ESTABILIZACION_LOCAL.md).
+
+| Riesgo identificado al inicio | Estado | Evidencia |
+|---|---|---|
+| SQLite era temporal y había que migrar a PostgreSQL | ✅ Cerrado | PostgreSQL 16 es el único motor; `tests/noSqliteDialect.test.js` impide que vuelva el dialecto viejo |
+| El límite de intentos vivía en memoria y no servía para varias instancias | ✅ Cerrado | Tabla `rate_limit_hits`; `tests/security.test.js` comprueba que el recuento sobrevive fuera del proceso |
+| Dependencias con avisos de seguridad sin resolver | ✅ Cerrado | `npm audit` no reporta vulnerabilidades |
+| La recuperación por preguntas de seguridad no sirve para un servicio público | ✅ Cerrado | Se retiraron; ahora la confirmación y el restablecimiento van por correo con token de un solo uso |
+| Bloques grandes de `innerHTML` en el dashboard | ✅ Cerrado | No queda ninguno: el listado se construye con nodos del DOM |
+| Faltaba cobertura de subtareas, recordatorios, cron, bot y Google Calendar | 🟡 Casi | Ya hay pruebas de recordatorios, cron, webhook, sesiones del bot y Google simulado; falta la conversación completa del bot y el RAG |
+| Netcup sin preparar ni autorizar | 🟡 Casi | `compose.prod.yml` y el runbook están listos; el servidor todavía no |
+| El dashboard sigue siendo monolítico con handlers inline | ❌ Abierto | `src/pages/dashboard.astro` pasa de 3.900 líneas y conserva atributos `onclick` |
+
+---
+
+## 15. Limitaciones y deuda técnica
+
+Preferimos decirlas de frente antes de que sorprendan a alguien. Van separadas
+en dos grupos, porque no es lo mismo una decisión que tomamos a conciencia que
+algo que quedó a medias y hay que pagar.
+
+### Restricciones asumidas
+
+Son consecuencia de decisiones deliberadas. No pensamos «arreglarlas»; conviene
+conocerlas.
 
 1. **Hace falta un PostgreSQL levantado para todo**, incluso para correr las
-   pruebas. Docker Compose es la forma recomendada de tenerlo.
+   pruebas. Es a propósito: las pruebas corren contra el mismo motor que
+   producción, no contra un sustituto. Docker Compose es la forma recomendada.
 2. **El bot y el planificador son procesos separados.** En Docker están detrás de
    perfiles opcionales, justamente para no arrancar dos bots por accidente.
 3. **El estado de conversación del bot vive en la tabla `telegram_sessions`** y
@@ -735,42 +766,67 @@ Preferimos decirlas de frente antes de que sorprendan a alguien:
    túnel se cae el bot deja de responder. Por eso en desarrollo usamos polling.
 5. **La cuota de z.ai es limitada.** Cuando se agota el saldo, el sistema cae al
    respaldo local u offline en lugar de fallar.
-6. **La cobertura de pruebas todavía tiene huecos.** Las 185 pruebas ya cubren
-   autenticación, recuperación, ownership, tareas, migraciones de PostgreSQL,
-   cifrado de tokens, recordatorios, cron, webhook, avatares, códigos de
-   vinculación de Telegram, proveedores de IA y las rutas principales de Google
-   simuladas. Falta cubrir a fondo la conversación del bot, el RAG y el flujo
-   visual de Google en el dashboard.
-7. **El RAG está conectado solo a medias.** Los embeddings existen en la base de
+6. **La confirmación de cuenta depende de un servidor de correo.** Es más seguro
+   que las preguntas de seguridad que sustituyó, pero si el SMTP no responde,
+   nadie puede registrarse ni recuperar su contraseña.
+7. **Una sola instancia de bot.** Los límites de intentos, los tokens de
+   recuperación y las sesiones ya se comparten a través de PostgreSQL, así que la
+   web podría escalar; el bot no, porque usa polling y dos procesos con el mismo
+   token se roban los mensajes.
+
+### Deuda técnica pendiente
+
+Esto sí hay que pagarlo. Está ordenado por lo que más estorba hoy.
+
+1. **El dashboard es un archivo monolítico.** `src/pages/dashboard.astro` pasa de
+   las 3.900 líneas y conserva atributos `onclick` en el marcado. Su acceso a
+   datos ya se extrajo a `src/lib/dashboardStats.js`, pero el CSS y el JavaScript
+   de cliente siguen dentro. Es el archivo donde más cuesta cambiar algo sin
+   romper otra cosa.
+2. **No hay logging estructurado.** Las llamadas al modelo no registran qué
+   modelo se usó, cuántos tokens consumió ni cuánto tardó, así que no se puede
+   medir ni el coste ni la latencia.
+3. **El RAG está conectado solo a medias.** Los embeddings existen en la base de
    datos, pero no todas las rutas del código los consumen todavía.
-8. **La métrica de calidad recién empieza.** Ya se puede valorar cada
+4. **La métrica de calidad recién empieza.** Ya se puede valorar cada
    recomendación con 👍/👎 y esa valoración entra en el prompt siguiente, pero
-   todavía no hay un informe que agregue esos votos y diga si la calidad sube o
-   baja con el tiempo.
-9. **No hay logging estructurado.** Las llamadas al modelo no registran qué modelo
-   se usó, cuántos tokens consumió ni cuánto tardó.
-10. **Una sola instancia de web y una de bot.** Los límites de intentos, los
-    tokens de recuperación y las sesiones del bot ya se comparten a través de
-    PostgreSQL, así que la web podría escalar; el bot no, porque usa polling y
-    dos procesos con el mismo token se roban los mensajes.
-11. **El dashboard sigue siendo un archivo monolítico.**
-    `src/pages/dashboard.astro` pasa de las 3.900 líneas. Su acceso a datos ya se
-    extrajo a `src/lib/dashboardStats.js`, pero el CSS y el JavaScript de cliente
-    siguen sin separar, y el rediseño visual lo hizo crecer más.
-12. **Google Calendar está a medio camino.** Los archivos existen en
-    `/api/google/`, pero la integración aún no está conectada al dashboard.
-13. **La recuperación de cuenta ya va por correo verificado.** Las preguntas de
-    seguridad se retiraron: ahora el registro puede exigir confirmar el correo y
-    el restablecimiento de contraseña llega por SMTP con un token de un solo uso.
-    No revela si una cuenta existe y limita los intentos. La contrapartida es que
-    ahora depende de un servidor de correo que funcione.
-14. **Todavía no hay despliegue público.** El proyecto corre en local; Netcup,
-    dominio, HTTPS y operación continua quedan para el final. El runbook ya está
-    escrito en [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md).
+   falta un informe que agregue los votos y diga si la calidad sube o baja.
+5. **Google Calendar está a medio camino.** Los archivos existen en
+   `/api/google/`, con OAuth y tokens cifrados probados, pero la integración aún
+   no está conectada al dashboard.
+6. **La cobertura de pruebas todavía tiene huecos.** Las 185 pruebas ya cubren
+   autenticación, correo, ownership, tareas, colaboración, migraciones, cifrado,
+   recordatorios, cron, webhook, avatares, CSRF, proveedores de IA y las rutas
+   principales de Google simuladas. Falta cubrir a fondo la conversación del bot
+   y el RAG.
+7. **Todavía no hay despliegue público.** El proyecto corre en local; Netcup,
+   dominio, HTTPS y operación continua quedan pendientes. El runbook ya está
+   escrito en [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md).
 
 ---
 
-## 15. Plan de mejora por semana
+## 16. Evolución lograda
+
+Resumen de dónde arrancó el proyecto y dónde está ahora. El detalle semana por
+semana viene en la sección 17.
+
+| | Al inicio | Hoy |
+|---|---|---|
+| Base de datos | SQLite, pensada como provisional | PostgreSQL 16 como motor único, con migraciones versionadas y una prueba que impide volver atrás |
+| Pruebas | 55 en 7 archivos | **185 en 28 archivos**, todas contra PostgreSQL real |
+| Integración continua | No había | GitHub Actions con PostgreSQL 16 efímero, migración, cobertura y build |
+| Capacidad de IA | Acoplada al dashboard | `aiEngine.js` desacoplado y expuesto como API en `/api/v1/*`, con cascada z.ai → Ollama → historial → reglas |
+| Calidad de las recomendaciones | Sin forma de medirla | Valoración 👍/👎 guardada en su tabla, que realimenta el prompt siguiente |
+| Límites de intentos | En memoria del proceso | Persistidos en PostgreSQL, válidos para varias instancias |
+| Recuperación de cuenta | Preguntas de seguridad | Correo verificado con token de un solo uso |
+| Tareas | Individuales | Modo colaborativo con enlace de invitación y tres niveles de acceso |
+| Avisos de Telegram | Solo por eventos | Además recordatorios recurrentes según la prioridad, con horas de silencio |
+| Ejecución | Solo en local, a mano | Docker Compose para desarrollo y `compose.prod.yml` con runbook de despliegue |
+| Seguridad | Avisos de dependencias sin resolver | `npm audit` limpio, CSRF detrás de proxy, tokens de Google cifrados |
+
+---
+
+## 17. Plan de mejora por semana
 
 ### Semana 1 — Diagnóstico y arquitectura ✅
 
@@ -846,7 +902,7 @@ Preferimos decirlas de frente antes de que sorprendan a alguien:
 
 ---
 
-## 16. Documentación adicional
+## 18. Documentación adicional
 
 Si necesitas entrar en detalle, cada documento cubre una parte distinta:
 
@@ -891,7 +947,7 @@ Si necesitas entrar en detalle, cada documento cubre una parte distinta:
 
 ---
 
-## 17. Stack tecnológico
+## 19. Stack tecnológico
 
 | Capa | Tecnología |
 |---|---|
