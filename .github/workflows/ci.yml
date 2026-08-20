@@ -91,10 +91,61 @@ jobs:
       - name: Compilar el proyecto
         run: npm run build
 
+  imagen:
+    name: Imagen de produccion
+    needs: calidad
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    permissions:
+      contents: read
+      packages: write   # unico trabajo que puede publicar en GHCR
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: novatareas
+          POSTGRES_PASSWORD: ci-password-ficticia
+          POSTGRES_DB: novatareas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U novatareas -d novatareas_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      IMAGEN: ghcr.io/saul1hdz/novatareas
+      DATABASE_URL: postgresql://novatareas:ci-password-ficticia@127.0.0.1:5432/novatareas_test
+      SECRET_KEY: clave-solo-para-pruebas-de-ci
+      CRON_SECRET: cron-solo-para-pruebas-de-ci
+      TELEGRAM_WEBHOOK_SECRET: telegram-solo-para-pruebas-de-ci
+      TOKEN_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v7.0.1
+        with:
+          # `fetch-depth: 2` y no el 1 por defecto: el resumen para Argus de la
+          # tarea 4 compara `HEAD~1` con `HEAD` para detectar migraciones
+          # nuevas, y con un solo commit descargado ese `HEAD~1` no existe.
+          fetch-depth: 2
+
       # El target de producción nunca se construía en CI, así que un fallo solo
       # se descubría al desplegar.
       - name: Construir la imagen de producción
         run: docker build --target runtime -t novatareas:ci .
+
+      # Migrar con la propia imagen reproduce el servicio `migrate` de
+      # compose.prod.yml. Antes CI migraba con el Node del runner, así que
+      # nunca comprobaba que la imagen publicada supiera migrar por su cuenta.
+      - name: Migrar usando la propia imagen
+        run: |
+          docker run --rm --network host \
+            -e DATABASE_URL="$DATABASE_URL" \
+            novatareas:ci node scripts/migrate-postgres.mjs
 
       - name: Comprobar que la imagen arranca y responde
         run: |
@@ -103,6 +154,8 @@ jobs:
             -e DATABASE_URL="$DATABASE_URL" \
             -e SECRET_KEY="$SECRET_KEY" \
             -e CRON_SECRET="$CRON_SECRET" \
+            -e TELEGRAM_WEBHOOK_SECRET="$TELEGRAM_WEBHOOK_SECRET" \
+            -e TOKEN_ENCRYPTION_KEY="$TOKEN_ENCRYPTION_KEY" \
             novatareas:ci
           for _intento in $(seq 1 20); do
             if curl -fsS http://127.0.0.1:4321/api/v1/health/ready; then
@@ -114,6 +167,46 @@ jobs:
           echo "La imagen no respondió a tiempo."
           docker logs novatareas-ci
           exit 1
+
+      # Va ANTES de publicar: una imagen vulnerable falla aquí y nunca llega al
+      # registro. `ignore-unfixed` evita bloquear por CVEs de Debian sin parche
+      # disponible, que detendrían el trabajo sin ofrecer ninguna acción.
+      - name: Analizar vulnerabilidades de la imagen
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: novatareas:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+
+      - name: Calcular las etiquetas
+        if: github.ref == 'refs/heads/main'
+        id: etiquetas
+        run: |
+          SHA_CORTO=$(git rev-parse --short=7 HEAD)
+          VERSION=$(awk '/^release:/{f=1} f && /^  version:/{gsub(/["[:space:]]/,"",$2); print $2; exit}' release-manifest.yml)
+          if [ -z "$VERSION" ]; then
+            echo "No se pudo leer release.version de release-manifest.yml"
+            exit 1
+          fi
+          echo "sha_corto=$SHA_CORTO" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Etiquetas: sha-$SHA_CORTO, $VERSION, latest"
+
+      - name: Entrar en GHCR
+        if: github.ref == 'refs/heads/main'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Publicar la imagen
+        if: github.ref == 'refs/heads/main'
+        run: |
+          SHA_CORTO=${{ steps.etiquetas.outputs.sha_corto }}
+          VERSION=${{ steps.etiquetas.outputs.version }}
+          for etiqueta in "sha-$SHA_CORTO" "$VERSION" latest; do
+            docker tag novatareas:ci "$IMAGEN:$etiqueta"
+            docker push "$IMAGEN:$etiqueta"
+          done
 
   seguridad:
     name: Cadena de suministro
