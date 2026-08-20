@@ -114,3 +114,52 @@ jobs:
           echo "La imagen no respondió a tiempo."
           docker logs novatareas-ci
           exit 1
+
+  seguridad:
+    name: Cadena de suministro
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Sin `needs`: no depende de las pruebas, así que corre en paralelo y no
+    # alarga el reloj del pipeline.
+    permissions:
+      contents: read
+      security-events: write   # publicar hallazgos de CodeQL
+      actions: read
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v7.0.1
+        with:
+          # Gitleaks necesita el historial completo: un secreto borrado en el
+          # último commit sigue estando en los anteriores y sigue expuesto.
+          fetch-depth: 0
+
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '22.23.1'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # Umbral `high` y no `moderate` a propósito: una puerta que salta cada
+      # semana por algo que no afecta acaba desactivada, y una puerta
+      # desactivada no protege nada.
+      - name: Auditar dependencias
+        run: npm audit --audit-level=high
+
+      # Saul1hdz es cuenta personal, no organización: no requiere licencia.
+      - name: Buscar secretos en el historial
+        uses: gitleaks/gitleaks-action@v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Preparar CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+
+      - name: Analizar el código con CodeQL
+        uses: github/codeql-action/analyze@v4
