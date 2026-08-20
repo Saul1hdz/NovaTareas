@@ -71,12 +71,17 @@ cp .env.example .env
 ```
 
 ```bash
-docker compose -f compose.prod.yml up -d --build web
+export NOVATAREAS_TAG=sha-<commit-corto>
+docker compose -f compose.prod.yml up -d web
 ```
 
 Ese comando, en orden: levanta PostgreSQL, espera a que esté sano, ejecuta las
-migraciones en un contenedor de un solo uso y solo entonces arranca la web. Si
-las migraciones fallan, la web no llega a iniciarse.
+migraciones en un contenedor de un solo uso con la imagen publicada y solo
+entonces arranca la web. Si las migraciones fallan, la web no llega a iniciarse.
+
+**No construye nada**: descarga `ghcr.io/saul1hdz/novatareas` del registro. Para
+las actualizaciones posteriores, usa el procedimiento de la sección 8, que añade
+verificación de digest, ensayo de migración, copia de seguridad y rollback.
 
 Comprobación:
 
@@ -135,7 +140,8 @@ mensajes.
 ## 6. Bot de Telegram
 
 ```bash
-docker compose -f compose.prod.yml --profile telegram up -d bot
+docker compose --env-file .env -p novatareas-prod \
+  -f compose.prod.yml -f compose.server.yml --profile telegram up -d --no-build bot
 ```
 
 **Exactamente una instancia por token.** El bot usa polling, y dos procesos con
@@ -167,32 +173,103 @@ completo en una base desechable antes de confiar en él.
 
 ## 8. Actualizar una versión
 
+**El servidor ya no construye la imagen.** La publica CI en
+`ghcr.io/saul1hdz/novatareas` después de pasar las pruebas, arrancar la imagen
+contra una base real y escanearla con Trivy. Lo que corre en producción es ese
+artefacto exacto, no una reconstrucción.
+
+### Procedimiento normal
+
 ```bash
-git fetch --all --tags
-git checkout <nueva-etiqueta>
-docker compose -f compose.prod.yml up -d --build web
+sudo /usr/local/sbin/novatareas-release deploy-<sha40>
 ```
 
-Registra siempre qué commit está desplegado:
+El `<sha40>` es el commit completo cuya imagen publicó CI. Cada ejecución del
+pipeline en `main` deja en el resumen del run la etiqueta exacta y avisa de si
+el commit trae migraciones nuevas.
+
+El helper hace, en orden: descarga la imagen y **verifica su digest** contra el
+aprobado; captura las imágenes actuales como red de rollback; ensaya la
+migración contra un PostgreSQL descartable comparando conteos; comprueba que la
+imagen anterior funciona contra el esquema ya migrado; hace copia de la base y
+de los avatares; detiene `web` y `bot`; aplica la migración real; levanta con
+`--no-build`; y confirma la salud en cinco ciclos. Si algo falla, revierte.
+
+Comprobar el estado:
 
 ```bash
-git rev-parse --short HEAD
+sudo /usr/local/sbin/novatareas-release status
 ```
+
+Devuelve el commit desplegado, el digest de la imagen en ejecución y la salud de
+cada servicio.
+
+### Secuencia manual (solo referencia o emergencia)
+
+```bash
+cd /opt/stacks/novatareas
+
+# 1) Descargar la imagen y verificar su digest
+docker pull ghcr.io/saul1hdz/novatareas:sha-<commit-corto>
+docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/saul1hdz/novatareas:sha-<commit-corto>
+
+# 2) Validar la composición (no construye)
+docker compose --env-file .env -p novatareas-prod \
+  -f compose.prod.yml -f compose.server.yml config -q
+
+# 3) Migrar (contenedor de un solo uso, con la imagen descargada)
+docker compose --env-file .env -p novatareas-prod \
+  -f compose.prod.yml -f compose.server.yml run --rm --no-deps migrate
+
+# 4) Levantar web y bot
+docker compose --env-file .env -p novatareas-prod \
+  -f compose.prod.yml -f compose.server.yml up -d --no-build --no-deps web bot
+
+# 5) Verificar
+curl -fsS https://novatareas.polarzero.dev/api/v1/health/ready
+```
+
+**`NOVATAREAS_TAG` debe estar definida** y valer `sha-<commit-corto>` en todas
+esas llamadas. Su valor por defecto es `latest`, que se mueve con cada push a
+`main`: sin fijarla, la migración podría aplicarse con una imagen y el servicio
+arrancar con otra. El helper la exporta y aborta si no coincide.
+
+`compose.server.yml` vive solo en el servidor y aporta los límites de memoria y
+CPU, `no-new-privileges` y la configuración de registro. **No está en el
+repositorio**: un despliegue que lo omita arranca sin ninguna de esas
+protecciones.
 
 ## 9. Volver atrás
 
 ```bash
-git checkout <etiqueta-anterior>
-docker compose -f compose.prod.yml up -d --build web
+sudo /usr/local/sbin/novatareas-release deploy-<sha40-anterior>
 ```
 
+La imagen anterior sigue en la caché local del servidor, así que el retroceso no
+depende de que el registro esté disponible.
+
 Si la versión nueva aplicó migraciones, volver el código **no revierte el
-esquema**. En ese caso restaura primero la copia previa a la migración y luego
-despliega la versión anterior.
+esquema**. El helper distingue dos casos: si la migración avanzó pero la
+aplicación nueva no llegó a arrancar, restaura la copia previa; si la aplicación
+nueva sí arrancó, se apoya en la comprobación de compatibilidad que hizo antes
+—la imagen anterior contra el esquema nuevo— y no toca la base.
+
+Para retrocesos manuales, las copias de cada versión quedan en
+`/opt/stacks/novatareas/backups/releases/<marca>-<sha>/`.
 
 ---
 
 ## 10. Operación diaria
+
+> **Incluye siempre `-f compose.server.yml`** al levantar o recrear servicios.
+> Ese fichero vive solo en el servidor y aporta los límites de memoria y CPU,
+> `no-new-privileges` y la configuración de registro. Un servicio arrancado sin
+> él queda sin esas protecciones. Para inspeccionar (`ps`, `logs`, `exec`) no
+> hace falta.
+>
+> **El VPS es compartido.** Nunca ejecutes `docker system prune` ni
+> `docker image prune -a`: se llevarían imágenes y volúmenes de otros
+> servicios, incluidas las imágenes de rollback de NovaTareas.
 
 ```bash
 docker compose -f compose.prod.yml ps
