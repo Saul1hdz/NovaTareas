@@ -2844,12 +2844,22 @@ window.confirmArchive = confirmArchive;
 
 async function deleteTask(id) {
   if (!confirm('¿Eliminar esta tarea?')) return;
-  await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+  // Astro checkOrigin trata las peticiones sin Content-Type como envío de
+  // formulario y las bloquea (403) cuando el esquema interno del proxy no
+  // coincide con el Origin público. Content-Type JSON las deja pasar y el
+  // control CSRF real de src/middleware.js sí aplica (fail-closed con cookie).
+  await fetch(`/api/tasks/${id}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+  });
   loadTasks();
 }
 
 async function toggleSubtask(taskId, subId) {
-  await fetch(`/api/tasks/${taskId}/subtasks/${subId}`, { method: 'PATCH' });
+  await fetch(`/api/tasks/${taskId}/subtasks/${subId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+  });
   loadTasks();
 }
 
@@ -3853,7 +3863,10 @@ async function copyInviteLink() {
 async function revokeInvite(inviteId) {
   if (!confirm('¿Revocar este enlace? Quien aún no lo haya usado no podrá entrar.')) return;
   const taskId = collabState.taskId;
-  const res = await fetch(`/api/tasks/${taskId}/invites/${inviteId}`, { method: 'DELETE' });
+  const res = await fetch(`/api/tasks/${taskId}/invites/${inviteId}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+  });
   if (!res.ok) {
     document.getElementById('collab-error').textContent = 'No se pudo revocar el enlace.';
     return;
@@ -3878,7 +3891,10 @@ async function changeRole(userId, role) {
 async function removeCollaborator(userId, name) {
   if (!confirm(`¿Quitar a ${name || 'este colaborador'} de la tarea?`)) return;
   const taskId = collabState.taskId;
-  const res = await fetch(`/api/tasks/${taskId}/collaborators/${userId}`, { method: 'DELETE' });
+  const res = await fetch(`/api/tasks/${taskId}/collaborators/${userId}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+  });
   if (!res.ok) {
     document.getElementById('collab-error').textContent = 'No se pudo quitar al colaborador.';
     return;
