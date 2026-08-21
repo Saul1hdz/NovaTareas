@@ -398,7 +398,3 @@ HTTPS propios, sobre PostgreSQL 16, con 202 pruebas automatizadas, un pipeline q
 verifica la imagen que se despliega, instrumentación que permitió encontrar el
 cuello de botella real —que no estaba donde parecía— y una versión etiquetada a la
 que se puede volver.
-
-Lo que queda pendiente está escrito con la misma claridad que lo logrado. Esa fue
-la regla de trabajo: **nada se da por bueno sin evidencia, y lo que no está
-resuelto se dice**.
