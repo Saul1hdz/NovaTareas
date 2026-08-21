@@ -2,10 +2,15 @@
 
 // Proveedores compartidos: una sola definición de modelo, timeouts y
 // respaldos para toda la aplicación.
-import { callOllama, callZai } from './ai/providers.js';
+import {
+  callOllama,
+  callRemote,
+  OPENROUTER_API_KEY,
+  OPENROUTER_MODEL,
+  ZAI_MODEL,
+} from './ai/providers.js';
 import { annotate } from './observability.js';
 
-const tryZai = prompt => callZai(prompt);
 const tryOllama = prompt => callOllama(prompt);
 
 // Identifica la plantilla de prompt con la que se generó una recomendación.
@@ -20,16 +25,21 @@ export const PROMPT_VERSION = 'recommend-v1';
 // (/api/v1/recommend) como el endpoint interno del dashboard.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// El modelo primario depende de qué proveedor remoto esté configurado: con
+// OPENROUTER_API_KEY manda OpenRouter, y si no, z.ai. Declararlo fijo hacía que
+// /api/v1/metadata anunciara un modelo que quizá no era el que respondía.
+const REMOTE_PRIMARY = OPENROUTER_API_KEY
+  ? { model: OPENROUTER_MODEL, provider: 'OpenRouter' }
+  : { model: ZAI_MODEL, provider: 'z.ai (GLM)' };
+
 export const AI_META = {
   service: 'novatareas-ai',
   version: '1.0.0',
   purpose: 'Genera recomendaciones prácticas de productividad para una tarea.',
-  primary_model: process.env.ZAI_MODEL || 'glm-4.5-flash',
-  provider: 'z.ai (GLM) con fallback local Ollama y reglas heurísticas',
+  primary_model: REMOTE_PRIMARY.model,
+  provider: `${REMOTE_PRIMARY.provider} con fallback remoto, local Ollama y reglas heurísticas`,
   language: 'es',
 };
-
-const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
 
 const VALID_PRIORITIES = ['baja', 'media', 'alta', 'urgente'];
 const VALID_USER_TYPES = ['comun', 'estudiante', 'empleado'];
@@ -101,12 +111,11 @@ export async function generateRecommendation(task) {
     ai_fallback: fallback,
   });
 
-  if (ZAI_API_KEY) {
-    const text = await tryZai(prompt);
-    if (text) {
-      report('zai', AI_META.primary_model, false);
-      return { text, source: 'zai' };
-    }
+  // Proveedores remotos en cascada: OpenRouter primero, z.ai después.
+  const remote = await callRemote(prompt);
+  if (remote.text) {
+    report(remote.source, remote.model, false);
+    return { text: remote.text, source: remote.source };
   }
 
   const ollamaText = await tryOllama(prompt);

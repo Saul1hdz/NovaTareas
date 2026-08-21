@@ -79,7 +79,7 @@ api:
     fecha_limite: "string opcional, formato YYYY-MM-DD"
   contrato_salida:
     recomendacion: "string — el texto generado"
-    fuente: "zai | ollama | rules — qué motor lo produjo"
+    fuente: "openrouter | zai | ollama | rules — qué motor lo produjo"
     tarea: "object — eco de los datos normalizados de entrada"
   compatibilidad: >-
     Primera versión publicada; no hay versiones anteriores que romper. Un cambio
@@ -94,7 +94,18 @@ modelo:
     proveedor: z.ai
     modelo: glm-4.5-flash    # configurable con ZAI_MODEL
     hospedaje: externo
+    nota: >-
+      Sigue siendo el primario en producción. OpenRouter solo toma el primer
+      turno si OPENROUTER_API_KEY está definida, y hoy no lo está.
   cascada_de_respaldo:
+    - orden: 0
+      fuente: openrouter
+      modelo: "stealth/ox-alpha"   # configurable con OPENROUTER_MODEL
+      estado_en_produccion: no configurado
+      aviso: >-
+        El proveedor `stealth` retiene prompts y respuestas y no publica quién
+        está detrás. A este endpoint le llegarían títulos y descripciones de
+        tareas de usuarios reales.
     - orden: 1
       fuente: zai
       modelo: glm-4.5-flash
@@ -184,7 +195,7 @@ ambiente:
   variables_obligatorias: [DATABASE_URL, SECRET_KEY]
   variables_por_funcion:
     correo: [SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, PUBLIC_APP_URL, EMAIL_VERIFICATION_REQUIRED]
-    ia: [ZAI_API_KEY, ZAI_MODEL, AI_API_KEY, AI_RATE_LIMIT_MAX, AI_RATE_LIMIT_WINDOW]
+    ia: [OPENROUTER_API_KEY, OPENROUTER_MODEL, OPENROUTER_URL, ZAI_API_KEY, ZAI_MODEL, AI_API_KEY, AI_RATE_LIMIT_MAX, AI_RATE_LIMIT_WINDOW]
     telegram: [TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, TASK_NUDGES_ENABLED]
     google: [GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, TOKEN_ENCRYPTION_KEY]
     cron: [CRON_SECRET]

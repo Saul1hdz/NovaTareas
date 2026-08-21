@@ -14,10 +14,18 @@ export const ZAI_URL = 'https://api.z.ai/api/paas/v4/chat/completions';
 export const ZAI_MODEL = process.env.ZAI_MODEL || 'glm-4.5-flash';
 export const ZAI_API_KEY = process.env.ZAI_API_KEY?.trim();
 
+// Configurable para poder apuntar a un proxy propio o a un doble local en las
+// pruebas de extremo a extremo; en producción se deja el valor por defecto.
+export const OPENROUTER_URL =
+  process.env.OPENROUTER_URL || 'https://openrouter.ai/api/v1/chat/completions';
+export const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'stealth/ox-alpha';
+export const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY?.trim();
+
 export const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 export const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b';
 
 const ZAI_TIMEOUT_MS = 45_000;
+const OPENROUTER_TIMEOUT_MS = 45_000;
 const OLLAMA_TIMEOUT_MS = 20_000;
 const OLLAMA_PING_TIMEOUT_MS = 1_500;
 
@@ -77,6 +85,80 @@ export async function callZai(prompt, { maxTokens = 700, temperature = 0.7 } = {
   }
 }
 
+/**
+ * OpenRouter, con el mismo contrato que `callZai`: devuelve texto o `null`.
+ *
+ * El modelo por defecto es `stealth/ox-alpha`, que es un modelo de razonamiento:
+ * si se le deja razonar, gasta el presupuesto de tokens antes de escribir la
+ * respuesta y `content` llega vacío con un 200. Por eso va `reasoning.enabled`
+ * a false y por eso un contenido vacío se trata como fallo —quien llama sigue
+ * la cascada hasta z.ai en lugar de devolver una recomendación en blanco—.
+ */
+export async function callOpenRouter(prompt, { maxTokens = 700, temperature = 0.7 } = {}) {
+  if (!OPENROUTER_API_KEY) return null;
+
+  try {
+    const response = await fetch(OPENROUTER_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        // Atribución que pide OpenRouter para identificar de dónde vienen las
+        // peticiones. No es obligatoria, pero sin ella la app aparece anónima
+        // en el panel de uso y no se puede saber qué consumió qué.
+        'HTTP-Referer': process.env.PUBLIC_APP_URL || 'https://novatareas.polarzero.dev',
+        'X-Title': 'NovaTareas',
+      },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: maxTokens,
+        temperature,
+        reasoning: { enabled: false },
+      }),
+      signal: AbortSignal.timeout(OPENROUTER_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      console.error('[ia] OpenRouter respondió', response.status);
+      return null;
+    }
+
+    const data = await response.json().catch(() => null);
+    const text = data?.choices?.[0]?.message?.content?.trim();
+    if (!text) {
+      console.error('[ia] OpenRouter devolvió un contenido vacío');
+      return null;
+    }
+    return trimToCompleteSentence(text);
+  } catch (error) {
+    console.error('[ia] OpenRouter no disponible:', safeErrorSummary(error));
+    return null;
+  }
+}
+
+/**
+ * Router de proveedores remotos: OpenRouter primero, z.ai como respaldo.
+ *
+ * Devuelve también de dónde salió el texto y con qué modelo, porque eso se
+ * persiste en `task_recommendations` y se anota en observabilidad. Cada llamante
+ * tenía su propio `if (ZAI_API_KEY) { ... }` copiado; ahora el orden de los
+ * proveedores remotos se decide en un solo sitio.
+ */
+export async function callRemote(prompt, options = {}) {
+  if (OPENROUTER_API_KEY) {
+    const text = await callOpenRouter(prompt, options);
+    if (text) return { text, source: 'openrouter', model: OPENROUTER_MODEL };
+  }
+
+  if (ZAI_API_KEY) {
+    const text = await callZai(prompt, options);
+    if (text) return { text, source: 'zai', model: ZAI_MODEL };
+  }
+
+  return { text: null, source: null, model: null };
+}
+
 /** Comprueba que Ollama esté escuchando antes de enviarle una petición larga. */
 export async function isOllamaUp() {
   try {
@@ -118,12 +200,12 @@ export async function callOllama(prompt, { numPredict = 400, temperature = 0.7 }
 }
 
 /**
- * Cascada estándar: z.ai → Ollama → los respaldos que indique quien llama.
- * Devuelve también de dónde salió el texto, para poder registrarlo.
+ * Cascada estándar: OpenRouter → z.ai → Ollama → los respaldos que indique
+ * quien llama. Devuelve también de dónde salió el texto, para poder registrarlo.
  */
-export async function runCompletion(prompt, { zai, ollama, fallbacks = [] } = {}) {
-  const text = await callZai(prompt, zai);
-  if (text) return { text, source: 'zai', model: ZAI_MODEL };
+export async function runCompletion(prompt, { remote, ollama, fallbacks = [] } = {}) {
+  const primary = await callRemote(prompt, remote);
+  if (primary.text) return primary;
 
   const local = await callOllama(prompt, ollama);
   if (local) return { text: local, source: 'ollama', model: OLLAMA_MODEL };

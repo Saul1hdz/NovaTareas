@@ -16,6 +16,30 @@ migraciones, imagen y pruebas— está declarado en
 
 ### Añadido
 
+- **Router de proveedores remotos de IA: OpenRouter antes que z.ai.**
+  `callRemote()` en `src/lib/ai/providers.js` decide en un único sitio a qué
+  proveedor externo se le pide el texto, y devuelve también cuál respondió y con
+  qué modelo. La cascada completa pasa a ser **OpenRouter → z.ai → Ollama →
+  historial → reglas**. Los cuatro llamantes —el motor de recomendaciones, el
+  endpoint de la tarea, el de comentarios y el bot de Telegram— tenían cada uno
+  su propio `if (ZAI_API_KEY)` copiado; ahora comparten el router.
+  **Sin `OPENROUTER_API_KEY` el comportamiento es exactamente el anterior**: la
+  cascada arranca en z.ai. El modelo por defecto es `stealth/ox-alpha`,
+  configurable con `OPENROUTER_MODEL`.
+- **`openrouter` como origen de recomendación** (migración `0008`): valor nuevo
+  del enum `recommendation_source`, y `task_recommendations.model` guarda ahora
+  el modelo que respondió de verdad en lugar de deducirlo del origen.
+  `/api/v1/health` publica `openrouter_configured` y `/api/v1/metadata` anuncia
+  el proveedor que está activo, no uno fijo.
+
+  Dos cosas se decidieron a propósito. Un `content` vacío de OpenRouter **cuenta
+  como fallo** y sigue la cascada: `stealth/ox-alpha` es un modelo de
+  razonamiento y, si gasta el presupuesto de tokens razonando, devuelve un 200
+  con la respuesta en blanco —de ahí también `reasoning.enabled: false`—. Y el
+  proveedor `stealth` **retiene los prompts y las respuestas** y no publica quién
+  está detrás: a ese endpoint le llegarían títulos y descripciones de tareas de
+  usuarios reales, así que la clave se deja sin definir hasta que esa decisión
+  se tome explícitamente.
 - **Sonda de trabajos programados: `GET /api/v1/health/jobs`.** Publica cuándo
   se ejecutó por última vez cada trabajo, si terminó bien y con qué contadores.
   Responde **503** cuando alguno no está sano y **200** solo cuando todos lo

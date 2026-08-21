@@ -12,15 +12,13 @@ import { defaultReminderFor } from './appTime.js';
 
 // Proveedores compartidos: una sola definición de modelo, timeouts y
 // respaldos para toda la aplicación.
-import { callOllama, callZai } from './ai/providers.js';
+import { callOllama, callRemote } from './ai/providers.js';
 
-const tryZai = prompt => callZai(prompt);
 const tryOllama = prompt => callOllama(prompt);
 
 
 const BOT_TOKEN      = process.env.TELEGRAM_BOT_TOKEN;
 const API_BASE       = `https://api.telegram.org/bot${BOT_TOKEN}`;
-const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
 
 // ─── Estado de conversación ──────────────────────────────────────────────────
 //
@@ -523,11 +521,9 @@ async function getAiRecommendation(taskDescription, userType = 'comun', userId =
     `Cada una debe tener máximo 3 oraciones. Sin introducciones ni conclusiones. ` +
     `Responde solo con las 3 recomendaciones en español.`;
 
-  // 1. z.ai
-  if (ZAI_API_KEY) {
-    const zaiText = await tryZai(prompt);
-    if (zaiText) return zaiText;
-  }
+  // 1. Proveedores remotos: OpenRouter primero, z.ai después
+  const remote = await callRemote(prompt);
+  if (remote.text) return remote.text;
 
   // 2. Ollama
   const ollamaText = await tryOllama(prompt);

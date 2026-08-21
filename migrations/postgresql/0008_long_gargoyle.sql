@@ -1,0 +1,1 @@
+ALTER TYPE "public"."recommendation_source" ADD VALUE 'openrouter' BEFORE 'ollama';

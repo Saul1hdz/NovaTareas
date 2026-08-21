@@ -34,6 +34,7 @@ export const taskStatusEnum = pgEnum('task_status', [
 ]);
 export const recommendationSourceEnum = pgEnum('recommendation_source', [
   'zai',
+  'openrouter',
   'ollama',
   'history',
   'rules',

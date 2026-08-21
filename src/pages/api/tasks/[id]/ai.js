@@ -11,15 +11,12 @@ import {
 
 // Proveedores compartidos: una sola definición de modelo, timeouts y
 // respaldos para toda la aplicación.
-import { callOllama, callZai } from '../../../../lib/ai/providers.js';
+import { callOllama, callRemote } from '../../../../lib/ai/providers.js';
 
-const tryZai = prompt => callZai(prompt);
 const tryOllama = prompt => callOllama(prompt);
 
 
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b';
-const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
-const ZAI_MODEL    = process.env.ZAI_MODEL || 'glm-4.5-flash';
 // Identifica el prompt con el que se generó cada recomendación guardada.
 const PROMPT_VERSION = 'task-recommendation-v1';
 
@@ -83,10 +80,10 @@ export async function generateForTask(db, task, userId, { feedback = [] } = {}) 
 
   const prompt = buildPrompt(task, userType, ragContext, [...feedback, ...aprendido]);
 
-  // ── 1. z.ai con contexto RAG ──────────────────────────────────────────────
-  if (ZAI_API_KEY) {
-    const text = await tryZai(prompt);
-    if (text) return saveRecommendation(db, task, userId, text, 'zai', hasRag);
+  // ── 1. Proveedores remotos con contexto RAG: OpenRouter, luego z.ai ───────
+  const remote = await callRemote(prompt);
+  if (remote.text) {
+    return saveRecommendation(db, task, userId, remote.text, remote.source, hasRag, remote.model);
   }
 
   // ── 2. Ollama con contexto RAG ────────────────────────────────────────────
@@ -181,7 +178,7 @@ export function buildPrompt(task, userType, ragContext, feedback = []) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function saveRecommendation(db, task, userId, text, source, usedRag = false) {
+async function saveRecommendation(db, task, userId, text, source, usedRag = false, model = null) {
   // Antes esto hacía DELETE + INSERT sobre `subtasks`, así que cada consulta a
   // la IA borraba las subtareas reales que el usuario había escrito. Ahora las
   // recomendaciones tienen su propia tabla y se registra de dónde salió cada
@@ -195,7 +192,7 @@ async function saveRecommendation(db, task, userId, text, source, usedRag = fals
     task.id,
     userId,
     source,
-    source === 'zai' ? ZAI_MODEL : source === 'ollama' ? OLLAMA_MODEL : null,
+    model ?? (source === 'ollama' ? OLLAMA_MODEL : null),
     PROMPT_VERSION,
     JSON.stringify({
       title: task.title,

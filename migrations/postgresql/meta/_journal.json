@@ -57,6 +57,13 @@
       "when": 1787252367284,
       "tag": "0007_mean_black_widow",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787349505060,
+      "tag": "0008_long_gargoyle",
+      "breakpoints": true
     }
   ]
 }

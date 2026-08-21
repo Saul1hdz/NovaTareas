@@ -7,13 +7,9 @@ import { consumeRateLimit } from '../../../../lib/security.js';
 
 // Proveedores compartidos: una sola definición de modelo, timeouts y
 // respaldos para toda la aplicación.
-import { callOllama, callZai } from '../../../../lib/ai/providers.js';
+import { callOllama, callRemote } from '../../../../lib/ai/providers.js';
 
-const tryZai = prompt => callZai(prompt);
 const tryOllama = prompt => callOllama(prompt);
-
-
-const ZAI_API_KEY  = process.env.ZAI_API_KEY?.trim();
 
 // La respuesta de IA en un comentario llama al proveedor externo igual que el
 // endpoint de recomendaciones, así que tiene que pagar la misma cuota. Sin
@@ -175,11 +171,9 @@ const historyLines = history.length > 0
     `da una respuesta de ayuda práctica y específica. ` +
     `Máximo 4 oraciones. Sin introducciones. Responde directamente en español.`;
 
-  // 1. z.ai
-  if (ZAI_API_KEY) {
-    const text = await tryZai(prompt);
-    if (text) return text;
-  }
+  // 1. Proveedores remotos: OpenRouter primero, z.ai después
+  const remote = await callRemote(prompt);
+  if (remote.text) return remote.text;
 
   // 2. Ollama
   const ollamaText = await tryOllama(prompt);
