@@ -1,0 +1,27 @@
+# Dependabot abre pull requests; no integra nada por su cuenta.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+
+  # Sin esto, las acciones se quedan atrás sin que nadie se entere: es lo que
+  # pasó con checkout@v4 y el aviso de Node 20.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+
+  # Vigila la imagen base de Node del Dockerfile.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore"

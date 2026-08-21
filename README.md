@@ -337,6 +337,7 @@ npm run lint          # revisar tipos y sintaxis del proyecto
 | `tests/emailVerification.test.js` | Confirmación de correo en el registro, bloqueo del login hasta confirmar, tokens de un solo uso y recuperación de contraseña por correo |
 | `tests/googleIntegration.test.js` | OAuth, eventos, renovación y guardado cifrado de tokens, con Google simulado |
 | `tests/integrationSecurity.test.js` | Cron, webhook de Telegram simulado y subida de avatares válidos, falsificados o con MIME incorrecto |
+| `tests/jobHealth.test.js` | Que `/api/v1/health/jobs` detecte un cron que no hace su trabajo, tanto si no corre —incluido el caso que lo motivó: **nunca** ejecutado cuenta como atrasado, no como correcto— como si corre y revienta |
 | `tests/measureEndpoint.test.js` | El resumen estadístico de la medición: percentiles, tasa de error y el mínimo de muestras |
 | `tests/noSqliteDialect.test.js` | Que nadie vuelva a introducir dialecto SQLite en el código |
 | `tests/observability.test.js` | Que el log solo publique campos de la lista blanca, normalice las rutas y no filtre cuerpos, cabeceras ni tokens |
@@ -639,6 +640,7 @@ novatareas-pro/
 │   │   └── api/
 │   │       ├── v1/{health,metadata,recommend}.js   # API externa protegida
 │   │       ├── v1/health/ready.js                  # sonda que consulta la BD
+│   │       ├── v1/health/jobs.js                   # sonda de trabajos programados
 │   │       ├── tasks.js
 │   │       ├── tasks/[id].js
 │   │       ├── tasks/[id]/{history,comments,ai}.js
@@ -679,7 +681,7 @@ novatareas-pro/
 ├── migrations/postgresql/   # migraciones versionadas generadas con Drizzle
 ├── scripts/                 # migrar, verificar, sembrar y smoke test
 ├── compose.dev.yml          # web, migraciones, PostgreSQL y perfiles del bot
-├── compose.prod.yml         # despliegue: target runtime, sin puertos abiertos
+├── compose.prod.yml         # despliegue: consume la imagen de GHCR, no construye
 ├── Dockerfile               # targets development y runtime, sobre Node 22
 ├── data/tareas_ejemplo.csv
 ├── api.md                   # contratos de la API
@@ -906,7 +908,7 @@ línea base, cuello de botella, mejora aplicada y plan de escalabilidad— está
 ## 18. Verificación del despliegue
 
 El proyecto está publicado en **<https://novatareas.polarzero.dev>** con
-certificado válido. Estas tres llamadas dicen en segundos si sigue sano:
+certificado válido. Estas cuatro llamadas dicen en segundos si sigue sano:
 
 ```bash
 # 1. ¿Responde la aplicación y contesta la base de datos?
@@ -915,7 +917,10 @@ curl https://novatareas.polarzero.dev/api/v1/health/ready
 # 2. ¿Qué versión está sirviendo y con qué contrato?
 curl https://novatareas.polarzero.dev/api/v1/metadata
 
-# 3. ¿Qué proveedores de IA tiene configurados?
+# 3. ¿Siguen ejecutándose los trabajos programados?
+curl https://novatareas.polarzero.dev/api/v1/health/jobs
+
+# 4. ¿Qué proveedores de IA tiene configurados?
 curl https://novatareas.polarzero.dev/api/v1/health
 ```
 
@@ -925,6 +930,7 @@ Lo que se espera de cada una:
 |---|---|---|
 | `/api/v1/health/ready` | `200` con `{"status":"ok","checks":{"database":true}}` | La web está arriba pero sin base de datos: mira los logs del contenedor `db` |
 | `/api/v1/metadata` | `200` con `"version": "1.0.0"` | Si la versión no es la que publicaste, el contenedor no se reconstruyó |
+| `/api/v1/health/jobs` | `200` con `"status":"ok"` | `503`: nadie está recibiendo avisos. `"reason":"stale"` es que el cron no corre —lleva más de 45 minutos o no se instaló nunca— y `"reason":"failing"` que corre pero revienta |
 | `/api/v1/health` | `200` con `zai_configured: true` | Con `false`, las recomendaciones seguirán saliendo, pero por el respaldo de reglas locales |
 
 `/api/v1/health` responde `200` incluso con z.ai y Ollama caídos, a propósito: el
@@ -948,15 +954,20 @@ prompt, migraciones, imagen y conjunto de pruebas— está declarado en
 ### Volver atrás
 
 ```bash
-git checkout v1.0.0
-docker compose -f compose.prod.yml up -d --build web
+sudo /usr/local/sbin/novatareas-release deploy-<sha40-anterior>
 ```
+
+Producción ya no construye nada: despliega la imagen que CI publicó, y volver
+atrás es volver a desplegar la imagen anterior, que sigue en la caché local del
+servidor. Por eso el retroceso no depende de que GHCR esté disponible. Las
+copias de cada versión quedan en
+`/opt/stacks/novatareas/backups/releases/<marca>-<sha>/`.
 
 Con una advertencia que conviene no aprender por las malas: **volver el código no
 revierte las migraciones**. Si la versión nueva tocó el esquema, primero se
 restaura la copia de `pg_dump` anterior a la migración y después se despliega la
-versión vieja. El procedimiento completo está en
-[`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md), sección 9.
+versión vieja; el helper distingue los dos casos por su cuenta. El procedimiento
+completo está en [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md), sección 9.
 
 ### En local
 

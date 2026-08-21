@@ -6,10 +6,25 @@ on:
   pull_request:
     branches: [main, master]
 
+# Solo lectura por defecto. El trabajo que publica la imagen amplía sus
+# permisos en su propio bloque; ningún otro puede escribir en el repositorio.
+permissions:
+  contents: read
+
+# Dos pushes seguidos a la misma rama cancelan la ejecución anterior en vez de
+# competir por los runners. En `main` no: ahí la ejecución publica en GHCR, y
+# cancelarla a mitad del `docker push` puede dejar `sha-…` subida y `latest`
+# apuntando todavía a la anterior. Un registro incoherente cuesta más que unos
+# minutos de runner.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
-  test:
+  calidad:
     name: Pruebas, PostgreSQL y build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -41,10 +56,10 @@ jobs:
 
     steps:
       - name: Descargar el código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Configurar Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7.0.0
         with:
           # Misma versión que fija el Dockerfile, para que un fallo por versión
           # aparezca en CI y no al construir la imagen.
@@ -69,7 +84,7 @@ jobs:
         run: npm run test:coverage
 
       - name: Guardar reporte de cobertura
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: cobertura-vitest
           path: coverage/
@@ -79,10 +94,69 @@ jobs:
       - name: Compilar el proyecto
         run: npm run build
 
+  imagen:
+    name: Imagen de produccion
+    # También espera a `seguridad`, aunque serialice el pipeline y lo alargue
+    # algo más de un minuto: sin esa dependencia, un commit que colara un
+    # secreto en `src/` publicaba ese `src/` dentro de la imagen en `sha-…`, en
+    # la etiqueta de versión y en `latest` mientras Gitleaks se ponía rojo al
+    # lado. Publicar una imagen con un secreto dentro no se deshace borrándola.
+    needs: [calidad, seguridad]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    permissions:
+      contents: read
+      packages: write   # unico trabajo que puede publicar en GHCR
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: novatareas
+          POSTGRES_PASSWORD: ci-password-ficticia
+          POSTGRES_DB: novatareas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U novatareas -d novatareas_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      IMAGEN: ghcr.io/saul1hdz/novatareas
+      DATABASE_URL: postgresql://novatareas:ci-password-ficticia@127.0.0.1:5432/novatareas_test
+      SECRET_KEY: clave-solo-para-pruebas-de-ci
+      CRON_SECRET: cron-solo-para-pruebas-de-ci
+      TELEGRAM_WEBHOOK_SECRET: telegram-solo-para-pruebas-de-ci
+      TOKEN_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v7.0.1
+        with:
+          # Historial completo y no el commit suelto por defecto: el resumen
+          # para Argus compara el rango del push (`github.event.before` hasta
+          # `github.sha`) para detectar migraciones, y el cálculo de etiquetas
+          # lee `release-manifest.yml` en el commit anterior. Con `fetch-depth`
+          # acotado, en un push de varios commits el `before` ni siquiera está
+          # descargado y esas comparaciones fallarían.
+          fetch-depth: 0
+
       # El target de producción nunca se construía en CI, así que un fallo solo
       # se descubría al desplegar.
       - name: Construir la imagen de producción
         run: docker build --target runtime -t novatareas:ci .
+
+      # Migrar con la propia imagen reproduce el servicio `migrate` de
+      # compose.prod.yml. Antes CI migraba con el Node del runner, así que
+      # nunca comprobaba que la imagen publicada supiera migrar por su cuenta.
+      - name: Migrar usando la propia imagen
+        run: |
+          docker run --rm --network host \
+            -e DATABASE_URL="$DATABASE_URL" \
+            novatareas:ci node scripts/migrate-postgres.mjs
 
       - name: Comprobar que la imagen arranca y responde
         run: |
@@ -91,8 +165,10 @@ jobs:
             -e DATABASE_URL="$DATABASE_URL" \
             -e SECRET_KEY="$SECRET_KEY" \
             -e CRON_SECRET="$CRON_SECRET" \
+            -e TELEGRAM_WEBHOOK_SECRET="$TELEGRAM_WEBHOOK_SECRET" \
+            -e TOKEN_ENCRYPTION_KEY="$TOKEN_ENCRYPTION_KEY" \
             novatareas:ci
-          for intento in $(seq 1 20); do
+          for _intento in $(seq 1 20); do
             if curl -fsS http://127.0.0.1:4321/api/v1/health/ready; then
               echo "La imagen responde correctamente."
               exit 0
@@ -102,3 +178,195 @@ jobs:
           echo "La imagen no respondió a tiempo."
           docker logs novatareas-ci
           exit 1
+
+      # Va ANTES de publicar: una imagen vulnerable falla aquí y nunca llega al
+      # registro. `ignore-unfixed` evita bloquear por CVEs de Debian sin parche
+      # disponible, que detendrían el trabajo sin ofrecer ninguna acción.
+      - name: Analizar vulnerabilidades de la imagen
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: novatareas:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+
+      - name: Calcular las etiquetas
+        if: github.ref == 'refs/heads/main'
+        id: etiquetas
+        env:
+          ANTES: ${{ github.event.before }}
+        run: |
+          CERO=0000000000000000000000000000000000000000
+          leer_version() {
+            git show "$1:release-manifest.yml" 2>/dev/null \
+              | awk '/^release:/{f=1} f && /^  version:/{gsub(/["[:space:]]/,"",$2); print $2; exit}'
+          }
+
+          SHA_CORTO=$(git rev-parse --short=7 HEAD)
+          VERSION=$(leer_version HEAD)
+          if [ -z "$VERSION" ]; then
+            echo "No se pudo leer release.version de release-manifest.yml"
+            exit 1
+          fi
+
+          # La etiqueta de versión solo se mueve cuando ESTE push cambia
+          # `release.version`. Publicarla en cada push a `main` hacía que
+          # `1.0.0` apuntara siempre al último commit: prometía inmutabilidad
+          # sin darla, y quien pidiera "vuelve a la 1.0.0" recibiría el `main`
+          # de hoy. `sha-…` y `latest` sí se publican siempre.
+          PUBLICAR_VERSION=no
+          if [ "$ANTES" = "$CERO" ] || ! git cat-file -e "$ANTES^{commit}" 2>/dev/null; then
+            echo "Sin commit anterior utilizable ('$ANTES'): no se puede saber si release.version cambió, así que la etiqueta de versión NO se publica."
+          else
+            VERSION_ANTERIOR=$(leer_version "$ANTES")
+            if [ "$VERSION_ANTERIOR" = "$VERSION" ]; then
+              echo "release.version sigue en '$VERSION': se omite esa etiqueta para no moverla sobre una imagen distinta."
+            else
+              PUBLICAR_VERSION=si
+              echo "release.version pasa de '${VERSION_ANTERIOR:-ninguna}' a '$VERSION': se publica esa etiqueta."
+            fi
+          fi
+
+          {
+            echo "sha_corto=$SHA_CORTO"
+            echo "version=$VERSION"
+            echo "publicar_version=$PUBLICAR_VERSION"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$PUBLICAR_VERSION" = si ]; then
+            echo "Etiquetas: sha-$SHA_CORTO, $VERSION, latest"
+          else
+            echo "Etiquetas: sha-$SHA_CORTO, latest"
+          fi
+
+      - name: Entrar en GHCR
+        if: github.ref == 'refs/heads/main'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Publicar la imagen
+        if: github.ref == 'refs/heads/main'
+        env:
+          SHA_CORTO: ${{ steps.etiquetas.outputs.sha_corto }}
+          VERSION: ${{ steps.etiquetas.outputs.version }}
+          PUBLICAR_VERSION: ${{ steps.etiquetas.outputs.publicar_version }}
+        run: |
+          ETIQUETAS="sha-$SHA_CORTO latest"
+          if [ "$PUBLICAR_VERSION" = si ]; then
+            ETIQUETAS="$ETIQUETAS $VERSION"
+          else
+            echo "Se OMITE la etiqueta '$VERSION': este push no cambia release.version, y reescribirla la convertiría en una etiqueta móvil más."
+          fi
+          for etiqueta in $ETIQUETAS; do
+            docker tag novatareas:ci "$IMAGEN:$etiqueta"
+            docker push "$IMAGEN:$etiqueta"
+          done
+
+      # El resumen aparece en la página de la ejecución. Argus no tiene que
+      # deducir si el despliegue toca el esquema: se lo dice el pipeline.
+      - name: Preparar el bloque de despliegue para Argus
+        if: github.ref == 'refs/heads/main'
+        env:
+          SHA_CORTO: ${{ steps.etiquetas.outputs.sha_corto }}
+          ANTES: ${{ github.event.before }}
+          AHORA: ${{ github.sha }}
+        run: |
+          CERO=0000000000000000000000000000000000000000
+
+          # El rango es el del push entero, no `HEAD~1..HEAD`. Comparando solo
+          # el último commit, un push de tres commits con la migración en el
+          # primero anunciaba "sin migraciones" y el operador se saltaba la
+          # copia de seguridad antes de un despliegue que sí migraba.
+          ESTADO=ok
+          MIGRACIONES=
+          if [ "$ANTES" = "$CERO" ] || ! git cat-file -e "$ANTES^{commit}" 2>/dev/null; then
+            ESTADO=sin-rango
+          elif CAMBIADOS=$(git diff --name-only "$ANTES" "$AHORA" -- migrations/postgresql/); then
+            MIGRACIONES=$(echo "$CAMBIADOS" | grep '\.sql$' || true)
+          else
+            # Un fallo de git NO puede acabar en "sin migraciones": ese mensaje
+            # es exactamente el que hace que nadie respalde la base.
+            ESTADO=error-git
+          fi
+
+          {
+            echo "## Despliegue para Argus"
+            echo
+            echo "Imagen: \`ghcr.io/saul1hdz/novatareas:sha-$SHA_CORTO\`"
+            echo
+            if [ "$ESTADO" = sin-rango ]; then
+              echo "### NO SE PUDO DETERMINAR si hay migraciones nuevas"
+              echo
+              echo "Este push no trae un commit anterior utilizable (\`$ANTES\`), asi que no hay rango que comparar."
+              echo "**Comprobar \`migrations/postgresql/\` a mano y respaldar la base ANTES de desplegar.**"
+            elif [ "$ESTADO" = error-git ]; then
+              echo "### NO SE PUDO DETERMINAR si hay migraciones nuevas"
+              echo
+              echo "\`git diff $ANTES $AHORA\` fallo en el runner."
+              echo "**Comprobar \`migrations/postgresql/\` a mano y respaldar la base ANTES de desplegar.**"
+            elif [ -n "$MIGRACIONES" ]; then
+              echo "### ATENCION: este push trae migraciones nuevas"
+              # awk y no `sed 's/^/- /'`: shellcheck marca ese sed (SC2001) y la
+              # puerta de actionlint es de aviso cero.
+              echo "$MIGRACIONES" | awk '{ print "- " $0 }'
+              echo
+              echo "Revisar si alguna es destructiva ANTES de desplegar."
+              echo "Volver el codigo NO revierte el esquema."
+            else
+              echo "Sin migraciones nuevas entre \`$ANTES\` y \`$AHORA\`: el esquema no cambia."
+            fi
+            echo
+            echo "### VPS compartido"
+            echo "- Usar siempre \`-p novatareas-prod\`."
+            echo "- Nunca \`docker system prune\` ni \`docker image prune -a\`."
+            echo "- No exponer el puerto 5432."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  seguridad:
+    name: Cadena de suministro
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Sin `needs`: arranca a la vez que `calidad`, porque no depende de las
+    # pruebas. Lo que sí depende de este trabajo es `imagen`, que no publica
+    # nada hasta que estas guardias pasan.
+    permissions:
+      contents: read
+      security-events: write   # publicar hallazgos de CodeQL
+      actions: read
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v7.0.1
+        with:
+          # Gitleaks necesita el historial completo: un secreto borrado en el
+          # último commit sigue estando en los anteriores y sigue expuesto.
+          fetch-depth: 0
+
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '22.23.1'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # Umbral `high` y no `moderate` a propósito: una puerta que salta cada
+      # semana por algo que no afecta acaba desactivada, y una puerta
+      # desactivada no protege nada.
+      - name: Auditar dependencias
+        run: npm audit --audit-level=high
+
+      # Saul1hdz es cuenta personal, no organización: no requiere licencia.
+      - name: Buscar secretos en el historial
+        uses: gitleaks/gitleaks-action@v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Preparar CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+
+      - name: Analizar el código con CodeQL
+        uses: github/codeql-action/analyze@v4

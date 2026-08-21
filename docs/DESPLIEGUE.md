@@ -39,6 +39,7 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'
 | `POSTGRES_PASSWORD` | El compose se niega a iniciar. |
 | `DATABASE_URL` | La define `compose.prod.yml` a partir de `POSTGRES_PASSWORD`. |
 | `CRON_SECRET` | El endpoint de recordatorios responde 503 y no se envía ningún aviso. |
+| `NOVATAREAS_TAG` | El compose **aborta**: es la etiqueta de la imagen a desplegar y no tiene valor por defecto. Usa siempre `sha-<commit-corto>`, nunca `latest`. |
 
 El registro público está cerrado por defecto. Define
 `REGISTRATION_ENABLED=true` solo si deseas aceptar cuentas nuevas; el endpoint
@@ -71,12 +72,22 @@ cp .env.example .env
 ```
 
 ```bash
-docker compose -f compose.prod.yml up -d --build web
+export NOVATAREAS_TAG=sha-<commit-corto>
+docker compose -f compose.prod.yml -f compose.server.yml up -d web
 ```
 
+**`compose.server.yml` no es opcional.** Vive solo en el servidor y aporta los
+límites de memoria y CPU, `no-new-privileges` y la configuración de registro;
+un servicio arrancado sin él queda sin ninguna de esas protecciones. Ver la
+sección 10.
+
 Ese comando, en orden: levanta PostgreSQL, espera a que esté sano, ejecuta las
-migraciones en un contenedor de un solo uso y solo entonces arranca la web. Si
-las migraciones fallan, la web no llega a iniciarse.
+migraciones en un contenedor de un solo uso con la imagen publicada y solo
+entonces arranca la web. Si las migraciones fallan, la web no llega a iniciarse.
+
+**No construye nada**: descarga `ghcr.io/saul1hdz/novatareas` del registro. Para
+las actualizaciones posteriores, usa el procedimiento de la sección 8, que añade
+verificación de digest, ensayo de migración, copia de seguridad y rollback.
 
 Comprobación:
 
@@ -132,10 +143,47 @@ El endpoint es idempotente: cada tarea se avisa una sola vez gracias a los
 indicadores `reminder_sent` y `overdue_notified`. Ejecutarlo de más no duplica
 mensajes.
 
+### 5.1 Comprobar que el cron existe de verdad
+
+Esta línea de cron estuvo **meses documentada aquí y sin instalar** en el
+servidor, y nadie se enteró: los recordatorios no salieron nunca y la aplicación
+estuvo en verde todo ese tiempo, porque un trabajo programado muerto no produce
+errores, produce silencio.
+
+`GET /api/v1/health/jobs` convierte ese silencio en una señal. Publica cuándo
+corrió por última vez cada trabajo y responde **503** si alguno no está sano:
+
+```bash
+curl -fsS https://novatareas.ejemplo.test/api/v1/health/jobs
+```
+
+El campo `reason` de cada trabajo dice qué mirar, que no es lo mismo en los dos
+casos:
+
+| `reason` | Qué pasa | Dónde se busca |
+|---|---|---|
+| `stale` | Lleva más de 45 minutos sin ejecutarse —tres ciclos perdidos— o no lo ha hecho nunca | `crontab -l` en este servidor: la línea de la sección 5 |
+| `failing` | El cron corre puntual, pero el último barrido reventó | `docker compose -f compose.prod.yml logs web \| grep cron/reminders` |
+
+Con el cron recién instalado y antes del primer barrido la respuesta es `503`
+con `"stale": true` y `"last_run_at": null`. Debe pasar a `200` como muy tarde
+15 minutos después; si no, el cron no está corriendo.
+
+**El aviso lo da un vigilante externo a este servidor**, no la aplicación: quien
+avisa no puede ser quien está caído. Basta una entrada de cron en otra máquina
+que llame a la ruta con `curl -f` y notifique cuando el código no sea 0. Igual
+que el resto de sondas, tiene que usar `curl`: ver el aviso sobre Cloudflare al
+final de este documento.
+
+La ruta **no** entra en el `HEALTHCHECK` del contenedor ni en el balanceador: un
+cron parado no es motivo para sacar la web de servicio. Para eso está
+`/api/v1/health/ready`, que sigue mirando solo la base de datos.
+
 ## 6. Bot de Telegram
 
 ```bash
-docker compose -f compose.prod.yml --profile telegram up -d bot
+docker compose --env-file .env -p novatareas-prod \
+  -f compose.prod.yml -f compose.server.yml --profile telegram up -d --no-build bot
 ```
 
 **Exactamente una instancia por token.** El bot usa polling, y dos procesos con
@@ -167,32 +215,121 @@ completo en una base desechable antes de confiar en él.
 
 ## 8. Actualizar una versión
 
+**El servidor ya no construye la imagen.** La publica CI en
+`ghcr.io/saul1hdz/novatareas` después de pasar las pruebas, arrancar la imagen
+contra una base real y escanearla con Trivy. Lo que corre en producción es ese
+artefacto exacto, no una reconstrucción.
+
+### Despliegue automático
+
+Un detector vigila `main` y despliega **solo cuando el commit no toca
+`migrations/postgresql/`**. Si lo toca, se detiene y avisa: un cambio de esquema
+lo revisa una persona antes de aplicarse, porque volver el código no lo revierte.
+
+La detección se hace por duplicado —el resumen del pipeline y el cálculo propio
+del detector— y una discrepancia entre ambas fuentes también detiene el
+despliegue. Cada decisión queda registrada en el servidor con el commit y el
+motivo, para poder reconstruirla después.
+
+Un cambio con migraciones se despliega a mano con el procedimiento de abajo.
+
+### Procedimiento normal
+
 ```bash
-git fetch --all --tags
-git checkout <nueva-etiqueta>
-docker compose -f compose.prod.yml up -d --build web
+sudo /usr/local/sbin/novatareas-release deploy-<sha40>
 ```
 
-Registra siempre qué commit está desplegado:
+El `<sha40>` es el commit completo cuya imagen publicó CI. Cada ejecución del
+pipeline en `main` deja en el resumen del run la etiqueta exacta y avisa de si
+el commit trae migraciones nuevas.
+
+El helper hace, en orden: descarga la imagen y **verifica su digest** contra el
+aprobado; captura las imágenes actuales como red de rollback; ensaya la
+migración contra un PostgreSQL descartable comparando conteos; comprueba que la
+imagen anterior funciona contra el esquema ya migrado; hace copia de la base y
+de los avatares; detiene `web` y `bot`; aplica la migración real; levanta con
+`--no-build`; y confirma la salud en cinco ciclos. Si algo falla, revierte.
+
+Comprobar el estado:
 
 ```bash
-git rev-parse --short HEAD
+sudo /usr/local/sbin/novatareas-release status
 ```
+
+Devuelve el commit desplegado, el digest de la imagen en ejecución y la salud de
+cada servicio.
+
+### Secuencia manual (solo referencia o emergencia)
+
+```bash
+cd /opt/stacks/novatareas
+
+# 1) Descargar la imagen y verificar su digest
+docker pull ghcr.io/saul1hdz/novatareas:sha-<commit-corto>
+docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/saul1hdz/novatareas:sha-<commit-corto>
+
+# 2) Validar la composición (no construye)
+docker compose --env-file .env -p novatareas-prod \
+  -f compose.prod.yml -f compose.server.yml config -q
+
+# 3) Migrar (contenedor de un solo uso, con la imagen descargada)
+docker compose --env-file .env -p novatareas-prod \
+  -f compose.prod.yml -f compose.server.yml run --rm --no-deps migrate
+
+# 4) Levantar web y bot
+docker compose --env-file .env -p novatareas-prod \
+  -f compose.prod.yml -f compose.server.yml up -d --no-build --no-deps web bot
+
+# 5) Verificar
+curl -fsS https://novatareas.polarzero.dev/api/v1/health/ready
+```
+
+**`NOVATAREAS_TAG` debe estar definida** y valer `sha-<commit-corto>` en todas
+esas llamadas. No tiene valor por defecto: el compose aborta si falta, en vez de
+caer a `latest`, que se mueve con cada push a `main` y haría que la migración se
+aplicara con una imagen y el servicio arrancara con otra. El helper la exporta y
+aborta si no coincide.
+
+`compose.server.yml` vive solo en el servidor y aporta los límites de memoria y
+CPU, `no-new-privileges` y la configuración de registro. **No está en el
+repositorio**: un despliegue que lo omita arranca sin ninguna de esas
+protecciones.
 
 ## 9. Volver atrás
 
 ```bash
-git checkout <etiqueta-anterior>
-docker compose -f compose.prod.yml up -d --build web
+sudo /usr/local/sbin/novatareas-release deploy-<sha40-anterior>
 ```
 
+La imagen anterior sigue en la caché local del servidor, así que el retroceso no
+depende de que el registro esté disponible.
+
 Si la versión nueva aplicó migraciones, volver el código **no revierte el
-esquema**. En ese caso restaura primero la copia previa a la migración y luego
-despliega la versión anterior.
+esquema**. El helper distingue dos casos: si la migración avanzó pero la
+aplicación nueva no llegó a arrancar, restaura la copia previa; si la aplicación
+nueva sí arrancó, se apoya en la comprobación de compatibilidad que hizo antes
+—la imagen anterior contra el esquema nuevo— y no toca la base.
+
+Para retrocesos manuales, las copias de cada versión quedan en
+`/opt/stacks/novatareas/backups/releases/<marca>-<sha>/`.
 
 ---
 
 ## 10. Operación diaria
+
+> **Incluye siempre `-f compose.server.yml`** al levantar o recrear servicios.
+> Ese fichero vive solo en el servidor y aporta los límites de memoria y CPU,
+> `no-new-privileges` y la configuración de registro. Un servicio arrancado sin
+> él queda sin esas protecciones. Para inspeccionar (`ps`, `logs`, `exec`) no
+> hace falta.
+>
+> **El VPS es compartido.** Nunca ejecutes `docker system prune` ni
+> `docker image prune -a`: se llevarían imágenes y volúmenes de otros
+> servicios, incluidas las imágenes de rollback de NovaTareas.
+>
+> `NOVATAREAS_TAG` hace falta incluso para `ps` y `logs`: compose interpola el
+> fichero entero antes de ejecutar cualquier subcomando. Basta con que esté en
+> el `.env` del directorio del stack, que es donde debe vivir.
 
 ```bash
 docker compose -f compose.prod.yml ps
@@ -234,6 +371,16 @@ Cosas que conviene saber antes de que sorprendan:
 
 ## 12. Comprobación posterior al despliegue
 
+> **Las sondas externas deben usar `curl`.** El dominio está detrás de
+> Cloudflare con protección de bots activa, y esta filtra por huella TLS, no por
+> user-agent: `wget` y `busybox wget` reciben `403` incluso en
+> `/api/v1/health/ready`, que no pide autenticación. Una sonda que use `wget`
+> informará de que el servicio está caído cuando está perfectamente sano. La
+> regla vive en el panel de Cloudflare (zona `polarzero.dev`, Security → Bots),
+> no en la configuración del servidor ni en este repositorio. El cron de
+> recordatorios de la sección 5 ya usa `curl` y no le afecta.
+
+
 Recorre esta lista tras cada publicación:
 
 1. `/api/v1/health/ready` responde 200.
@@ -244,3 +391,6 @@ Recorre esta lista tras cada publicación:
 5. Se sube un avatar y **sigue visible tras reiniciar el contenedor**.
 6. El cron de recordatorios responde 200 con el `CRON_SECRET` y 401 sin él.
 7. `docker compose -f compose.prod.yml ps` no muestra reinicios en bucle.
+8. `/api/v1/health/jobs` responde 200 (sección 5.1). Que el endpoint del punto 6
+   conteste solo dice que *puede* ejecutarse; este dice que *se está*
+   ejecutando, que es la pregunta que nadie hizo durante meses.

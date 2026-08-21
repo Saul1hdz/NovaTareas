@@ -41,7 +41,7 @@ codigo:
 api:
   version_contrato: "1.0.0"  # la publica el propio servicio en /api/v1/metadata
   documentacion: api.md
-  documentacion_sha256_prefijo: d6cfb45d6b6eda00
+  documentacion_sha256_prefijo: 41b15e1adf4b565c
   autenticacion_externa: "Authorization: Bearer <AI_API_KEY>"
   endpoints_publicos:
     - metodo: GET
@@ -55,6 +55,15 @@ api:
       ruta: /api/v1/health/ready
       autenticacion: ninguna
       nota: Sonda de despliegue; consulta la base de datos, no solo el proceso.
+    - metodo: GET
+      ruta: /api/v1/health/jobs
+      autenticacion: ninguna
+      nota: >-
+        Sonda de los trabajos programados: 503 si alguno lleva más de 45 minutos
+        sin ejecutarse —incluido no haberlo hecho nunca— o si su último intento
+        falló. El campo `reason` distingue `stale` de `failing`, que se
+        investigan en sitios distintos. Deliberadamente fuera del healthcheck
+        del contenedor: un cron parado no debe sacar la web del balanceador.
     - metodo: GET
       ruta: /api/v1/metadata
       autenticacion: ninguna
@@ -132,12 +141,12 @@ datos:
   orm: "Drizzle ORM 0.45.2 (migraciones con drizzle-kit)"
   migraciones:
     directorio: migrations/postgresql/
-    total: 7
-    ultima: 0006_sad_infant_terrible.sql
-    ultima_sha256_prefijo: 2e330ebf9aa5c6d9
+    total: 8
+    ultima: 0007_mean_black_widow.sql
+    ultima_sha256_prefijo: 747fd1aed8b749bc
     idempotentes: true
     registro: tabla drizzle.__drizzle_migrations
-  tablas: 17
+  tablas: 18
   datos_cifrados:
     - "Tokens de Google (AES-256-GCM); el esquema rechaza guardarlos en claro"
   datos_en_claro:
@@ -187,8 +196,8 @@ ambiente:
 # ── CONJUNTO DE PRUEBAS ───────────────────────────────────────────────────────
 pruebas:
   runner: "Vitest 4.1.10"
-  archivos: 30
-  casos: 202
+  archivos: 31
+  casos: 212
   motor_de_pruebas: PostgreSQL 16 real
   aislamiento: >-
     TEST_DATABASE_URL debe terminar en `_test`; la suite recrea el esquema
@@ -225,10 +234,14 @@ verificacion:
       - astro check
       - migración sobre PostgreSQL 16 efímero
       - comprobación transaccional
-      - 202 pruebas con cobertura
+      - 212 pruebas con cobertura
       - build del proyecto
       - construcción de la imagen de producción
       - arranque real de la imagen y curl a /api/v1/health/ready
+      - escaneo de vulnerabilidades de la imagen con Trivy (HIGH y CRITICAL)
+      - npm audit, Gitleaks sobre el historial y análisis con CodeQL
+      - publicación en ghcr.io/saul1hdz/novatareas, solo desde main y solo
+        después de que pasen las pruebas y las guardias de seguridad
   manual_tras_publicar: docs/DESPLIEGUE.md (sección 12, siete comprobaciones)
   comandos_rapidos:
     - curl https://novatareas.polarzero.dev/api/v1/health/ready
@@ -238,8 +251,11 @@ verificacion:
 rollback:
   procedimiento: docs/DESPLIEGUE.md (sección 9)
   comandos:
-    - git checkout v1.0.0
-    - docker compose -f compose.prod.yml up -d --build web
+    - sudo /usr/local/sbin/novatareas-release deploy-<sha40-anterior>
+  nota: >-
+    Producción no construye: despliega la imagen publicada en GHCR. Volver
+    atrás es volver a desplegar la imagen anterior, que sigue en la caché local
+    del servidor, así que no depende de que el registro esté disponible.
   version_anterior: null   # 1.0.0 es la primera etiquetada
   limite: >-
     Si la versión aplicó migraciones, restaurar antes la copia de pg_dump previa.

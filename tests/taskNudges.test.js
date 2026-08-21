@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_NUDGE_HOURS,
+  claimTaskNudge,
   getTasksNeedingNudge,
   hourInAppTimeZone,
   isQuietHour,
   markNudgeSent,
   nudgeHours,
   nudgesEnabled,
+  releaseTaskNudgeClaim,
 } from '../src/lib/taskNudges.js';
 import { notifyTaskNudges } from '../src/lib/telegramNotify.js';
 import { getDb } from '../src/lib/db.js';
@@ -174,6 +176,45 @@ describe('a qué tareas les toca', { sequential: true }, () => {
     ).run(id);
     const despues = await getTasksNeedingNudge(db);
     expect(despues.map(t => t.task_id)).toContain(id);
+  });
+
+  it('solo deja que un runner reclame una tarea elegible', async () => {
+    const db = getDb();
+    const id = await crearTarea('Una sola vez', 'urgente', { creadaHace: '3 hours' });
+
+    const [primera, segunda] = await Promise.all([
+      claimTaskNudge(db, id, 'chat-ficticio'),
+      claimTaskNudge(db, id, 'chat-ficticio'),
+    ]);
+
+    expect([primera, segunda].filter(Boolean)).toHaveLength(1);
+    const claim = primera || segunda;
+    expect(claim.task_id).toBe(id);
+    expect(claim.claimed_at).toBeTruthy();
+  });
+
+  it('revalida estado y chat al reclamar', async () => {
+    const db = getDb();
+    const completada = await crearTarea('Cambió de estado', 'urgente', { creadaHace: '3 hours' });
+    await db.prepare(`
+      UPDATE tasks
+      SET status = 'completada', completed = TRUE, completed_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `).run(completada);
+
+    expect(await claimTaskNudge(db, completada, 'chat-ficticio')).toBeUndefined();
+    expect(await claimTaskNudge(db, completada, 'otro-chat')).toBeUndefined();
+  });
+
+  it('libera exactamente su reserva cuando Telegram no confirma', async () => {
+    const db = getDb();
+    const id = await crearTarea('Reintento seguro', 'urgente', { creadaHace: '3 hours' });
+    const claim = await claimTaskNudge(db, id, 'chat-ficticio');
+
+    await releaseTaskNudgeClaim(db, claim);
+    const row = await db.prepare('SELECT last_nudge_at FROM tasks WHERE id = $1').get(id);
+    expect(row.last_nudge_at).toBeNull();
+    expect(await claimTaskNudge(db, id, 'chat-ficticio')).toBeTruthy();
   });
 
   it('deja en paz las completadas y las archivadas', async () => {

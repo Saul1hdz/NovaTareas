@@ -50,6 +50,11 @@ responder cuando algo va mal, no al revés:
 | 7 | ¿Hubo que degradar a un respaldo porque el proveedor falló? | `ai_fallback`, `ai_duration_ms` |
 | 8 | Cuando falló, ¿de qué tipo fue el fallo? | `error_type` |
 | 9 | ¿Qué versión del código lo produjo? | `app_version` |
+| 10 | ¿Los trabajos programados siguen ejecutándose? | `/api/v1/health/jobs` (§ 3.4) |
+
+La pregunta 10 se añadió después, y por las malas: las nueve primeras se
+responden mirando eventos, y un trabajo programado que muere **no produce
+ningún evento**. Ver § 3.4.
 
 ---
 
@@ -170,6 +175,45 @@ const report = (source, model, fallback) => annotate({
   ai_fallback: fallback,
 });
 ```
+
+### 3.4 Lo que la instrumentación por eventos no ve: el silencio
+
+Toda la instrumentación anterior se dispara **cuando algo pasa**. Su punto ciego
+es el caso contrario, y costó meses descubrirlo: el cron que llama a
+`/api/cron/reminders` nunca se instaló en el servidor, así que los recordatorios
+de Telegram no se enviaron nunca. No hubo ni un solo evento de error, porque no
+hubo ni una sola ejecución. `/api/v1/health/ready` respondió 200 todo ese
+tiempo, la base sana y cero reinicios: esa sonda comprueba que el servicio
+responde, no que haga su trabajo.
+
+La ausencia de señal no es una señal. Para que lo sea hay que registrar la
+presencia y dejar que envejezca:
+
+| Pieza | Responsabilidad |
+|---|---|
+| Tabla `job_runs` | Una fila por trabajo con `last_run_at`, `last_ok` y `last_summary`. No es un historial: es la marca de vida, sobrescrita en cada barrido. |
+| `src/lib/jobRuns.js` | Escribe la marca (`recordJobRun`) y decide qué está atrasado (`summarizeJobs`). Registrar nunca lanza: un fallo al escribir la marca la deja envejecer, que es el lado seguro. |
+| `src/pages/api/cron/reminders.js` | Deja marca **en los dos caminos**, éxito y error. Si solo se registrara el éxito, un cron que falla siempre se vería igual que uno que no existe. |
+| `/api/v1/health/jobs` | Publica el estado. **503** si algún trabajo lleva más de 45 minutos sin correr (tres ciclos del cron de 15) **o si su último intento falló**; 200 solo si todos están sanos. El campo `reason` distingue `stale` de `failing`. |
+
+Tres decisiones que sostienen todo lo demás:
+
+1. **Nunca ejecutado cuenta como atrasado**, no como correcto. Cero ejecuciones
+   en toda la historia del despliegue era literalmente el caso a detectar; si
+   diera verde, la sonda reproduciría el fallo que existe para encontrar.
+2. **Un trabajo que corre y revienta cada ciclo tampoco está sano.** Nadie
+   recibe sus avisos, igual que si el cron no existiera: es el mismo fallo con
+   otra cara, así que también responde 503. Se distingue de `stale` porque se
+   investiga en otro sitio —los logs de la aplicación, no el crontab—, no
+   porque sea menos grave. El precio es que un fallo pasajero enciende la
+   alerta durante un ciclo; se acepta a cambio de no ser ciego ante uno
+   permanente, y no se suaviza con un contador de intentos consecutivos.
+3. **La alerta la da un vigilante externo al servidor**, no la aplicación. Quien
+   avisa no puede ser quien está caído. La aplicación expone el estado; el
+   vigilante consulta con `curl -f` y avisa por Telegram.
+
+La ruta **no** entra en el `HEALTHCHECK` del contenedor: un cron parado no debe
+sacar la web del balanceador. El contrato completo está en `api.md` § 1c.
 
 ---
 
