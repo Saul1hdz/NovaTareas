@@ -88,13 +88,18 @@ export async function callZai(prompt, { maxTokens = 700, temperature = 0.7 } = {
 /**
  * OpenRouter, con el mismo contrato que `callZai`: devuelve texto o `null`.
  *
- * El modelo por defecto es `stealth/ox-alpha`, que es un modelo de razonamiento:
- * si se le deja razonar, gasta el presupuesto de tokens antes de escribir la
- * respuesta y `content` llega vacío con un 200. Por eso va `reasoning.enabled`
- * a false y por eso un contenido vacío se trata como fallo —quien llama sigue
- * la cascada hasta z.ai en lugar de devolver una recomendación en blanco—.
+ * El modelo por defecto es `stealth/ox-alpha`, y razonar no es opcional en él:
+ * mandarle `reasoning: { enabled: false }` devuelve un **400** —«Reasoning is
+ * mandatory for this endpoint and cannot be disabled»—. Lo que sí se puede es
+ * `exclude: true`, que le deja razonar sin devolver esos tokens.
+ *
+ * Consecuencia: el razonamiento se cobra del mismo presupuesto que la respuesta
+ * —55 tokens para contestar «hola» en una frase—, así que el límite va al
+ * triple que en z.ai. Si aun así se agota antes de escribir, `content` llega
+ * vacío con un 200; por eso un contenido vacío se trata como fallo y quien
+ * llama sigue la cascada en lugar de guardar una recomendación en blanco.
  */
-export async function callOpenRouter(prompt, { maxTokens = 700, temperature = 0.7 } = {}) {
+export async function callOpenRouter(prompt, { maxTokens = 2_100, temperature = 0.7 } = {}) {
   if (!OPENROUTER_API_KEY) return null;
 
   try {
@@ -114,7 +119,7 @@ export async function callOpenRouter(prompt, { maxTokens = 700, temperature = 0.
         messages: [{ role: 'user', content: prompt }],
         max_tokens: maxTokens,
         temperature,
-        reasoning: { enabled: false },
+        reasoning: { exclude: true },
       }),
       signal: AbortSignal.timeout(OPENROUTER_TIMEOUT_MS),
     });

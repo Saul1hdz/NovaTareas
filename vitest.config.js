@@ -25,14 +25,20 @@ export default defineConfig({
     // de IA por internet: serían lentas, consumirían saldo en cada ejecución y
     // fallarían por timeout o por falta de cuota.
     //
-    // Al vaciar ZAI_API_KEY y apuntar OLLAMA_URL a un puerto cerrado, el motor
-    // cae de inmediato a su fallback de reglas locales, que es determinista y
-    // responde sin red. Esto se define aquí (no dentro de los tests) porque
-    // aiEngine.js lee estas variables al cargar el módulo, antes de que
-    // cualquier instrucción del test pueda modificarlas.
+    // Al vaciar las claves de los proveedores remotos y apuntar OLLAMA_URL a un
+    // puerto cerrado, el motor cae de inmediato a su fallback de reglas locales,
+    // que es determinista y responde sin red. Esto se define aquí (no dentro de
+    // los tests) porque aiEngine.js lee estas variables al cargar el módulo,
+    // antes de que cualquier instrucción del test pueda modificarlas.
+    //
+    // Cada proveedor nuevo del router hay que añadirlo AQUÍ además de al código:
+    // OPENROUTER_API_KEY se olvidó al principio y, en cuanto hubo una clave real
+    // en el `.env` del portátil, quince pruebas se pusieron a llamar a OpenRouter
+    // por internet.
     // ─────────────────────────────────────────────────────────────────────────
     env: {
       ZAI_API_KEY: '',
+      OPENROUTER_API_KEY: '',
       AI_API_KEY: 'api-externa-solo-para-pruebas',
       TOKEN_ENCRYPTION_KEY: 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY',
       OLLAMA_URL: 'http://127.0.0.1:1',

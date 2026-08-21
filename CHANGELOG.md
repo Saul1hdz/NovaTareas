@@ -33,9 +33,11 @@ migraciones, imagen y pruebas— está declarado en
   el proveedor que está activo, no uno fijo.
 
   Dos cosas se decidieron a propósito. Un `content` vacío de OpenRouter **cuenta
-  como fallo** y sigue la cascada: `stealth/ox-alpha` es un modelo de
-  razonamiento y, si gasta el presupuesto de tokens razonando, devuelve un 200
-  con la respuesta en blanco —de ahí también `reasoning.enabled: false`—. Y el
+  como fallo** y sigue la cascada: en `stealth/ox-alpha` razonar no es opcional
+  —`reasoning: { enabled: false }` devuelve un 400— y esos tokens salen del
+  mismo presupuesto que la respuesta, así que va `reasoning: { exclude: true }`
+  con el límite al triple que en z.ai; si aun así se agota, el proveedor
+  devuelve un 200 con la respuesta en blanco. Y el
   proveedor `stealth` **retiene los prompts y las respuestas** y no publica quién
   está detrás: a ese endpoint le llegarían títulos y descripciones de tareas de
   usuarios reales, así que la clave se deja sin definir hasta que esa decisión

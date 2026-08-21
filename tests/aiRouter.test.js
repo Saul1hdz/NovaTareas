@@ -109,6 +109,22 @@ describe('router remoto de IA', { sequential: true }, () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('deja razonar a Ox Alpha y solo excluye los tokens de razonamiento', async () => {
+    // `reasoning: { enabled: false }` devuelve un 400 real: «Reasoning is
+    // mandatory for this endpoint and cannot be disabled». Solo `exclude` vale,
+    // y como el razonamiento se cobra del presupuesto de la respuesta, el
+    // límite de tokens tiene que ser holgado o `content` llega vacío.
+    const fetchMock = vi.fn().mockResolvedValue(chat('Respuesta ficticia de OpenRouter.'));
+    vi.stubGlobal('fetch', fetchMock);
+    const { callRemote } = await loadRouter({ openrouterKey: 'or-ficticia' });
+
+    await callRemote(PROMPT);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.reasoning).toEqual({ exclude: true });
+    expect(body.reasoning.enabled).toBeUndefined();
+    expect(body.max_tokens).toBeGreaterThanOrEqual(2000);
+  });
+
   it('no manda la clave de z.ai a OpenRouter', async () => {
     const fetchMock = vi.fn().mockResolvedValue(chat('Respuesta ficticia de OpenRouter.'));
     vi.stubGlobal('fetch', fetchMock);

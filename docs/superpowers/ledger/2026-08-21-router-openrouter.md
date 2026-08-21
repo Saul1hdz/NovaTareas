@@ -26,7 +26,7 @@ que se desincronizaran a la primera.
 | `/api/v1/health` publica `openrouter_configured` | Hecho |
 | `/api/v1/metadata` anuncia el proveedor activo, no uno fijo | Hecho |
 | `.env.example`, `release-manifest.yml` y `CHANGELOG.md` al día | Hecho |
-| Seis pruebas del router en `tests/aiRouter.test.js` | Hechas, en verde |
+| Siete pruebas del router en `tests/aiRouter.test.js` | Hechas, en verde |
 
 ## Decisiones
 
@@ -34,16 +34,23 @@ que se desincronizaran a la primera.
 es un modelo de razonamiento: si agota el presupuesto de tokens razonando,
 devuelve un **200 con la respuesta en blanco**. Tratarlo como éxito habría
 guardado recomendaciones vacías en `task_recommendations` sin que ningún error
-lo delatara. Por lo mismo va `reasoning: { enabled: false }` en la petición.
+lo delatara.
+
+**Razonar no se puede desactivar, solo excluir.** La primera versión mandaba
+`reasoning: { enabled: false }` para que el modelo no gastara tokens pensando.
+El proveedor devuelve un **400**: «Reasoning is mandatory for this endpoint and
+cannot be disabled». Lo que sí acepta es `exclude: true`, que le deja razonar
+sin devolver esos tokens. Como se cobran del mismo presupuesto que la respuesta
+—55 tokens para contestar «hola» en una frase—, el límite sube de 700 a 2100.
 
 **El source nuevo es `openrouter`, no `oxalpha`.** El modelo se configura con
 `OPENROUTER_MODEL`; el valor del enum identifica al proveedor, que es lo que no
 cambia. El modelo concreto ya queda en la columna `model`.
 
-**La clave se deja sin definir.** El proveedor `stealth` retiene prompts y
-respuestas —dice que no entrena con ellos— y no publica quién está detrás. A ese
-endpoint le llegan títulos y descripciones de tareas de usuarios reales. El
-código está listo; activarlo es una decisión que se toma aparte, y sin
+**La clave vive solo en el `.env` local.** El proveedor `stealth` retiene
+prompts y respuestas —dice que no entrena con ellos— y no publica quién está
+detrás. En el portátil le llegan tareas de prueba; en producción le llegarían
+las de usuarios reales, así que activarlo allí es una decisión aparte. Sin
 `OPENROUTER_API_KEY` la cascada arranca en z.ai igual que antes.
 
 **`OPENROUTER_URL` es configurable.** Nació de necesitar un doble local para la
@@ -51,7 +58,7 @@ prueba de extremo a extremo; de paso permite apuntar a un proxy propio.
 
 ## Cómo se verificó
 
-Las cuatro puertas: `npm run lint` (0 errores), `npm run test` (**218 pruebas en
+Las cuatro puertas: `npm run lint` (0 errores), `npm run test` (**219 pruebas en
 32 ficheros, todas en verde**) y `npm run build` (completo). No hay script
 `typecheck` en este repo; `lint` es `astro check`, que ya hace la comprobación
 de tipos.
@@ -60,8 +67,8 @@ Y la parte que no cubren los tests, contra la app corriendo con un doble local
 de OpenRouter en el puerto 4599:
 
 - `POST /api/v1/recommend` devolvió `"fuente": "openrouter"` con el texto del
-  doble. El doble registró `modelo pedido: stealth/ox-alpha`,
-  `reasoning: {"enabled":false}` y la cabecera `X-Title: NovaTareas`.
+  doble. El doble registró `modelo pedido: stealth/ox-alpha` y la cabecera
+  `X-Title: NovaTareas`.
 - `POST /api/tasks/1/ai` autenticado guardó la fila real:
   `source = openrouter`, `model = stealth/ox-alpha`. Es lo que prueba que la
   migración `0008` surtió efecto — sin ella el INSERT habría reventado contra el
@@ -72,16 +79,43 @@ de OpenRouter en el puerto 4599:
 - `SELECT enumlabel FROM pg_enum` confirma el orden
   `zai, openrouter, ollama, history, rules`.
 
+## Contra el modelo real
+
+Con `OPENROUTER_API_KEY` puesta en el `.env` local:
+
+- `POST /api/tasks/2/ai` autenticado guardó `source = openrouter`,
+  `model = stealth/ox-alpha`, 794 caracteres de recomendación.
+- `/api/v1/health` publica `openrouter_configured: true` y `/api/v1/metadata`
+  anuncia `stealth/ox-alpha` como primario.
+- **Tiempos, mismo prompt:** Ox Alpha **6,1–7,3 s**; `glm-4.5-flash` **3,4 s**.
+  Ox Alpha va a poco más del doble, y el timeout de 45 s le sobra de largo.
+- **Calidad:** las dos respuestas son utilizables. La de Ox Alpha es más
+  concreta —cita el trimestre anterior y pide dejar el borrador un día antes de
+  la fecha límite—; la de z.ai es más corta y genérica. Una muestra de un solo
+  prompt no decide nada: para afirmar que es mejor haría falta medir varios.
+
 ## Qué no se hizo
 
-- **No se ha llamado al modelo de verdad.** No hay `OPENROUTER_API_KEY`, así que
-  todo lo verificado usa un doble local. Cuánto tarda Ox Alpha, si el timeout de
-  45 s le basta y si su texto es mejor que el de `glm-4.5-flash` sigue sin
-  medirse.
+- **No se ha medido con más de un prompt.** La comparación de arriba es
+  anecdótica, no una medición.
+- **La clave no entra en producción.** El `.env` local es solo del portátil.
 - **`src/lib/rag.js` no entra.** Los embeddings siguen yendo a z.ai y a Ollama
   por su cuenta; el router es solo de generación de texto.
 - **El precio después del periodo gratis es desconocido** y la ventana cierra
   alrededor del 2026-08-27.
+
+## El fallo que solo apareció con una clave real
+
+`vitest.config.js` vacía `ZAI_API_KEY` a propósito para que la suite no salga a
+internet, y el proveedor nuevo no se añadió a esa lista. Mientras no hubo clave
+de OpenRouter no se notó: las 218 pruebas pasaban. En cuanto se puso una real en
+el `.env` del portátil, **quince pruebas empezaron a llamar a OpenRouter por
+internet y fallaron**. Corregido con `OPENROUTER_API_KEY: ''` en el bloque `env`
+y un comentario que dice que cada proveedor nuevo del router hay que añadirlo
+también ahí.
+
+Es el caso de libro de un verde que no probaba lo que decía: la suite no
+verificaba el aislamiento, solo se beneficiaba de que la variable no existía.
 
 ## Hallazgo lateral, sin arreglar
 
