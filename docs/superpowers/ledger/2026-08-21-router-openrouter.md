@@ -87,8 +87,12 @@ Con `OPENROUTER_API_KEY` puesta en el `.env` local:
   `model = stealth/ox-alpha`, 794 caracteres de recomendación.
 - `/api/v1/health` publica `openrouter_configured: true` y `/api/v1/metadata`
   anuncia `stealth/ox-alpha` como primario.
-- **Tiempos, mismo prompt:** Ox Alpha **6,1–7,3 s**; `glm-4.5-flash` **3,4 s**.
-  Ox Alpha va a poco más del doble, y el timeout de 45 s le sobra de largo.
+- **Tiempos con prompt corto:** Ox Alpha **6,1–7,3 s**; `glm-4.5-flash` **3,4 s**.
+- **Tiempos en el endpoint real del dashboard**, con RAG, historial y feedback
+  dentro del prompt: Ox Alpha **22–26 s**; `glm-4.5-flash` **10,8 s**. El
+  timeout del proveedor (45 s) le sobra, pero **el frontend aborta a los 50 s**,
+  así que el margen se queda en la mitad del que había. Es el dato que más pesa
+  en contra de ponerlo de primario en producción.
 - **Calidad:** las dos respuestas son utilizables. La de Ox Alpha es más
   concreta —cita el trimestre anterior y pide dejar el borrador un día antes de
   la fecha límite—; la de z.ai es más corta y genérica. Una muestra de un solo
@@ -103,6 +107,26 @@ Con `OPENROUTER_API_KEY` puesta en el `.env` local:
   por su cuenta; el router es solo de generación de texto.
 - **El precio después del periodo gratis es desconocido** y la ventana cierra
   alrededor del 2026-08-27.
+
+## Lo que encontró probar la interfaz, no la API
+
+Dos fallos que ninguna llamada con `curl` habría enseñado:
+
+**La tarjeta decía «Sugerencia» con Ox Alpha respondiendo.** El mapa
+`RECOMMENDATION_SOURCES` de `dashboard.astro` traduce el origen a una etiqueta y
+no conocía `openrouter`, así que caía al genérico —que es justo la etiqueta del
+fallback de reglas locales—. La interfaz afirmaba que no había habido IA en el
+momento exacto en que sí la hubo. Fijado con
+`tests/recommendationSourceLabels.test.js`, que compara el enum de la base con
+las claves del mapa: un proveedor nuevo sin etiqueta pone el test en rojo.
+
+**`/api/v1/health` informaba `false` de claves que funcionaban.** Leía
+`process.env` al cargar el módulo, y en dev ese módulo puede evaluarse antes de
+que el entorno termine de poblarse desde `.env`; una constante congela ese
+instante. Se veía con `zai_configured: false` mientras z.ai contestaba y
+guardaba filas. Afectaba ya a `zai_configured` y `external_api_configured`
+**antes de este trabajo**; la línea de `openrouter` heredó el defecto. Ahora las
+lee dentro del handler.
 
 ## El fallo que solo apareció con una clave real
 

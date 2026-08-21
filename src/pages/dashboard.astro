@@ -2714,7 +2714,11 @@ function appendSubtasks(parent, subtasks) {
   parent.appendChild(box);
 }
 
+// Un origen sin entrada aquí cae al genérico «Sugerencia», que es la etiqueta
+// del fallback local: la interfaz diría que no hubo IA justo cuando sí la hubo.
+// Cada proveedor nuevo del router se añade también a este mapa.
 const RECOMMENDATION_SOURCES = {
+  openrouter: 'IA (OpenRouter)',
   zai: 'IA (z.ai)',
   ollama: 'IA local (Ollama)',
   history: 'Tu historial de tareas archivadas',
