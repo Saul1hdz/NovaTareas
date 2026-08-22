@@ -42,3 +42,6 @@ coverage/
 # ── Uploads y archivos temporales ─────────────────────────────
 uploads/
 tmp/
+
+# ── Cache de Python (generadores de docs/FINAL) ───────────────
+__pycache__/

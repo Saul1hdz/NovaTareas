@@ -5,12 +5,34 @@
 Universidad Gerardo Barrios — Módulo 4: Desarrollo de Aplicaciones con IA
 Docente: Ing. Marco Arévalo Zambrano
 
+[![CI](https://github.com/Saul1hdz/NovaTareas/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Saul1hdz/NovaTareas/actions/workflows/ci.yml)
+
 | | |
 |---|---|
 | **En línea** | **<https://novatareas.polarzero.dev>** |
 | **Versión** | 1.0.0 — la publica el propio servicio en [`/api/v1/metadata`](https://novatareas.polarzero.dev/api/v1/metadata) |
 | **Estado** | [`/api/v1/health/ready`](https://novatareas.polarzero.dev/api/v1/health/ready) responde 200 si la base de datos contesta |
+| **Trabajos programados** | [`/api/v1/health/jobs`](https://novatareas.polarzero.dev/api/v1/health/jobs) responde 503 si un barrido lleva parado o falló |
 | **Repositorio** | <https://github.com/Saul1hdz/NovaTareas> |
+
+El distintivo de arriba refleja el estado del pipeline sobre `main`. En la
+pestaña Actions aparece además un flujo `pages build and deployment` en rojo:
+es de GitHub Pages, activado en la configuración del repositorio, y falla porque
+este proyecto se renderiza en servidor y no es un sitio estático. No tiene
+relación con las pruebas.
+
+### Entrega final
+
+Todo lo que se entrega para la evaluación, en un solo sitio:
+
+| Documento | Dónde |
+|---|---|
+| Informe final | [`docs/FINAL/informe-final.md`](docs/FINAL/informe-final.md) · [PDF](docs/FINAL/informe-final.pdf) · [Word editable](docs/FINAL/informe-final.docx) |
+| Presentación | [`docs/FINAL/presentacion-final.pdf`](docs/FINAL/presentacion-final.pdf) · [fuente editable](docs/FINAL/fuente-presentacion/) |
+| Plan de contingencia | [`docs/FINAL/plan-contingencia-demo.md`](docs/FINAL/plan-contingencia-demo.md) |
+| Manifiesto del release | [`release-manifest.yml`](release-manifest.yml) |
+| Notas de versión | [`CHANGELOG.md`](CHANGELOG.md) |
+| Versión etiquetada | `v1.0.0` → commit `fa539b9` ([ver etiqueta](https://github.com/Saul1hdz/NovaTareas/releases/tag/v1.0.0)) |
 
 Cómo comprobar que está vivo, qué mirar tras cada publicación y cómo volver
 atrás: sección 18.
@@ -389,21 +411,45 @@ en **[`docs/registro-pruebas-semana-3.md`](docs/registro-pruebas-semana-3.md)**.
 ## 9. Integración continua (CI/CD)
 
 Cada `push` y cada `pull request` disparan el workflow de
-`.github/workflows/ci.yml` en GitHub Actions, que hace lo siguiente:
+`.github/workflows/ci.yml` en GitHub Actions. No es una lista de pasos
+encadenados: son **tres trabajos**, y el tercero solo arranca si los dos
+primeros terminan bien.
 
-1. Descarga el repositorio (`actions/checkout`).
-2. Configura Node.js 22.12 con caché de npm.
-3. Instala dependencias con `npm ci`, reproducible desde `package-lock.json`.
-4. Revisa tipos y sintaxis con `npm run lint`.
-5. Levanta un PostgreSQL 16 efímero, migra y comprueba el esquema.
-6. Corre las 202 pruebas con cobertura (`npm run test:coverage`).
-7. Guarda el reporte de cobertura como artefacto durante 14 días.
-8. Compila el proyecto (`npm run build`).
+```
+   Pruebas, PostgreSQL y build ─┐
+                                ├─→ Imagen de produccion
+   Cadena de suministro ────────┘
+```
+
+**`calidad` — Pruebas, PostgreSQL y build**
+
+1. Descarga el repositorio y configura Node.js 22.
+2. Instala dependencias con `npm ci`, reproducible desde `package-lock.json`.
+3. Revisa tipos y sintaxis con `npm run lint`.
+4. Levanta un PostgreSQL 16 efímero, migra y comprueba el esquema.
+5. Ejecuta la suite con cobertura y guarda el reporte como artefacto (14 días).
+6. Compila el proyecto.
+
+**`seguridad` — Cadena de suministro**
+
+Corre en paralelo con el anterior: audita las dependencias, busca secretos en
+**todo el historial** del repositorio con Gitleaks y analiza el código con
+CodeQL. Encontrar un secreto en un commit antiguo importa aunque ya se haya
+borrado del archivo: el historial lo conserva.
+
+**`imagen` — Imagen de produccion**
+
+Depende de los dos anteriores. Construye la imagen de producción, **aplica las
+migraciones usando esa misma imagen**, la arranca y comprueba con `curl` que
+responde en `/api/v1/health/ready`, analiza sus vulnerabilidades con Trivy y,
+solo desde `main` y solo si todo lo anterior pasó, la publica en
+`ghcr.io/saul1hdz/novatareas`. Por último prepara el bloque de despliegue,
+indicando de forma explícita si el push incluía migraciones, para que quien
+despliegue sepa si necesita respaldo previo.
 
 El workflow **no expone `ZAI_API_KEY` ni ninguna credencial real**: las pruebas
-usan secretos ficticios, no consumen saldo y cualquier fallo importante detiene
-el job. Quedó confirmado funcionando sobre la rama `testing` en la
-[ejecución 30121273529](https://github.com/Saul1hdz/NovaTareas/actions/runs/30121273529).
+usan secretos ficticios, no consumen saldo y cualquier fallo detiene la cadena
+antes de publicar nada.
 
 ---
 

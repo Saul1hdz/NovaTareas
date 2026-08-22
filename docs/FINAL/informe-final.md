@@ -173,14 +173,22 @@ token de Google sin cifrar.
 
 ### Pipeline
 
-[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) ejecuta en cada push:
-revisión de tipos → migración sobre PostgreSQL 16 efímero → comprobación
-transaccional → las 202 pruebas con cobertura → artefacto de cobertura → build →
-**construcción de la imagen de producción** → **arranque real de esa imagen** y
-`curl` contra `/health/ready`.
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) organiza el trabajo
+en **tres trabajos**, no en una cadena única de pasos:
 
-Es verificable públicamente: la ejecución sobre el commit etiquetado `fa539b9`
-terminó en verde.
+| Trabajo | Qué hace |
+|---|---|
+| **Pruebas, PostgreSQL y build** | Revisión de tipos, migración sobre un PostgreSQL efímero, comprobación del esquema, suite completa con cobertura y compilación |
+| **Cadena de suministro** | En paralelo: auditoría de dependencias, búsqueda de secretos en todo el historial con Gitleaks y análisis del código con CodeQL |
+| **Imagen de producción** | Solo si los dos anteriores pasan: construye la imagen, migra usando esa misma imagen, la arranca y comprueba `/health/ready`, la analiza con Trivy y la publica en el registro |
+
+Dos decisiones merecen mención. La primera es que el trabajo de imagen **aplica
+las migraciones usando la propia imagen construida**, con lo que se verifica el
+artefacto que se despliega y no solo el código. La segunda es que el paso final
+declara de forma explícita si el push incluía migraciones, de modo que quien
+despliegue sepa si debe hacer copia de seguridad antes.
+
+Es verificable públicamente en la pestaña Actions del repositorio.
 
 ---
 
