@@ -1,4 +1,4 @@
-FROM node:22.23.1-bookworm-slim AS dependencies
+FROM node:26.6.0-bookworm-slim AS dependencies
 
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -16,7 +16,7 @@ FROM dependencies AS build
 COPY . .
 RUN npm run build
 
-FROM node:22.23.1-bookworm-slim AS runtime
+FROM node:26.6.0-bookworm-slim AS runtime
 
 ENV NODE_ENV=production
 # El adaptador de Astro lee HOST y PORT. Sin HOST=0.0.0.0 el proceso solo
