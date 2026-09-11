@@ -37,7 +37,7 @@
     "pg": "^8.21.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.0",
